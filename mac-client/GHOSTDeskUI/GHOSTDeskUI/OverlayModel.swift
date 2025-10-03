@@ -5,9 +5,14 @@ import Combine
 final class OverlayModel: ObservableObject {
     static let shared = OverlayModel()
 
+    @Published var isRecording: Bool = false
+    @Published var transcriptLog: [String] = []
+    @Published var partialText: String = ""
+    @Published var lastError: String? = nil
+
     // Видимость/поведение
     @Published var isOverlayVisible: Bool = true
-    @Published var isFocusable: Bool = false
+    @Published var isFocusable: Bool = true
     @Published var transparencyIndex: Int = 1     // 0…5
     @Published var fontScaleIndex: Int = 1        // 0…5
 
@@ -17,11 +22,11 @@ final class OverlayModel: ObservableObject {
     @Published var hintsLeft: Int = 73
 
     // Нижняя панель (заглушки)
-    @Published var isRecording: Bool = false
     @Published var isAutoHints: Bool = false
 
     // Настройки
     @Published var showSettings: Bool = false
+    
 
     // Константы
     let transparencySteps: [CGFloat] = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5]

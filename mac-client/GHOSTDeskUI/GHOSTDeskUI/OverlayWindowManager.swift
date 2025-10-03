@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Carbon.HIToolbox   // ← добавь это
 
 final class OverlayWindowManager {
     static let shared = OverlayWindowManager()
@@ -7,34 +8,34 @@ final class OverlayWindowManager {
 
     private var window: OverlayPanel?
 
-    // Публичный индикатор видимости
     var isVisible: Bool { window?.isVisible ?? false }
 
-    // Показать панель
     func show(model: OverlayModel) {
         if window == nil {
             let panel = OverlayPanel(contentRect: NSRect(x: 0, y: 0, width: 920, height: 160))
             panel.contentView = NSHostingView(rootView: OverlayRootView().environmentObject(model))
             panel.alphaValue = model.alpha
-            panel.orderFrontRegardless()
+
+            NSApp.activate(ignoringOtherApps: true)
+            panel.makeKeyAndOrderFront(nil)
             panel.setIsVisible(true)
+
             if let screen = NSScreen.main { center(on: screen) }
             window = panel
             applyFocus(model.isFocusable)
         } else {
             window?.alphaValue = model.alpha
-            window?.orderFrontRegardless()
+            NSApp.activate(ignoringOtherApps: true)
+            window?.makeKeyAndOrderFront(nil)
             window?.setIsVisible(true)
         }
     }
 
-    // Спрятать панель
     func hide() {
         window?.orderOut(nil)
         window?.setIsVisible(false)
     }
 
-    // Переключить видимость (возвращает новое состояние)
     @discardableResult
     func toggleVisibility() -> Bool {
         if isVisible {
@@ -46,7 +47,6 @@ final class OverlayWindowManager {
         }
     }
 
-    // Сервисные действия
     func nudge(dx: CGFloat, dy: CGFloat) {
         guard let w = window else { return }
         var f = w.frame
@@ -71,21 +71,115 @@ final class OverlayWindowManager {
     }
 }
 
-// Безрамочная неактивирующаяся панель поверх всех окон
+// Безрамочная панель, которая всегда находится поверх всех окон
 final class OverlayPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+
     init(contentRect: NSRect) {
-        super.init(contentRect: contentRect, styleMask: [.borderless], backing: .buffered, defer: false)
-        isReleasedWhenClosed = false
+        super.init(
+            contentRect: contentRect,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
         isOpaque = false
-        hasShadow = true
         backgroundColor = .clear
-        level = .floating
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        sharingType = .none              // не светимся в чужих CGWindow-снимках
+        hasShadow = true
+        isMovableByWindowBackground = false
+
+        hidesOnDeactivate = false
+        isFloatingPanel = true
         becomesKeyOnlyIfNeeded = false
         worksWhenModal = true
+
+        level = .statusBar
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .stationary]
+        sharingType = .none
+        acceptsMouseMovedEvents = true
     }
 
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
+    // ← ЛОКАЛЬНЫЙ ПЕРЕХВАТ ШОРТКАТОВ (как в Cluely)
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        // интересуют только нажатия клавиш
+        guard event.type == .keyDown else { return false }
+
+        // ловим ИМЕННО Command (без Option/Control) — как у тебя в HotKeyManager
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard flags.contains(.command),
+              !flags.contains(.option),
+              !flags.contains(.control) else {
+            return false
+        }
+
+        let kc = Int(event.keyCode)
+        let model = OverlayModel.shared
+
+        switch kc {
+
+        // ⌘1 — показать/скрыть
+        case kVK_ANSI_1:
+            let visible = OverlayWindowManager.shared.toggleVisibility()
+            model.isOverlayVisible = visible
+            return true
+
+        // ⌘2 — фокус on/off (клик-сквозь)
+        case kVK_ANSI_2:
+            model.isFocusable.toggle()
+            OverlayWindowManager.shared.applyFocus(model.isFocusable)
+            return true
+
+        // ⌘3 — сброс
+        case kVK_ANSI_3:
+            model.resetDefaults()
+            OverlayWindowManager.shared.setAlpha(model.alpha)
+            return true
+
+        // ⌘стрелки — подвинуть
+        case kVK_LeftArrow:
+            OverlayWindowManager.shared.nudge(dx: -model.moveStep, dy: 0); return true
+        case kVK_RightArrow:
+            OverlayWindowManager.shared.nudge(dx:  model.moveStep, dy: 0); return true
+        case kVK_UpArrow:
+            OverlayWindowManager.shared.nudge(dx: 0, dy:  model.moveStep); return true
+        case kVK_DownArrow:
+            OverlayWindowManager.shared.nudge(dx: 0, dy: -model.moveStep); return true
+
+        // ⌘- / ⌘= — масштаб шрифта
+        case kVK_ANSI_Minus:
+            model.fontScaleIndex = max(0, model.fontScaleIndex - 1)
+            return true
+        case kVK_ANSI_Equal: // это «=», для «+» обычно Shift, но keyCode тот же
+            model.fontScaleIndex = min(model.fontScaleSteps.count - 1, model.fontScaleIndex + 1)
+            return true
+
+        // ⌘[ / ⌘] — прозрачность
+        case kVK_ANSI_LeftBracket:
+            model.transparencyIndex = max(0, model.transparencyIndex - 1)
+            OverlayWindowManager.shared.setAlpha(model.alpha)
+            return true
+        case kVK_ANSI_RightBracket:
+            model.transparencyIndex = min(model.transparencySteps.count - 1, model.transparencyIndex + 1)
+            OverlayWindowManager.shared.setAlpha(model.alpha)
+            return true
+
+        // ⌘O — запись on/off
+        case kVK_ANSI_O:
+            model.startStopRecording()
+            return true
+
+        // ⌘N — «Подсказать»
+        case kVK_ANSI_N:
+            model.askHint()
+            return true
+
+        // ⌘M — «Решить»
+        case kVK_ANSI_M:
+            model.askSolve()
+            return true
+
+        default:
+            return false
+        }
+    }
 }

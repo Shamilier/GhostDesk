@@ -25,11 +25,13 @@ final class HotKeyManager {
         }
 
 
-        // ⌘2 — фокус on/off
-        register(key: kVK_ANSI_1, mods: cmd()) {
-            let visible = OverlayWindowManager.shared.toggleVisibility()
-            OverlayModel.shared.isOverlayVisible = visible
+        // ⌘2 — фокус on/off (клик-сквозь)
+        register(key: kVK_ANSI_2, mods: cmd()) {
+            let m = OverlayModel.shared
+            m.isFocusable.toggle()
+            OverlayWindowManager.shared.applyFocus(m.isFocusable)
         }
+
 
         // ⌘стрелки — подвинуть
         register(key: kVK_LeftArrow,  mods: cmd()) { OverlayWindowManager.shared.nudge(dx: -OverlayModel.shared.moveStep, dy: 0) }
