@@ -10,6 +10,7 @@ import Accelerate
 import CoreGraphics
 
 
+
 struct OverlayRootView: View {
     
     @State private var autoScroll = true
@@ -20,6 +21,7 @@ struct OverlayRootView: View {
     @State private var question: String = ""
     @State private var smartMode: Bool = false
     @FocusState private var askFocused: Bool
+    @ObservedObject private var hint = HintAgent.shared
 
 
     // наш безопасный ленивый транскрайбер
@@ -94,6 +96,47 @@ struct OverlayRootView: View {
                 autoScroll: $autoScroll
             )
             .frame(minHeight: 200, maxHeight: 300)
+            if hint.isRunning || !hint.draft.isEmpty || hint.error != nil {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Подсказка")
+                            .font(.headline)
+                        if hint.isRunning { ProgressView().controlSize(.small) }
+                        Spacer()
+                        if hint.canStop {
+                            Button("Стоп") { hint.cancel() }
+                                .buttonStyle(GlassPill(tint: .red))
+                        }
+                    }
+                    if let err = hint.error {
+                        Text(err).foregroundColor(.red).font(.subheadline)
+                    }
+                    if !hint.draft.isEmpty {
+                        Text(hint.draft)
+                            .textSelection(.enabled)
+                            .font(.body)
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack {
+                            Button("Копировать") {
+                                #if os(macOS)
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(hint.draft, forType: .string)
+                                #endif
+                            }.buttonStyle(GlassPill())
+                            Spacer()
+                            Button("Очистить") { hint.draft = "" }.buttonStyle(GlassPill(tint: .secondary))
+                        }
+                    }
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.12), lineWidth: 1)
+                )
+            }
+
             footer
         }
         .padding(16)
@@ -120,9 +163,53 @@ struct OverlayRootView: View {
                 smartEnabled: $smartMode,
                 isSubmitting: askVM.isSubmitting,
                 onSubmit: submitQuestion,
-                focused: $askFocused              // ← добавили
+                focused: $askFocused          // ← добавь эту строку
             )
 
+
+            // ↓↓↓ БЛОК ОТВЕТА ↓↓↓
+            VStack(alignment: .leading, spacing: 8) {
+                if let err = askVM.answerError {
+                    Text("Ошибка: \(err)")
+                        .font(.subheadline)
+                        .foregroundStyle(.red)
+                }
+
+                if !askVM.answerDraft.isEmpty || askVM.isSubmitting {
+                    ScrollView {
+                        Text(askVM.answerDraft.isEmpty ? "Генерация ответа…" : askVM.answerDraft)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
+                    }
+                    .frame(minHeight: 80, maxHeight: 220)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.12), lineWidth: 1)
+                    )
+
+                    HStack {
+                        Button("Копировать") {
+                            #if os(macOS)
+                            let s = askVM.answerDraft
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(s, forType: .string)
+                            #endif
+                        }
+                        .buttonStyle(GlassPill())
+
+                        if askVM.canStop {
+                            Button("Стоп") { askVM.cancelStream() }
+                                .buttonStyle(GlassPill(tint: .red))
+                        }
+
+                        Spacer()
+                    }
+                }
+            }
+            // ↑↑↑ БЛОК ОТВЕТА ↑↑↑
 
         }
         .padding(.vertical, 2)
@@ -132,6 +219,7 @@ struct OverlayRootView: View {
         )
         .shadow(radius: 10)
     }
+
 
     // MARK: - Header
 
@@ -215,12 +303,28 @@ struct OverlayRootView: View {
 
     // MARK: - Actions
 
-    // NEW: теперь async — дергает AskVM, который делает снапшот и отправляет в GPT
+
+    // NEW: Submit ВСЕГДА шлёт ВОПРОС + ХВОСТ ТРАНСКРИПТА + СКРИНШОТ
     private func submitQuestion() async {
-        await askVM.submit(question: question, smart: smartMode)
-        // если нужно логировать — пожалуйста:
-        ServerClient.shared.log("question submitted: \(question), smart=\(smartMode)")
+        let tr = makeTranscriptTail(seconds: 40, maxChars: 900) // хвост речи как контекст
+
+        await askVM.submit(
+            question: question,
+            smart: smartMode,
+            transcript: tr
+        )
+
+        ServerClient.shared.log("question submitted: \(question), smart=\(smartMode), speechTail=\(tr.count) chars")
     }
+
+    // Хвост транскрибации из текущего транскрайбера (если не подключён TranscriptBuffer)
+    private func makeTranscriptTail(seconds: Int = 40, maxChars: Int = 900) -> String {
+        var s = transcriber.transcriptLog.suffix(14).joined(separator: " ")
+        if !transcriber.partialText.isEmpty { s += " " + transcriber.partialText }
+        if s.count > maxChars { s = String(s.suffix(maxChars)) }
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
 }
 
 // MARK: - AskField
@@ -306,40 +410,216 @@ struct GlassPill: ButtonStyle {
     }
 }
 
+
 @MainActor
 final class AskVM: ObservableObject {
-    /// Если хочешь блокировать кнопку "Submit" — можешь привязать её к этому флагу
     @Published var isSubmitting: Bool = false
+    @Published var answerDraft: String = ""          // сюда льётся стрим
+    @Published var answerError: String? = nil
+    @Published var canStop: Bool = false             // показать кнопку «Стоп»
 
-    /// Точка входа: дергается из OverlayRootView.submitQuestion()
-    func submit(question: String, smart: Bool) async {
+    private var streamTask: Task<Void, Never>?       // чтобы уметь отменять
+    private let baseURL = URL(string: "http://localhost:8787")!
+    private let sessionId = UUID().uuidString        // одна сессия на жизненный цикл VM
+
+    func cancelStream() {
+        streamTask?.cancel()
+        streamTask = nil
+        canStop = false
+        isSubmitting = false
+    }
+
+    // Submit ВСЕГДА отправляет вопрос + хвост транскрибации + скриншот
+    func submit(
+        question: String,
+        smart: Bool,
+        transcript: String
+    ) async {
         let q = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else {
             NSLog("AskVM: skipped submit — empty question")
             return
         }
+
+        // сброс состояния ответа
+        answerDraft = ""
+        answerError = nil
         isSubmitting = true
+        canStop = true
         NSLog("AskVM isSubmitting = true")
-        defer {
-            isSubmitting = false
-            NSLog("AskVM isSubmitting = false")
-        }
+        defer { NSLog("AskVM isSubmitting = false") }
 
         do {
+            // 1) делаем PNG снимок
             let png = try await Snapshot.captureAllDisplaysPNG(maxSide: 1280)
-            try await sendToGPT(question: q, screenshotPNG: png, smart: smart)
+
+            // 2) шлём на сервер и читаем SSE стрим
+            try await sendToGPT(
+                question: q,
+                screenshotPNG: png,
+                smart: smart,
+                transcript: transcript
+            )
         } catch {
+            answerError = error.localizedDescription
             NSLog("AskVM submit failed: \(error.localizedDescription)")
         }
+
+        isSubmitting = false
+        canStop = false
     }
 
+    // MARK: - сетевой вызов со streaming SSE
+    private func sendToGPT(
+        question: String,
+        screenshotPNG: Data,
+        smart: Bool,
+        transcript: String
+    ) async throws {
+        var req = URLRequest(url: baseURL.appendingPathComponent("/ask"))
+        req.httpMethod = "POST"
+        req.setValue("text/event-stream", forHTTPHeaderField: "Accept") // ожидаем SSE
 
-    // MARK: - Реальный сетевой вызов (заглушка)
-    private func sendToGPT(question: String, screenshotPNG: Data, smart: Bool) async throws {
-        // TODO: реализуй multipart/JSON. Пример протокола оставлен за тобой.
-        NSLog("GPT SEND -> q=\(question), smart=\(smart), bytes=\(screenshotPNG.count)")
+        // multipart/form-data
+        let boundary = "----ghostdesk-\(UUID().uuidString)"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        func appendField(_ name: String, _ value: String) {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
+            body.append("\(value)\r\n".data(using: .utf8)!)
+        }
+        func appendFile(_ name: String, filename: String, mime: String, data: Data) {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"\(name)\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+            body.append("Content-Type: \(mime)\r\n\r\n".data(using: .utf8)!)
+            body.append(data)
+            body.append("\r\n".data(using: .utf8)!)
+        }
+
+        // обязательные поля
+        appendField("question", question)
+        appendField("smart", smart ? "true" : "false")
+        appendField("sessionId", sessionId)
+
+        // контекст речи — ВСЕГДА (пусть даже пустая строка)
+        appendField("transcript", transcript)
+
+        // скрин — ВСЕГДА для Submit
+        appendFile("image", filename: "screen.png", mime: "image/png", data: screenshotPNG)
+
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        req.httpBody = body
+
+        // 3) читаем SSE построчно. Важно: используем Task, чтобы уметь отменять
+        streamTask?.cancel()
+        streamTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let (bytes, response) = try await URLSession.shared.bytes(for: req)
+                guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+
+                if !(200..<300).contains(http.statusCode) {
+                    var errText = "HTTP \(http.statusCode) \(HTTPURLResponse.localizedString(forStatusCode: http.statusCode))"
+                    var data = Data()
+                    do {
+                        for try await b in bytes { data.append(b) } // вычитаем тело ошибки
+                        if let s = String(data: data, encoding: .utf8), !s.isEmpty { errText += "\n\(s)" }
+                    } catch {}
+                    throw NSError(domain: "net", code: http.statusCode,
+                                  userInfo: [NSLocalizedDescriptionKey: errText])
+                }
+
+                // читаем строки SSE
+                var buffer = "" // микро-батчинг на клиенте, чтобы не дёргать UI по 1 символу
+                var lastFlush = Date()
+
+                for try await line in bytes.lines {
+                    if Task.isCancelled { break }
+                    guard line.hasPrefix("data: ") else { continue }
+
+                    let jsonStr = String(line.dropFirst(6))
+                    guard
+                        let data = jsonStr.data(using: .utf8),
+                        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                        let type = obj["type"] as? String
+                    else { continue }
+
+                    if type == "delta", let text = obj["text"] as? String {
+                        buffer += text
+                        // флашим если буфер вырос или пришёл знак конца фразы, или прошло 60 мс
+                        let shouldFlushByLen = buffer.count >= 64
+                        let shouldFlushByPunct = buffer.last.map { ".,!?;:\n ".contains($0) } ?? false
+                        let shouldFlushByTime = Date().timeIntervalSince(lastFlush) > 0.06
+                        if shouldFlushByLen || shouldFlushByPunct || shouldFlushByTime {
+                            self.answerDraft += buffer
+                            buffer.removeAll(keepingCapacity: true)
+                            lastFlush = Date()
+                        }
+                    } else if type == "done" {
+                        // добросим хвост
+                        if !buffer.isEmpty {
+                            self.answerDraft += buffer
+                            buffer.removeAll()
+                        }
+                        break
+                    } else if type == "error" {
+                        let msg = (obj["message"] as? String) ?? "Unknown error"
+                        throw NSError(domain: "sse", code: -1,
+                                      userInfo: [NSLocalizedDescriptionKey: msg])
+                    }
+                }
+            } catch {
+                if !Task.isCancelled {
+                    self.answerError = error.localizedDescription
+                }
+            }
+        }
+
+        // ждём завершения Task (или отмены)
+        await streamTask?.value
+        streamTask = nil
     }
 }
+
+
+
+
+//@MainActor
+//final class AskVM: ObservableObject {
+//    /// Если хочешь блокировать кнопку "Submit" — можешь привязать её к этому флагу
+//    @Published var isSubmitting: Bool = false
+//
+//    /// Точка входа: дергается из OverlayRootView.submitQuestion()
+//    func submit(question: String, smart: Bool) async {
+//        let q = question.trimmingCharacters(in: .whitespacesAndNewlines)
+//        guard !q.isEmpty else {
+//            NSLog("AskVM: skipped submit — empty question")
+//            return
+//        }
+//        isSubmitting = true
+//        NSLog("AskVM isSubmitting = true")
+//        defer {
+//            isSubmitting = false
+//            NSLog("AskVM isSubmitting = false")
+//        }
+//
+//        do {
+//            let png = try await Snapshot.captureAllDisplaysPNG(maxSide: 1280)
+//            try await sendToGPT(question: q, screenshotPNG: png, smart: smart)
+//        } catch {
+//            NSLog("AskVM submit failed: \(error.localizedDescription)")
+//        }
+//    }
+//
+//
+//    // MARK: - Реальный сетевой вызов (заглушка)
+//    private func sendToGPT(question: String, screenshotPNG: Data, smart: Bool) async throws {
+//        // TODO: реализуй multipart/JSON. Пример протокола оставлен за тобой.
+//        NSLog("GPT SEND -> q=\(question), smart=\(smart), bytes=\(screenshotPNG.count)")
+//    }
+//}
 
 // MARK: - Внутренняя однофайловая реализация снимка экрана
 
@@ -541,4 +821,66 @@ public struct WindowChromeTweaks: View {
     public var body: some View { Color.clear.ignoresSafeArea() }
 }
 #endif
+
+
+
+
+
+import Foundation
+
+/// Потокобезопасный буфер последних реплик с таймстемпами.
+/// Хранит подтверждённые куски и актуальный partial-хвост.
+final class TranscriptBuffer {
+    static let shared = TranscriptBuffer()
+    private init() {}
+
+    private struct Item { let t: Date; let text: String }
+    private let q = DispatchQueue(label: "TranscriptBuffer.q", qos: .userInitiated)
+    private var items: [Item] = []
+    private var partial: Item? = nil
+
+    /// Добавить подтверждённый (final) текст
+    func appendFinal(_ text: String, at time: Date = .init()) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        q.async {
+            self.items.append(.init(t: time, text: clean))
+            // ограничим рост буфера (по числу элементов)
+            if self.items.count > 500 { self.items.removeFirst(self.items.count - 500) }
+            self.partial = nil // сбрасываем текущий хвост
+        }
+    }
+
+    /// Обновить текущий partial (неподтверждённый) текст
+    func setPartial(_ text: String, at time: Date = .init()) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        q.async {
+            self.partial = clean.isEmpty ? nil : .init(t: time, text: clean)
+        }
+    }
+
+    /// Хвост за N секунд, с жёстной усечкой по символам.
+    func tail(lastSeconds: Int = 40, maxChars: Int = 900) -> String {
+        let now = Date()
+        return q.sync {
+            let cut = now.addingTimeInterval(TimeInterval(-lastSeconds))
+            var chunks = items.filter { $0.t >= cut }.map { $0.text }
+            if let p = partial, p.t >= cut { chunks.append(p.text) }
+            var s = chunks.joined(separator: " ")
+            if s.count > maxChars {
+                s = String(s.suffix(maxChars))
+            }
+            return s.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    func clear() {
+        q.async {
+            self.items.removeAll(keepingCapacity: false)
+            self.partial = nil
+        }
+    }
+}
+
+
 

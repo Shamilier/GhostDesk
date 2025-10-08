@@ -5,15 +5,77 @@ import WhisperKit
 import AVFAudio
 import Combine
 import SwiftUI
-import Combine
 import AVFoundation
-import CoreML
-import WhisperKit
-
-import ScreenCaptureKit
 import CoreMedia
 import Accelerate
 import CoreGraphics
+
+// MARK: - Простой Energy VAD с гистерезисом и zero-fill для пауз
+fileprivate struct EnergyVAD {
+    enum Mode { case passThrough, zeroFill }
+
+    let sr: Int
+    var mode: Mode = .zeroFill
+    var noiseDb: Float = -50
+    let enterMarginDb: Float = 8
+    let exitMarginDb: Float = 4
+    let hardSpeechFloorDb: Float = -45
+    let emaAlpha: Float = 0.95
+    let hangoverFrames: Int = 10      // ~300 мс держим "речь"
+    let attackFrames: Int = 2         // ~160 мс ждём стабильной атаки
+
+    private(set) var inSpeech = false
+    private var hangover = 0
+    private var attack = 0
+
+    fileprivate init(sr: Int, mode: Mode = .zeroFill) {
+        self.sr = sr
+        self.mode = mode
+    }
+
+    mutating func process(_ x: [Float]) -> [Float] {
+        guard !x.isEmpty else { return x }
+
+        var rms: Float = 0
+        x.withUnsafeBufferPointer { ptr in
+            vDSP_rmsqv(ptr.baseAddress!, 1, &rms, vDSP_Length(x.count))
+        }
+        let db = 20 * log10(max(rms, 1e-7))
+
+        let thrEnter = max(noiseDb + enterMarginDb, hardSpeechFloorDb)
+        let thrExit  = noiseDb + exitMarginDb
+
+        if inSpeech {
+            if db > thrExit {
+                hangover = hangoverFrames
+            } else {
+                hangover = max(0, hangover - 1)
+                if hangover == 0 { inSpeech = false }
+                noiseDb = emaAlpha * noiseDb + (1 - emaAlpha) * db
+            }
+        } else {
+            noiseDb = emaAlpha * noiseDb + (1 - emaAlpha) * db
+            if db > thrEnter {
+                attack = min(attackFrames, attack + 1)
+                if attack >= attackFrames {
+                    inSpeech = true
+                    hangover = hangoverFrames
+                }
+            } else {
+                attack = 0
+            }
+        }
+
+        if inSpeech {
+            return x
+        } else {
+            switch mode {
+            case .passThrough: return []
+            case .zeroFill:    return [Float](repeating: 0, count: x.count)
+            }
+        }
+    }
+}
 
 final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
 
@@ -25,9 +87,9 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
     @Published var lastError: String?
     @Published private(set) var isTranscribing = false
 
-    var isTranscribingLegacy: Bool { isTranscribing } // если где-то в UI использовалось
+    var isTranscribingLegacy: Bool { isTranscribing }
 
-    // MARK: - Capture (как в рабочем эталоне)
+    // MARK: - Capture
     private var stream: SCStream?
     private let outputQueue = DispatchQueue(label: "SystemAudio.StreamOutput")
 
@@ -40,11 +102,17 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         interleaved: false
     )!
 
-    // MARK: - WhisperKit streaming (как в эталоне)
+    // MARK: - WhisperKit streaming
     private var whisper: WhisperKit?
     private var transcriber: AudioStreamTranscriber?
     private let noopVideoSink = NoopVideoSink()
 
+    // Sticky partial bookkeeping
+    private var lastNonEmptyPartialAt = Date()
+    private var lastShownPartial = ""
+    private var lastPartialChangeAt = Date()
+
+    // Confirmed bookkeeping
     private var lastConfirmed = ""
     private var lastPartial = ""
     private var audioPackets = 0
@@ -53,13 +121,39 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
     private let keepSeconds = 10
     private let sampleRate = 16_000
 
+    // VAD
+    private var vad = EnergyVAD(sr: 16_000)
+
     // AudioProcessing storage
     private var samples: ContiguousArray<Float> = []
     private var energy: [Float] = []
     private var energyWindow: Int = 10
     private var bufferCallback: (([Float]) -> Void)? // приходит от WK
 
-    // MARK: - Helpers (как в эталоне)
+    // Soft-confirm timer
+    private var softConfirmTimer: DispatchSourceTimer?
+
+    // MARK: - Known-hallucinations filter (regex)
+    private lazy var hallucinationRegexes: [NSRegularExpression] = {
+        let patterns = [
+            #"(?i)редактор[^\n]{0,40}субтитр"#,
+            #"(?i)субтитр(ы|ов)?\s+(подогнал|добавил|добавила)"#,
+            #"(?i)спасибо\s+за\s+субтитры"#,
+            #"(?i)подпис(ись|ывайся|ка)#?"#,
+            #"(?i)смотрите\s+продолжение"#,
+            #"(?i)продолжение\s+следует"#
+        ]
+        return patterns.compactMap { try? NSRegularExpression(pattern: $0) }
+    }()
+
+    @inline(__always)
+    private func isKnownHallucination(_ s: String) -> Bool {
+        guard !s.isEmpty else { return false }
+        let range = NSRange(location: 0, length: (s as NSString).length)
+        return hallucinationRegexes.contains { $0.firstMatch(in: s, options: [], range: range) != nil }
+    }
+
+    // MARK: - Helpers
     @inline(__always)
     private func stripSpecialTokens(_ s: String) -> String {
         s.replacingOccurrences(of: #"<\|[^>]+\|>"#, with: "", options: .regularExpression)
@@ -82,6 +176,15 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         return t
     }
 
+    private func recentEnergyMean(seconds: Double) -> Float {
+        let perSec = 50 // мы пишем энергию каждые 20мс
+        let n = max(1, Int(seconds * Double(perSec)))
+        let start = max(0, energy.count - n)
+        guard start < energy.count else { return 0 }
+        let slice = energy[start..<energy.count]
+        return slice.reduce(0, +) / Float(slice.count)
+    }
+
     private func applyConfirmedDelta(_ delta: String) {
         let clean = delta.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
@@ -95,6 +198,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
     func clearLog() {
         transcriptLog.removeAll()
         partialText = ""
+        TranscriptBuffer.shared.clear()
     }
 
     func start() {
@@ -102,22 +206,29 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         phase = .starting
         lastError = nil
 
+        // сброс VAD и счётчиков
+        vad = EnergyVAD(sr: sampleRate)
+        samples.removeAll(keepingCapacity: true)
+        energy.removeAll(keepingCapacity: true)
+        lastConfirmed = ""
+        lastPartial = ""
+        lastShownPartial = ""
+        lastNonEmptyPartialAt = Date()
+        lastPartialChangeAt = Date()
+
         Task {
             do {
-                // 0) Проверка доступа (без SCAuthorization — совместимо с 12.3+)
                 guard ensureScreenRecordingAuthorized() else {
                     throw NSError(domain: "SystemAudio", code: 1,
                                   userInfo: [NSLocalizedDescriptionKey:
                                              "Доступ к записи экрана не выдан. Включи и перезапусти приложение."])
                 }
 
-                // 1) Запускаем захват системного аудио (как в «рабочем» коде)
                 try await startSystemAudioStream()
 
-                // 2) Поднимаем WhisperKit (локальная модель + загрузка при необходимости)
                 let cfg = WhisperKitConfig(
-                    model: "small",           // как в эталоне
-                    audioProcessor: self,     // ВАЖНО: мы — источник аудио
+                    model: "medium",
+                    audioProcessor: self,
                     load: true,
                     download: true,
                     useBackgroundDownloadSession: false
@@ -125,7 +236,6 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
                 let wk = try await WhisperKit(cfg)
                 self.whisper = wk
 
-                // 3) Создаём стример с теми же опциями
                 var options = DecodingOptions(
                     verbose: false,
                     task: .transcribe,
@@ -134,9 +244,11 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
                     skipSpecialTokens: true,
                     withoutTimestamps: true,
                     wordTimestamps: false,
-                    windowClipTime: 0.5
+                    windowClipTime: 1.0 // длиннее окно — увереннее закрытие
                 )
-                options.maxWindowSeek = 16_000 * 5 // как у тебя
+                options.maxWindowSeek = sampleRate * 3
+                options.suppressBlank = false            // важно: не душим blank-токены
+                options.temperature = 0.0
 
                 let tokenizer = wk.textDecoder.tokenizer!
 
@@ -149,38 +261,61 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
                     audioProcessor: self,
                     decodingOptions: options,
                     requiredSegmentsForConfirmation: 1,
-                    silenceThreshold: 0.30,
-                    compressionCheckWindow: 10,
-                    useVAD: false // оставить как в «идеале»
+                    silenceThreshold: 0.3,              // 0.35–0.40 — обычно оптимум
+                    compressionCheckWindow: 8,
+                    useVAD: true                          // вкл. внутренний VAD WhisperKit
                 ) { [weak self] _, state in
                     guard let self else { return }
 
-                    // confirmed -> в лог
+                    // CONFIRMED -> в лог (без фильтра по энергии)
                     let confirmedRaw = state.confirmedSegments.map(\.text).joined()
-                    let confirmed = stripSpecialTokens(confirmedRaw)
-                    if !confirmed.isEmpty, confirmed != lastConfirmed {
-                        let delta = String(confirmed.dropFirst(lastConfirmed.count))
-                        lastConfirmed = confirmed
-                        DispatchQueue.main.async {
-                            self.applyConfirmedDelta(delta)
+                    let confirmed = self.stripSpecialTokens(confirmedRaw)
+                    if !confirmed.isEmpty, confirmed != self.lastConfirmed {
+                        let delta = String(confirmed.dropFirst(self.lastConfirmed.count))
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !delta.isEmpty && !self.isKnownHallucination(delta) {
+                            self.lastConfirmed = confirmed
+                            DispatchQueue.main.async { self.applyConfirmedDelta(delta) }
+                            TranscriptBuffer.shared.appendFinal(delta, at: Date())
                         }
                     }
 
-                    // partial -> хвост в UI
+                    // PARTIAL -> живой хвост с «липкостью»
                     let unconf = state.unconfirmedSegments.map(\.text).joined()
                     let liveRaw = state.currentText.isEmpty ? unconf : state.currentText
-                    let live = stripSpecialTokens(liveRaw)
-                    if live != lastPartial {
-                        lastPartial = live
+                    let live = self.stripSpecialTokens(liveRaw)
+
+                    if live != self.lastPartial {
+                        self.lastPartial = live
+                        let candidate = self.streamFriendlyPartial(live)
+
                         DispatchQueue.main.async {
-                            self.partialText = self.streamFriendlyPartial(live)
+                            if !candidate.isEmpty && !self.isKnownHallucination(candidate) {
+                                self.partialText = candidate
+                                self.lastShownPartial = candidate
+                                self.lastNonEmptyPartialAt = Date()
+                                self.lastPartialChangeAt = Date()
+                            } else {
+                                // тишина/пусто — держим хвост до 1.2 c
+                                if Date().timeIntervalSince(self.lastNonEmptyPartialAt) > 1.2 {
+                                    self.partialText = ""
+                                    self.lastShownPartial = ""
+                                } else {
+                                    self.partialText = self.lastShownPartial
+                                }
+                            }
                         }
+
+                        TranscriptBuffer.shared.setPartial(live, at: Date())
                     }
                 }
 
                 self.transcriber = tr
                 try await tr.startStreamTranscription()
                 print("[WK] stream transcription started")
+
+                // soft-confirm таймер: дожимает хвост на паузе
+                startSoftConfirmTimer()
 
                 await MainActor.run {
                     self.isTranscribing = true
@@ -193,6 +328,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
                     self.phase = .idle
                 }
                 stopCapture()
+                stopSoftConfirmTimer()
             }
         }
     }
@@ -201,8 +337,17 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         guard phase == .running || phase == .starting else { return }
         phase = .stopping
 
+        stopSoftConfirmTimer()
+
         Task { await transcriber?.stopStreamTranscription() }
         transcriber = nil
+
+        // добиваем хвост, если он остался
+        let tail = partialText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !tail.isEmpty {
+            applyConfirmedDelta(tail)
+            TranscriptBuffer.shared.appendFinal(tail, at: Date())
+        }
 
         stopCapture()
         converter = nil
@@ -214,7 +359,43 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         }
     }
 
-    // MARK: - ScreenCaptureKit (audio-only) — как в эталоне
+    // MARK: - Soft-confirm timer
+    private func startSoftConfirmTimer() {
+        stopSoftConfirmTimer()
+        let timer = DispatchSource.makeTimerSource(queue: outputQueue)
+        timer.schedule(deadline: .now() + .milliseconds(150), repeating: .milliseconds(150))
+        timer.setEventHandler { [weak self] in
+            self?.softConfirmTick()
+        }
+        self.softConfirmTimer = timer
+        timer.resume()
+    }
+
+    private func stopSoftConfirmTimer() {
+        softConfirmTimer?.cancel()
+        softConfirmTimer = nil
+    }
+
+    private func softConfirmTick() {
+        // Тихо уже ~0.8 c и partial не менялся ~0.6 c — коммитим хвост
+        let silent = recentEnergyMean(seconds: 0.8) < 0.08
+        let stable = Date().timeIntervalSince(lastPartialChangeAt) > 0.6
+        let tail = partialText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard silent, stable, !tail.isEmpty else { return }
+
+        // Не коммитим совсем короткие/обрывочные куски
+        if tail.count > 20 || [".","!","?","…",":",";"].contains(tail.last) {
+            DispatchQueue.main.async {
+                self.applyConfirmedDelta(tail)
+            }
+            TranscriptBuffer.shared.appendFinal(tail, at: Date())
+            lastPartial = ""
+            lastShownPartial = ""
+        }
+    }
+
+    // MARK: - ScreenCaptureKit (audio-only)
     private func startSystemAudioStream() async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard let display = content.displays.first else {
@@ -225,7 +406,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         let filter = SCContentFilter(display: display, excludingWindows: [])
         let cfg = SCStreamConfiguration()
         cfg.capturesAudio = true
-        cfg.excludesCurrentProcessAudio = false
+        cfg.excludesCurrentProcessAudio = true   // не ловим свой звук
         cfg.sampleRate = 44_100
         cfg.channelCount = 2
         cfg.width = 8
@@ -235,7 +416,6 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         let stream = SCStream(filter: filter, configuration: cfg, delegate: self)
         self.stream = stream
 
-        // фиктивный видео-синк, чтобы SK не ныл
         try stream.addStreamOutput(noopVideoSink, type: .screen, sampleHandlerQueue: outputQueue)
         try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: outputQueue)
 
@@ -247,9 +427,6 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         stream = nil
         Task { try? await s?.stopCapture() }
     }
-
-    // MARK: - SCStreamDelegate
-    // (оставляем пустым)
 }
 
 extension SpeechTranscriber: SCStreamDelegate {}
@@ -263,19 +440,23 @@ extension SpeechTranscriber: SCStreamOutput {
               CMSampleBufferDataIsReady(sampleBuffer) else { return }
 
         if let floats = convertTo16kMonoFloat(sampleBuffer: sampleBuffer) {
+            // Пропускаем через внешний VAD: тишина -> нули той же длины
+            let gated = vad.process(floats)
+            guard !gated.isEmpty else { return }
+
             audioPackets += 1
-            totalFedSamples += floats.count
-            append(samples: floats)
-            bufferCallback?(floats) // триггер для стримера — как было у тебя
+            totalFedSamples += gated.count
+            append(samples: gated)
+            bufferCallback?(gated)
         }
     }
 }
 
-// MARK: - Converters (как в эталоне)
+// MARK: - Converters
 fileprivate extension SpeechTranscriber {
     func convertTo16kMonoFloat(sampleBuffer: CMSampleBuffer) -> [Float]? {
         guard CMSampleBufferDataIsReady(sampleBuffer),
-              let _ = CMSampleBufferGetFormatDescription(sampleBuffer),
+              CMSampleBufferGetFormatDescription(sampleBuffer) != nil,
               let pcmIn = sampleBuffer.toPCMBuffer() else { return nil }
 
         if converter == nil || converter!.inputFormat != pcmIn.format {
@@ -320,7 +501,7 @@ fileprivate extension CMSampleBuffer {
     }
 }
 
-// MARK: - AudioProcessing (как в эталоне)
+// MARK: - AudioProcessing (WhisperKit)
 extension SpeechTranscriber {
     static func loadAudio(fromPath audioFilePath: String,
                           channelMode: ChannelMode,
@@ -374,7 +555,6 @@ extension SpeechTranscriber {
 
     func startRecordingLive(inputDeviceID: DeviceID? = nil,
                             callback: (([Float]) -> Void)?) throws {
-        // как в эталоне: SCStream уже запущен, здесь только сохраняем колбэк и чистим буферы
         bufferCallback = callback
         samples.removeAll(keepingCapacity: true)
         energy.removeAll(keepingCapacity: true)
@@ -393,10 +573,10 @@ extension SpeechTranscriber {
         bufferCallback = callback
     }
 
-    // добавление семплов + «относительная энергия» (как в эталоне)
+    // шаг 20 мс для энергии
     fileprivate func append(samples new: [Float]) {
         samples.append(contentsOf: new)
-        let hop = max(1, 16_000 / 10) // 0.1s
+        let hop = max(1, sampleRate / 50) // 20 ms (320 семплов при 16 кГц)
         new.withUnsafeBufferPointer { ptr in
             var i = 0
             while i + hop <= new.count {
@@ -411,7 +591,7 @@ extension SpeechTranscriber {
     }
 }
 
-// фиктивный видео-синк (как в эталоне)
+// фиктивный видео-синк
 final class NoopVideoSink: NSObject, SCStreamOutput {
     func stream(_ stream: SCStream,
                 didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
@@ -420,7 +600,7 @@ final class NoopVideoSink: NSObject, SCStreamOutput {
     }
 }
 
-// MARK: - Screen Recording permission (CoreGraphics-путь)
+// MARK: - Screen Recording permission (CoreGraphics)
 @discardableResult
 private func ensureScreenRecordingAuthorized() -> Bool {
     if CGPreflightScreenCaptureAccess() { return true }

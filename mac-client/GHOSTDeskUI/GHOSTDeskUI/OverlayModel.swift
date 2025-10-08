@@ -51,7 +51,7 @@ final class OverlayModel: ObservableObject {
         ServerClient.shared.log("[STUB] recording = \(isRecording ? "on" : "off")")
     }
     func askHint() {
-        ServerClient.shared.log("[STUB] hint: собрать 20 сек текста и отправить на бэк")
+        Task { await HintAgent.shared.requestHint(windowSeconds: 40, maxChars: 900) }
     }
     func askSolve() {
         ServerClient.shared.log("[STUB] solve: сделать скрин и отправить на бэк (пока нет)")
