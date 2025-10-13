@@ -383,34 +383,6 @@ struct AskField: View {
 }
 
 
-
-
-// MARK: - GlassPill
-
-struct GlassPill: ButtonStyle {
-    var tint: Color? = nil
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(.thinMaterial)
-                    .overlay(Capsule().stroke(.white.opacity(0.2), lineWidth: 1))
-                    .shadow(
-                        color: (tint ?? .accentColor).opacity(configuration.isPressed ? 0.25 : 0.4),
-                        radius: configuration.isPressed ? 6 : 12,
-                        x: 0, y: 0
-                    )
-            )
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.spring(response: 0.28, dampingFraction: 0.9), value: configuration.isPressed)
-    }
-}
-
-
 @MainActor
 final class AskVM: ObservableObject {
     @Published var isSubmitting: Bool = false
@@ -419,7 +391,7 @@ final class AskVM: ObservableObject {
     @Published var canStop: Bool = false             // показать кнопку «Стоп»
 
     private var streamTask: Task<Void, Never>?       // чтобы уметь отменять
-    private let baseURL = URL(string: "http://localhost:8787")!
+    private let baseURL = URL(string: "https://api.disciplaner.online")!
     private let sessionId = UUID().uuidString        // одна сессия на жизненный цикл VM
 
     func cancelStream() {
@@ -582,46 +554,6 @@ final class AskVM: ObservableObject {
         streamTask = nil
     }
 }
-
-
-
-
-//@MainActor
-//final class AskVM: ObservableObject {
-//    /// Если хочешь блокировать кнопку "Submit" — можешь привязать её к этому флагу
-//    @Published var isSubmitting: Bool = false
-//
-//    /// Точка входа: дергается из OverlayRootView.submitQuestion()
-//    func submit(question: String, smart: Bool) async {
-//        let q = question.trimmingCharacters(in: .whitespacesAndNewlines)
-//        guard !q.isEmpty else {
-//            NSLog("AskVM: skipped submit — empty question")
-//            return
-//        }
-//        isSubmitting = true
-//        NSLog("AskVM isSubmitting = true")
-//        defer {
-//            isSubmitting = false
-//            NSLog("AskVM isSubmitting = false")
-//        }
-//
-//        do {
-//            let png = try await Snapshot.captureAllDisplaysPNG(maxSide: 1280)
-//            try await sendToGPT(question: q, screenshotPNG: png, smart: smart)
-//        } catch {
-//            NSLog("AskVM submit failed: \(error.localizedDescription)")
-//        }
-//    }
-//
-//
-//    // MARK: - Реальный сетевой вызов (заглушка)
-//    private func sendToGPT(question: String, screenshotPNG: Data, smart: Bool) async throws {
-//        // TODO: реализуй multipart/JSON. Пример протокола оставлен за тобой.
-//        NSLog("GPT SEND -> q=\(question), smart=\(smart), bytes=\(screenshotPNG.count)")
-//    }
-//}
-
-// MARK: - Внутренняя однофайловая реализация снимка экрана
 
 private enum Snapshot {
     enum Error: Swift.Error {
@@ -882,5 +814,29 @@ final class TranscriptBuffer {
     }
 }
 
+// MARK: - GlassPill
+
+struct GlassPill: ButtonStyle {
+    var tint: Color? = nil
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(.thinMaterial)
+                    .overlay(Capsule().stroke(.white.opacity(0.2), lineWidth: 1))
+                    .shadow(
+                        color: (tint ?? .accentColor).opacity(configuration.isPressed ? 0.25 : 0.4),
+                        radius: configuration.isPressed ? 6 : 12,
+                        x: 0, y: 0
+                    )
+            )
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.spring(response: 0.28, dampingFraction: 0.9), value: configuration.isPressed)
+    }
+}
 
 

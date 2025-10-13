@@ -57,3 +57,8 @@ final class OverlayModel: ObservableObject {
         ServerClient.shared.log("[STUB] solve: сделать скрин и отправить на бэк (пока нет)")
     }
 }
+//
+// /Users/shamilgaliev18mail.ru/Library/Developer/Xcode/Archives/2025-10-08/Ghost Desk 08.10.2025, 18.34.xcarchive/Products/Applications/Ghost Desk.app
+
+
+

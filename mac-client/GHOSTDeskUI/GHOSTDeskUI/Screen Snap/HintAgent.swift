@@ -12,7 +12,7 @@ final class HintAgent: ObservableObject {
     @Published var canStop = false
 
     private var task: Task<Void, Never>?
-    private let baseURL = URL(string: "http://localhost:8787")!
+    private let baseURL = URL(string: "https://api.disciplaner.online")!
     private let sessionId = UUID().uuidString
 
     // Инструкция для режима подсказки (только речь)

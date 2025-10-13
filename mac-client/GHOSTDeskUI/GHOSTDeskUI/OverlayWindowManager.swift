@@ -1,3 +1,4 @@
+// OverlayWindowManager.swift
 import AppKit
 import SwiftUI
 import Carbon.HIToolbox   // ← добавь это
