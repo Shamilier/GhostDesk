@@ -47,10 +47,10 @@ public struct TranscriptView: View {
                 }
                 .padding(14)
             }
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.ultraThinMaterial)
-            )
+//            .background(
+//                RoundedRectangle(cornerRadius: 16, style: .continuous)
+//                    .fill(.ultraThinMaterial)
+//            )
             .onAppear {
                 hasAppeared = true
                 guard autoScroll else { return }
@@ -77,5 +77,23 @@ public struct TranscriptView: View {
                 }
             }
         }
+    }
+}
+private struct GlassCard<Content: View>: View {
+    var content: () -> Content
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.thinMaterial) // плотнее и без дымки
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(
+                            LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.12)],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing),
+                            lineWidth: 1
+                        )
+                )
+        }
+        .overlay(content())
     }
 }

@@ -16,12 +16,17 @@ struct OverlayRootView: View {
     @State private var autoScroll = true
     @State private var showCopiedToast = false
     @State private var isExpanded = false
-    @State private var selectedTab: ToolbarTab = .listen
+    @State private var selectedTab: CommandTab = .listen
     @Namespace private var islandNS
     @State private var question: String = ""
     @State private var smartMode: Bool = false
     @FocusState private var askFocused: Bool
     @ObservedObject private var hint = HintAgent.shared
+    @State private var showTranscript = false
+    @State private var showResponse: Bool = false
+
+    
+
 
 
     // наш безопасный ленивый транскрайбер
@@ -88,137 +93,208 @@ struct OverlayRootView: View {
     // MARK: - Listen Panel
 
     private var listenPanel: some View {
-        VStack(spacing: 14) {
-            header
-            TranscriptView(
-                logLines: transcriber.transcriptLog,
-                partial: transcriber.partialText,
-                autoScroll: $autoScroll
-            )
-            .frame(minHeight: 200, maxHeight: 300)
-            if hint.isRunning || !hint.draft.isEmpty || hint.error != nil {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Подсказка")
-                            .font(.headline)
-                        if hint.isRunning { ProgressView().controlSize(.small) }
-                        Spacer()
-                        if hint.canStop {
-                            Button("Стоп") { hint.cancel() }
-                                .buttonStyle(GlassPill(tint: .red))
+        GlassCard {
+            VStack(alignment: .leading, spacing: 10) {
+
+                // HEADER
+                HStack(spacing: 12) {
+                    LogoOrb()
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(showTranscript ? "Транскрипт" : "Инсайты в реальном времени")
+                            .font(.headline.weight(.semibold))
+                        HStack(spacing: 8) {
+                            LiveDot(active: transcriber.isTranscribing)
+                            Text(transcriber.isTranscribing ? "Идёт запись…" : "Готов к запуску")
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(transcriber.isTranscribing ? .green.opacity(0.9) : .secondary)
                         }
                     }
-                    if let err = hint.error {
-                        Text(err).foregroundColor(.red).font(.subheadline)
-                    }
-                    if !hint.draft.isEmpty {
-                        Text(hint.draft)
-                            .textSelection(.enabled)
-                            .font(.body)
-                            .fixedSize(horizontal: false, vertical: true)
-                        HStack {
-                            Button("Копировать") {
-                                #if os(macOS)
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(hint.draft, forType: .string)
-                                #endif
-                            }.buttonStyle(GlassPill())
-                            Spacer()
-                            Button("Очистить") { hint.draft = "" }.buttonStyle(GlassPill(tint: .secondary))
+
+                    Spacer()
+
+                    Button(showTranscript ? "Показать инсайты" : "Показать транскрипт") {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                            showTranscript.toggle()
                         }
+                    }
+                    .buttonStyle(GlassPill())
+
+                    Button(action: {
+                        #if os(macOS)
+                        let lines = transcriber.transcriptLog
+                        let tail  = transcriber.partialText.isEmpty ? [] : [transcriber.partialText]
+                        let text  = (lines + tail).joined(separator: "\n")
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(text, forType: .string)
+                        #endif
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showCopiedToast = true }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
+                            withAnimation(.easeOut(duration: 0.25)) { showCopiedToast = false }
+                        }
+                    }) {
+                        Label("Копия", systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(GlassPill())
+                    .disabled(transcriber.transcriptLog.isEmpty && transcriber.partialText.isEmpty)
+
+                    Button(action: {
+                        if transcriber.phase == .running { transcriber.stop() }
+                        else if transcriber.phase == .idle { transcriber.start() }
+                    }) {
+                        let running  = transcriber.phase == .running
+                        let starting = transcriber.phase == .starting
+                        Label(starting ? "Запуск…" : (running ? "Стоп" : "Старт"),
+                              systemImage: running ? "stop.fill" : "play.fill")
+                    }
+                    .buttonStyle(GlassPill(tint: (transcriber.phase == .running) ? .red : .accentColor))
+                    .disabled(transcriber.phase == .starting)
+                }
+
+                Divider().overlay(Color.white.opacity(0.10))
+
+                // BODY — вертикальная колонка
+                Group {
+                    if showTranscript {
+                        TranscriptView(
+                            logLines: transcriber.transcriptLog,
+                            partial: transcriber.partialText,
+                            autoScroll: $autoScroll
+                        )
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    } else {
+                        InsightsPanel(
+                            onNext: { /* TODO */ },
+                            onTopic: { /* TODO */ },
+                            onQuestion: { /* TODO */ }
+                        )
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.12), lineWidth: 1)
-                )
+                .frame(minHeight: 320, maxHeight: 520) // ↑ вертикальная ориентация
+                HintStrip()
             }
-
-            footer
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.1))
-        )
-        .shadow(radius: 10)
+        .frame(maxWidth: 600)   // ↓ уже, чем раньше
+        .padding(.horizontal, 8)
     }
+
+    private struct InsightsPanel: View {
+        var onNext: () -> Void = {}
+        var onTopic: () -> Void = {}
+        var onQuestion: () -> Void = {}
+
+        var body: some View {
+            ZStack {
+                let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+                shape
+                    .fill(Color.white.opacity(0.03))
+                    .overlay(shape.stroke(.white.opacity(0.08), lineWidth: 1))
+
+                // КНОПКИ ВНУТРИ ПОЛЯ (по центру)
+                VStack(spacing: 12) {
+                    LazyVGrid(
+                        columns: [GridItem(.flexible())],
+                        alignment: .center,
+                        spacing: 8
+                    ) {
+                        Button("Что сказать дальше?", action: onNext)
+                            .buttonStyle(GlassPill())
+                        Button("О чём речь?", action: onTopic)
+                            .buttonStyle(GlassPill())
+                        Button("Какой вопрос задать?", action: onQuestion)
+                            .buttonStyle(GlassPill())
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: 420) // чтобы сетка держала красивую ширину
+            }
+            .frame(maxWidth: .infinity, minHeight: 240, alignment: .center)
+        }
+    }
+
+
+
+    
+    private struct GlassCard<Content: View>: View {
+        @ViewBuilder var content: () -> Content
+
+        var body: some View {
+            ZStack {
+                let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+
+                shape
+                    .fill(.thinMaterial) // без дымки и лишних теней
+                    .overlay(
+                        shape.stroke(
+                            LinearGradient(
+                                colors: [.white.opacity(0.45), .white.opacity(0.12)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                    )
+
+                // ВАЖНО: контент ВНУТРИ, а не в overlay
+                VStack(spacing: 0) { content() }
+                    .padding(12)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+    }
+
+
+
+
 
     // MARK: - Ask Panel
 
     private var askPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                LogoOrb()
-                PhotonText("Ask about your screen")
-                    .font(.headline)
-                Spacer()
-            }
-
-            AskField(
+        VStack(spacing: 12) {
+            AskBar(
                 text: $question,
-                smartEnabled: $smartMode,
                 isSubmitting: askVM.isSubmitting,
-                onSubmit: submitQuestion,
-                focused: $askFocused          // ← добавь эту строку
+                onSubmit: submitQuestion
             )
+            .frame(maxWidth: 720)
 
+            if showResponse {
+                AIResponseCard(
+                    title: "AI Response",
+                    query: question,
+                    markdown: askVM.answerDraft.isEmpty ? "Генерация ответа…" : askVM.answerDraft,
+                    isStreaming: askVM.isSubmitting,
+                    canStop: askVM.canStop,
+                    onCopy: {
+                        #if os(macOS)
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(askVM.answerDraft, forType: .string)
+                        #endif
+                    },
+                    onClose: {
+                        askVM.cancelStream()
+                        askVM.answerDraft = ""
+                        askVM.answerError = nil
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) { showResponse = false }
+                    },
+                    onStop: { askVM.cancelStream() }
+                )
 
-            // ↓↓↓ БЛОК ОТВЕТА ↓↓↓
-            VStack(alignment: .leading, spacing: 8) {
-                if let err = askVM.answerError {
-                    Text("Ошибка: \(err)")
-                        .font(.subheadline)
-                        .foregroundStyle(.red)
-                }
-
-                if !askVM.answerDraft.isEmpty || askVM.isSubmitting {
-                    ScrollView {
-                        Text(askVM.answerDraft.isEmpty ? "Генерация ответа…" : askVM.answerDraft)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(12)
-                    }
-                    .frame(minHeight: 80, maxHeight: 220)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.12), lineWidth: 1)
-                    )
-
-                    HStack {
-                        Button("Копировать") {
-                            #if os(macOS)
-                            let s = askVM.answerDraft
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(s, forType: .string)
-                            #endif
-                        }
-                        .buttonStyle(GlassPill())
-
-                        if askVM.canStop {
-                            Button("Стоп") { askVM.cancelStream() }
-                                .buttonStyle(GlassPill(tint: .red))
-                        }
-
-                        Spacer()
-                    }
-                }
+                .frame(maxWidth: 860, minHeight: 220)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
-            // ↑↑↑ БЛОК ОТВЕТА ↑↑↑
-
         }
-        .padding(.vertical, 2)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.1))
-        )
-        .shadow(radius: 10)
+        .onChange(of: askVM.isSubmitting) { v in
+            if v { withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) { showResponse = true } }
+        }
+        .onChange(of: askVM.answerDraft) { v in
+            if !v.isEmpty { showResponse = true }          // на случай мгновенного ответа
+        }
+        .padding(.horizontal, 8)
     }
+
+
 
 
     // MARK: - Header
@@ -327,7 +403,337 @@ struct OverlayRootView: View {
 
 }
 
+
+// Универсальная стеклянная карточка без теней
+private struct GlassCard<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+
+        ZStack {
+            // материал кладём через background(_:in:), чтобы не ловить ошибки ShapeStyle
+            Color.clear
+                .background(.ultraThinMaterial, in: shape)
+                .overlay(
+                    shape.stroke(
+                        LinearGradient(
+                            colors: [.white.opacity(0.45), .white.opacity(0.12)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+                )
+
+            VStack(spacing: 0) { content() }
+                .padding(12)
+        }
+        .clipShape(shape)
+        .contentShape(shape)
+    }
+}
+
+
+private struct HintStrip: View {
+    @ObservedObject var hint: HintAgent = .shared
+
+    var body: some View {
+        if hint.isRunning || !hint.draft.isEmpty || hint.error != nil {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Подсказка")
+                        .font(.headline)
+                    if hint.isRunning { ProgressView().controlSize(.small) }
+                    Spacer()
+                    if hint.canStop {
+                        Button("Стоп") { hint.cancel() }
+                            .buttonStyle(GlassPill(tint: .red))
+                    }
+                }
+
+                if let err = hint.error {
+                    Text(err).foregroundStyle(.red).font(.subheadline)
+                }
+
+                if !hint.draft.isEmpty {
+                    Text(hint.draft)
+                        .textSelection(.enabled)
+                        .font(.body)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack {
+                        Button("Копировать") {
+                            #if os(macOS)
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(hint.draft, forType: .string)
+                            #endif
+                        }
+                        .buttonStyle(GlassPill())
+                        Spacer()
+                        Button("Очистить") { hint.draft = "" }
+                            .buttonStyle(GlassPill(tint: .secondary))
+                    }
+                }
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(.white.opacity(0.12), lineWidth: 1)
+                    )
+            )
+        }
+    }
+}
+
+private struct AIResponseCard: View {
+    var title: String
+    var query: String
+    var markdown: String
+    var isStreaming: Bool
+    var canStop: Bool
+    var onCopy: () -> Void
+    var onClose: () -> Void
+    var onStop: () -> Void
+
+    var body: some View {
+        GlassCard {
+            VStack(spacing: 0) {
+                // Header
+                HStack(spacing: 10) {
+                    Label(title, systemImage: "sparkles")
+                        .font(.headline.weight(.semibold))
+
+                    Spacer()
+
+                    if !query.isEmpty {
+                        Text(query)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(
+                                Capsule().fill(Color.white.opacity(0.06))
+                                    .overlay(Capsule().stroke(.white.opacity(0.12), lineWidth: 1))
+                            )
+                    }
+
+                    Button(action: onCopy) { Image(systemName: "doc.on.doc") }
+                        .buttonStyle(MiniIconButton())
+
+                    if canStop {
+                        Button(action: onStop) { Image(systemName: "stop.fill") }
+                            .buttonStyle(MiniIconButton())
+                    }
+
+                    Button(action: onClose) { Image(systemName: "xmark") }
+                        .buttonStyle(MiniIconButton())
+                }
+                .padding(.bottom, 8)
+
+                Divider().overlay(Color.white.opacity(0.10))
+
+                // Body (Markdown)
+                ScrollView {
+                    let attr = (try? AttributedString(markdown: markdown)) ?? AttributedString(markdown)
+                    Text(attr)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                }
+                .frame(minHeight: 180)
+            }
+            .padding(12)
+        }
+    }
+}
+
+
+
+
+
 // MARK: - AskField
+
+private struct AskBar: View {
+    @Binding var text: String
+    var isSubmitting: Bool
+    var onSubmit: () async -> Void
+
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "text.magnifyingglass")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.secondary)
+
+                TextField("Задай вопрос об экране или аудио", text: $text, axis: .vertical)
+                    .lineLimit(1...3)
+                    .textFieldStyle(.plain)
+                    .focused($focused)
+                    .onSubmit { Task { await onSubmit() } }
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 42) // ← внутренняя капсула
+
+            Button(isSubmitting ? "Submitting…" : "Submit") {
+                Task { await onSubmit() }
+            }
+            .keyboardShortcut(.return, modifiers: [])
+            .buttonStyle(GlassPill(tint: .accentColor))
+            .disabled(isSubmitting)
+        }
+        .padding(8)
+        .frame(height: 58) // ← ВСЯ панель фиксирована по высоте
+        .background(
+            Color.clear.background(
+                .ultraThinMaterial,
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(.white.opacity(0.18), lineWidth: 1)
+        )
+    }
+}
+
+
+
+private struct AskInputBar: View {
+    @Binding var text: String
+    @Binding var smart: Bool
+    var isSubmitting: Bool
+    var focus: FocusState<Bool>.Binding
+    var onSubmit: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            // маленький чип Smart
+            Button {
+                smart.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "bolt.fill")
+                    Text("Smart")
+                }
+                .font(.system(size: 12, weight: .semibold))
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(
+                    .ultraThinMaterial,
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(.white.opacity(0.18), lineWidth: 1)
+                )
+
+            }
+            .buttonStyle(.plain)
+
+            // поле ввода — одна строка, как у Glass
+            TextField("Ask about your screen or audio", text: $text)
+                .focused(focus)
+                .textFieldStyle(.plain)
+                .font(.system(size: 16, weight: .medium))
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(
+                    Capsule().fill(Color.white.opacity(0.06))
+                        .overlay(Capsule().stroke(.white.opacity(0.10), lineWidth: 1))
+                )
+                .onSubmit { onSubmit() }                    // Enter отправляет
+                .disableAutocorrection(true)
+
+            Button(isSubmitting ? "Submitting…" : "Submit") {
+                onSubmit()
+            }
+            .font(.system(size: 14, weight: .semibold))
+            .padding(.horizontal, 14).padding(.vertical, 9)
+            .background(
+                Capsule().fill(Color.accentColor)
+                    .overlay(Capsule().stroke(.white.opacity(0.20), lineWidth: 0.5))
+            )
+            .foregroundStyle(.white)
+            .disabled(isSubmitting)
+            .keyboardShortcut(.return, modifiers: [.command]) // ⌘↩ тоже шлёт
+        }
+    }
+}
+
+
+private struct ResponseCard: View {
+    var questionTitle: String
+    var bodyText: String
+    var isLoading: Bool
+    var canStop: Bool
+    var onCopy: () -> Void
+    var onClose: () -> Void
+    var onStop: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            // header
+            HStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    Circle().fill(Color.white.opacity(0.15)).frame(width: 10, height: 10)
+                    Text(questionTitle)
+                        .font(.system(size: 14, weight: .semibold))
+                }
+
+                Spacer()
+
+                Button(action: onCopy) {
+                    Image(systemName: "doc.on.doc")
+                }
+                .buttonStyle(MiniIconButton())
+
+                if canStop {
+                    Button(action: onStop) {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(MiniIconButton())
+                }
+
+                Button(action: onClose) {
+                    Image(systemName: "xmark.circle.fill")
+                }
+                .buttonStyle(MiniIconButton())
+            }
+
+            Divider().overlay(Color.white.opacity(0.08))
+
+            // body
+            ScrollView {
+                Text(bodyText)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .font(.system(size: 15))
+                    .padding(.vertical, 4)
+            }
+            .frame(minHeight: 160, maxHeight: 420)
+        }
+        .padding(6)
+    }
+}
+
+
+private struct MiniIconButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12.5, weight: .semibold))
+            .frame(width: 28, height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(.thinMaterial)
+                    .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white.opacity(0.18), lineWidth: 0.75))
+            )
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+    }
+}
+
 
 // AskField
 struct AskField: View {
@@ -379,6 +785,34 @@ struct AskField: View {
         .padding(.horizontal, 6)
         .contentShape(Rectangle())
         .allowsHitTesting(true)
+    }
+}
+
+
+
+
+// MARK: - GlassPill
+
+struct GlassPill: ButtonStyle {
+    var tint: Color? = nil
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(.thinMaterial)
+                    .overlay(Capsule().stroke(.white.opacity(0.2), lineWidth: 1))
+                    .shadow(
+                        color: (tint ?? .accentColor).opacity(configuration.isPressed ? 0.25 : 0.4),
+                        radius: configuration.isPressed ? 6 : 12,
+                        x: 0, y: 0
+                    )
+            )
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.spring(response: 0.28, dampingFraction: 0.9), value: configuration.isPressed)
     }
 }
 
@@ -554,6 +988,46 @@ final class AskVM: ObservableObject {
         streamTask = nil
     }
 }
+
+
+
+
+//@MainActor
+//final class AskVM: ObservableObject {
+//    /// Если хочешь блокировать кнопку "Submit" — можешь привязать её к этому флагу
+//    @Published var isSubmitting: Bool = false
+//
+//    /// Точка входа: дергается из OverlayRootView.submitQuestion()
+//    func submit(question: String, smart: Bool) async {
+//        let q = question.trimmingCharacters(in: .whitespacesAndNewlines)
+//        guard !q.isEmpty else {
+//            NSLog("AskVM: skipped submit — empty question")
+//            return
+//        }
+//        isSubmitting = true
+//        NSLog("AskVM isSubmitting = true")
+//        defer {
+//            isSubmitting = false
+//            NSLog("AskVM isSubmitting = false")
+//        }
+//
+//        do {
+//            let png = try await Snapshot.captureAllDisplaysPNG(maxSide: 1280)
+//            try await sendToGPT(question: q, screenshotPNG: png, smart: smart)
+//        } catch {
+//            NSLog("AskVM submit failed: \(error.localizedDescription)")
+//        }
+//    }
+//
+//
+//    // MARK: - Реальный сетевой вызов (заглушка)
+//    private func sendToGPT(question: String, screenshotPNG: Data, smart: Bool) async throws {
+//        // TODO: реализуй multipart/JSON. Пример протокола оставлен за тобой.
+//        NSLog("GPT SEND -> q=\(question), smart=\(smart), bytes=\(screenshotPNG.count)")
+//    }
+//}
+
+// MARK: - Внутренняя однофайловая реализация снимка экрана
 
 private enum Snapshot {
     enum Error: Swift.Error {
@@ -814,29 +1288,5 @@ final class TranscriptBuffer {
     }
 }
 
-// MARK: - GlassPill
-
-struct GlassPill: ButtonStyle {
-    var tint: Color? = nil
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(.thinMaterial)
-                    .overlay(Capsule().stroke(.white.opacity(0.2), lineWidth: 1))
-                    .shadow(
-                        color: (tint ?? .accentColor).opacity(configuration.isPressed ? 0.25 : 0.4),
-                        radius: configuration.isPressed ? 6 : 12,
-                        x: 0, y: 0
-                    )
-            )
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.spring(response: 0.28, dampingFraction: 0.9), value: configuration.isPressed)
-    }
-}
 
 
