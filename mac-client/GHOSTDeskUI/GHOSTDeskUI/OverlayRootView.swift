@@ -990,43 +990,6 @@ final class AskVM: ObservableObject {
 }
 
 
-
-
-//@MainActor
-//final class AskVM: ObservableObject {
-//    /// Если хочешь блокировать кнопку "Submit" — можешь привязать её к этому флагу
-//    @Published var isSubmitting: Bool = false
-//
-//    /// Точка входа: дергается из OverlayRootView.submitQuestion()
-//    func submit(question: String, smart: Bool) async {
-//        let q = question.trimmingCharacters(in: .whitespacesAndNewlines)
-//        guard !q.isEmpty else {
-//            NSLog("AskVM: skipped submit — empty question")
-//            return
-//        }
-//        isSubmitting = true
-//        NSLog("AskVM isSubmitting = true")
-//        defer {
-//            isSubmitting = false
-//            NSLog("AskVM isSubmitting = false")
-//        }
-//
-//        do {
-//            let png = try await Snapshot.captureAllDisplaysPNG(maxSide: 1280)
-//            try await sendToGPT(question: q, screenshotPNG: png, smart: smart)
-//        } catch {
-//            NSLog("AskVM submit failed: \(error.localizedDescription)")
-//        }
-//    }
-//
-//
-//    // MARK: - Реальный сетевой вызов (заглушка)
-//    private func sendToGPT(question: String, screenshotPNG: Data, smart: Bool) async throws {
-//        // TODO: реализуй multipart/JSON. Пример протокола оставлен за тобой.
-//        NSLog("GPT SEND -> q=\(question), smart=\(smart), bytes=\(screenshotPNG.count)")
-//    }
-//}
-
 // MARK: - Внутренняя однофайловая реализация снимка экрана
 
 private enum Snapshot {
@@ -1061,10 +1024,6 @@ private enum Snapshot {
 
         // Самый совместимый вариант для разных SDK/macOS
         let filter = SCContentFilter(display: main, excludingWindows: [])
-
-
-
-
 
         // Конфигурация стрима
         let cfg = SCStreamConfiguration()
