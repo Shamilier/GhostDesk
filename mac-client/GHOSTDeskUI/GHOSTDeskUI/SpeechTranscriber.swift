@@ -120,6 +120,12 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
 
     private let keepSeconds = 10
     private let sampleRate = 16_000
+    private let bundledModelsFolderName = "WhisperModels"
+    private let requiredModelArtifacts = [
+        "MelSpectrogram.mlmodelc",
+        "AudioEncoder.mlmodelc",
+        "TextDecoder.mlmodelc"
+    ]
 
     // VAD
     private var vad = EnergyVAD(sr: 16_000)
@@ -159,6 +165,61 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         s.replacingOccurrences(of: #"<\|[^>]+\|>"#, with: "", options: .regularExpression)
          .replacingOccurrences(of: "Waiting for speech...", with: "")
          .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    @inline(__always)
+    private func ensureBundledModelIfAvailable(named modelName: String) -> URL? {
+        guard let resourcesRoot = Bundle.main.resourceURL else { return nil }
+        let modelsRoot = resourcesRoot.appendingPathComponent(bundledModelsFolderName, isDirectory: true)
+        let fm = FileManager.default
+
+        guard let supportDir = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("WhisperKit", isDirectory: true) else {
+            return nil
+        }
+
+        guard let candidates = try? fm.contentsOfDirectory(
+            at: modelsRoot,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return nil
+        }
+
+        var matchedFolder: URL?
+
+        for source in candidates {
+            guard (try? source.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+
+            let destination = supportDir.appendingPathComponent(source.lastPathComponent, isDirectory: true)
+
+            if !validateModelArtifacts(at: destination) {
+                do {
+                    if fm.fileExists(atPath: destination.path) {
+                        try fm.removeItem(at: destination)
+                    }
+                    try fm.createDirectory(at: supportDir, withIntermediateDirectories: true)
+                    try fm.copyItem(at: source, to: destination)
+                } catch {
+                    print("[SpeechTranscriber] Failed to hydrate bundled Whisper model from \(source.lastPathComponent): \(error)")
+                    continue
+                }
+            }
+
+            if source.lastPathComponent.lowercased().contains(modelName.lowercased()),
+               validateModelArtifacts(at: destination) {
+                matchedFolder = destination
+            }
+        }
+
+        return matchedFolder
+    }
+
+    @inline(__always)
+    private func validateModelArtifacts(at folder: URL) -> Bool {
+        let fm = FileManager.default
+        return requiredModelArtifacts.allSatisfy { artifact in
+            fm.fileExists(atPath: folder.appendingPathComponent(artifact).path)
+        }
     }
 
     private func streamFriendlyPartial(_ s: String) -> String {
@@ -226,11 +287,21 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
 
                 try await startSystemAudioStream()
 
+                let modelName = "medium"
+                let localModelFolder = ensureBundledModelIfAvailable(named: modelName)
+
+                if let localModelFolder {
+                    print("[SpeechTranscriber] Using bundled Whisper model at \(localModelFolder.path)")
+                } else {
+                    print("[SpeechTranscriber] Bundled model not found, falling back to download")
+                }
+
                 let cfg = WhisperKitConfig(
-                    model: "medium",
+                    model: localModelFolder == nil ? modelName : nil,
+                    modelFolder: localModelFolder?.path,
                     audioProcessor: self,
                     load: true,
-                    download: true,
+                    download: localModelFolder == nil,
                     useBackgroundDownloadSession: false
                 )
                 let wk = try await WhisperKit(cfg)
