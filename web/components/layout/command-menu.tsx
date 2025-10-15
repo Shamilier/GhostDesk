@@ -126,7 +126,7 @@ export function CommandMenu({
                       <span>Подсказки:</span>
                       <span className="rounded-full bg-white/5 px-2 py-1">tag:вопросы</span>
                       <span className="rounded-full bg-white/5 px-2 py-1">speaker:me</span>
-                      <span className="rounded-full bg-white/5 px-2 py-1">duration:>30m</span>
+                      <span className="rounded-full bg-white/5 px-2 py-1">duration:&gt;30m</span>
                       <span className="rounded-full bg-white/5 px-2 py-1">source:zoom</span>
                     </div>
                   )}

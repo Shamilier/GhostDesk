@@ -24,10 +24,9 @@ export default function RecordingPage({ params }: { params: { id: string } }) {
   const recording = mockRecordings.find((item) => item.id === params.id);
   if (!recording) {
     notFound();
-    return null;
   }
 
-  const currentRecording = recording;
+  const currentRecording = recording!;
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [activeSegmentId, setActiveSegmentId] = useState(currentRecording.transcript[0]?.id);
   const [transcriptQuery, setTranscriptQuery] = useState("");
