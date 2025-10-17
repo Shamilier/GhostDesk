@@ -268,13 +268,17 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
 
                 try await startSystemAudioStream()
 
-                let cfg = WhisperKitConfig(
+                var cfg = WhisperKitConfig(
                     model: "medium",
                     audioProcessor: self,
                     load: true,
-                    download: true,
-                    useBackgroundDownloadSession: false
+                    download: false   // ничего не качаем
                 )
+
+                // WhisperKit по умолчанию ищет модели прямо в Resources,
+                // поэтому cfg.modelFolder можно не трогать
+                // Если хочешь явно:
+                cfg.modelFolder = Bundle.main.resourcePath
                 let wk = try await WhisperKit(cfg)
                 self.whisper = wk
 
@@ -291,7 +295,6 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
                 options.maxWindowSeek = sampleRate * 3
                 options.suppressBlank = false            // важно: не душим blank-токены
                 options.temperature = 0.0
-//                options.conditionOnPreviousText = true    // склейка на стыках сегментов
 
                 let tokenizer = wk.textDecoder.tokenizer!
 
