@@ -40,6 +40,10 @@ struct OverlayRootView: View {
         overlay.transcriptionState(for: .system)
     }
 
+    private var microphoneChannelState: OverlayModel.TranscriptionChannelState {
+        overlay.transcriptionState(for: .microphone)
+    }
+
     private var hasAnyTranscript: Bool {
         overlay.transcriptionStates.values.contains { !$0.transcriptLog.isEmpty || !$0.partialText.isEmpty }
     }
@@ -160,12 +164,12 @@ struct OverlayRootView: View {
 
                 Divider().overlay(Color.white.opacity(0.10))
 
-                // BODY — вертикальная колонка
+                // BODY — единая чатовая лента
                 Group {
                     if showTranscript {
-                        TranscriptView(
-                            logLines: systemChannelState.transcriptLog,
-                            partial: systemChannelState.partialText,
+                        TranscriptChatView(
+                            systemState: systemChannelState,
+                            microphoneState: microphoneChannelState,
                             autoScroll: $autoScroll
                         )
                         .transition(.opacity.combined(with: .move(edge: .top)))
@@ -178,7 +182,7 @@ struct OverlayRootView: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
-                .frame(minHeight: 320, maxHeight: 520) // ↑ вертикальная ориентация
+                .frame(minHeight: 320, maxHeight: 520) // ↑ единое окно с чатом
                 HintStrip()
             }
         }
@@ -222,7 +226,232 @@ struct OverlayRootView: View {
 
 
 
-    
+    private struct TranscriptChatView: View {
+        let systemState: OverlayModel.TranscriptionChannelState
+        let microphoneState: OverlayModel.TranscriptionChannelState
+        @Binding var autoScroll: Bool
+
+        @State private var hasAppeared = false
+
+        private var combinedMessages: [OverlayModel.TranscriptMessage] {
+            let merged = systemState.transcriptLog + microphoneState.transcriptLog
+            return merged.sorted { lhs, rhs in
+                if lhs.timestamp == rhs.timestamp {
+                    return lhs.id.uuidString < rhs.id.uuidString
+                }
+                return lhs.timestamp < rhs.timestamp
+            }
+        }
+
+        private var activePartials: [(OverlayModel.AudioSourceKind, String)] {
+            OverlayModel.AudioSourceKind.allCases.compactMap { kind in
+                let text = partialText(for: kind)
+                return text.isEmpty ? nil : (kind, text)
+            }
+        }
+
+        var body: some View {
+            ScrollViewReader { proxy in
+                ZStack {
+                    let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    shape
+                        .fill(Color.white.opacity(0.03))
+                        .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 1))
+
+                    ScrollView {
+                        LazyVStack(spacing: 12) {
+                            ForEach(combinedMessages) { message in
+                                TranscriptChatBubble(message: message)
+                                    .id(message.id)
+                            }
+
+                            ForEach(activePartials, id: \.0) { kind, text in
+                                TranscriptPartialBubble(source: kind, text: text)
+                                    .id(partialIdentifier(for: kind))
+                            }
+                        }
+                        .padding(.vertical, 18)
+                        .padding(.horizontal, 14)
+                    }
+                    .clipShape(shape)
+                }
+                .frame(minHeight: 260, maxHeight: .infinity, alignment: .top)
+                .onAppear {
+                    hasAppeared = true
+                    DispatchQueue.main.async {
+                        scrollToBottom(proxy, animated: false)
+                    }
+                }
+                .onChange(of: systemState.transcriptLog.last?.id) { _ in
+                    guard hasAppeared else { return }
+                    scrollToBottom(proxy)
+                }
+                .onChange(of: microphoneState.transcriptLog.last?.id) { _ in
+                    guard hasAppeared else { return }
+                    scrollToBottom(proxy)
+                }
+                .onChange(of: systemState.partialText) { _ in
+                    guard hasAppeared else { return }
+                    scrollToPartial(proxy, for: .system)
+                }
+                .onChange(of: microphoneState.partialText) { _ in
+                    guard hasAppeared else { return }
+                    scrollToPartial(proxy, for: .microphone)
+                }
+                .onChange(of: autoScroll) { enabled in
+                    guard enabled, hasAppeared else { return }
+                    scrollToBottom(proxy, animated: false)
+                }
+            }
+            .animation(.spring(response: 0.32, dampingFraction: 0.85), value: combinedMessages)
+        }
+
+        private func partialText(for kind: OverlayModel.AudioSourceKind) -> String {
+            let raw: String
+            switch kind {
+            case .system: raw = systemState.partialText
+            case .microphone: raw = microphoneState.partialText
+            }
+            return raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        private func partialIdentifier(for kind: OverlayModel.AudioSourceKind) -> String {
+            "partial_\(kind.rawValue)"
+        }
+
+        private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool = true) {
+            guard autoScroll else { return }
+            if let last = combinedMessages.last?.id {
+                let action = { proxy.scrollTo(last, anchor: .bottom) }
+                if animated {
+                    withAnimation(.easeOut(duration: 0.22)) { action() }
+                } else {
+                    action()
+                }
+            } else if let lastPartial = activePartials.last?.0 {
+                scrollToPartial(proxy, for: lastPartial, animated: animated)
+            }
+        }
+
+        private func scrollToPartial(_ proxy: ScrollViewProxy,
+                                      for kind: OverlayModel.AudioSourceKind,
+                                      animated: Bool = true) {
+            guard autoScroll, !partialText(for: kind).isEmpty else { return }
+            let action = { proxy.scrollTo(partialIdentifier(for: kind), anchor: .bottom) }
+            if animated {
+                withAnimation(.easeOut(duration: 0.18)) { action() }
+            } else {
+                action()
+            }
+        }
+    }
+
+    private struct TranscriptChatBubble: View {
+        let message: OverlayModel.TranscriptMessage
+
+        private var style: TranscriptBubbleStyle { TranscriptBubbleStyle.for(message.source) }
+
+        var body: some View {
+            HStack {
+                if style.alignsTrailing { Spacer(minLength: 48) }
+
+                VStack(alignment: style.alignsTrailing ? .trailing : .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        Image(systemName: style.icon)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(style.color.opacity(0.9))
+                            .symbolRenderingMode(.hierarchical)
+                        Text(style.title)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(style.color.opacity(0.9))
+                    }
+                    .frame(maxWidth: .infinity, alignment: style.alignsTrailing ? .trailing : .leading)
+
+                    Text(message.text)
+                        .font(.system(size: 14))
+                        .multilineTextAlignment(style.alignsTrailing ? .trailing : .leading)
+                        .foregroundStyle(.primary)
+                        .textSelection(.enabled)
+
+                    Text(message.timestamp, style: .time)
+                        .font(.caption2)
+                        .foregroundStyle(style.color.opacity(0.8))
+                }
+                .padding(.vertical, 12)
+                .padding(.horizontal, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(style.color.opacity(0.14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(style.color.opacity(0.28), lineWidth: 1)
+                        )
+                )
+
+                if !style.alignsTrailing { Spacer(minLength: 48) }
+            }
+            .transition(.move(edge: style.alignsTrailing ? .trailing : .leading).combined(with: .opacity))
+        }
+    }
+
+    private struct TranscriptPartialBubble: View {
+        let source: OverlayModel.AudioSourceKind
+        let text: String
+
+        private var style: TranscriptBubbleStyle { TranscriptBubbleStyle.for(source) }
+
+        var body: some View {
+            HStack {
+                if style.alignsTrailing { Spacer(minLength: 48) }
+
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: "ellipsis")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(style.color.opacity(0.8))
+                    Text(text)
+                        .italic()
+                        .multilineTextAlignment(style.alignsTrailing ? .trailing : .leading)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: style.alignsTrailing ? .trailing : .leading)
+                .padding(.vertical, 9)
+                .padding(.horizontal, 13)
+                .background(
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .fill(style.color.opacity(0.10))
+                )
+
+                if !style.alignsTrailing { Spacer(minLength: 48) }
+            }
+        }
+    }
+
+    private struct TranscriptBubbleStyle {
+        let icon: String
+        let color: Color
+        let title: String
+        let alignsTrailing: Bool
+
+        static func `for`(_ kind: OverlayModel.AudioSourceKind) -> TranscriptBubbleStyle {
+            switch kind {
+            case .system:
+                return TranscriptBubbleStyle(
+                    icon: "waveform.circle.fill",
+                    color: .cyan,
+                    title: kind.title,
+                    alignsTrailing: false
+                )
+            case .microphone:
+                return TranscriptBubbleStyle(
+                    icon: "mic.circle.fill",
+                    color: .pink,
+                    title: kind.title,
+                    alignsTrailing: true
+                )
+            }
+        }
+    }
+
     private struct GlassCard<Content: View>: View {
         @ViewBuilder var content: () -> Content
 

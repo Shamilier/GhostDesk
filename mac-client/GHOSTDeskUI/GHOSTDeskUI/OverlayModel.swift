@@ -3,6 +3,20 @@ import AppKit
 import Combine
 
 final class OverlayModel: ObservableObject {
+    struct TranscriptMessage: Identifiable, Equatable {
+        let id: UUID
+        let source: AudioSourceKind
+        let text: String
+        let timestamp: Date
+
+        init(id: UUID = UUID(), source: AudioSourceKind, text: String, timestamp: Date = Date()) {
+            self.id = id
+            self.source = source
+            self.text = text
+            self.timestamp = timestamp
+        }
+    }
+
     enum AudioSourceKind: String, CaseIterable, Identifiable {
         case system
         case microphone
@@ -24,7 +38,7 @@ final class OverlayModel: ObservableObject {
     struct TranscriptionChannelState: Equatable {
         var phase: AudioChannelPhase = .idle
         var isTranscribing: Bool = false
-        var transcriptLog: [String] = []
+        var transcriptLog: [TranscriptMessage] = []
         var partialText: String = ""
         var lastError: String? = nil
     }
@@ -34,7 +48,7 @@ final class OverlayModel: ObservableObject {
     @Published private(set) var transcriptionStates: [AudioSourceKind: TranscriptionChannelState]
 
     @Published var isRecording: Bool = false
-    @Published var transcriptLog: [String] = []
+    @Published var transcriptLog: [TranscriptMessage] = []
     @Published var partialText: String = ""
     @Published var lastError: String? = nil
 
@@ -102,7 +116,7 @@ final class OverlayModel: ObservableObject {
         var blocks: [String] = []
         for source in AudioSourceKind.allCases {
             let state = transcriptionState(for: source)
-            var lines = state.transcriptLog
+            var lines = state.transcriptLog.map(\.text)
             if includePartials, !state.partialText.isEmpty {
                 lines.append(state.partialText)
             }
@@ -114,7 +128,7 @@ final class OverlayModel: ObservableObject {
 
     func transcriptTail(for source: AudioSourceKind, maxChars: Int = 900) -> String {
         let state = transcriptionState(for: source)
-        var text = state.transcriptLog.suffix(14).joined(separator: " ")
+        var text = state.transcriptLog.suffix(14).map(\.text).joined(separator: " ")
         if !state.partialText.isEmpty { text += " " + state.partialText }
         if text.count > maxChars { text = String(text.suffix(maxChars)) }
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
