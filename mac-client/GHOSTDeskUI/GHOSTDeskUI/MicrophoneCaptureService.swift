@@ -164,23 +164,11 @@ private extension MicrophoneCaptureService {
         await MainActor.run {
             let session = AVAudioSession.sharedInstance()
             do {
-                var options: AVAudioSession.CategoryOptions = [.allowBluetooth]
-                if #available(macOS 12.0, *) {
-                    options.insert(.allowBluetoothA2DP)
-                }
-
-                try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
-
-                if let preferredPort = preferredInputPort(from: session.availableInputs) {
-                    if session.preferredInput?.uid != preferredPort.uid {
-                        try session.setPreferredInput(preferredPort)
-                    }
-                    try applyPreferredDataSourceIfNeeded(to: preferredPort)
-                } else if session.preferredInput != nil {
-                    try session.setPreferredInput(nil)
-                }
-
+                try session.setCategory(.playAndRecord, mode: .voiceChat, options: [])
                 try session.setActive(true, options: [])
+                if let preferredPort = preferredInputPort(from: session.availableInputs) {
+                    try session.setPreferredInput(preferredPort)
+                }
             } catch {
                 print("[MicrophoneCapture] audio route configuration error: \(error.localizedDescription)")
             }
@@ -189,11 +177,13 @@ private extension MicrophoneCaptureService {
 
     func preferredInputPort(from inputs: [AVAudioSessionPortDescription]?) -> AVAudioSessionPortDescription? {
         guard let inputs else { return nil }
-        var priorityOrder: [AVAudioSession.Port] = [.headsetMic, .bluetoothHFP]
-        if #available(macOS 12.0, *) {
-            priorityOrder.append(.bluetoothLE)
-        }
-        priorityOrder.append(contentsOf: [.usbAudio, .lineIn, .builtInMic])
+        let priorityOrder: [AVAudioSession.Port] = {
+            if #available(macOS 11.0, *) {
+                return [.bluetoothHFP, .bluetoothLE, .bluetoothA2DP, .headsetMic]
+            } else {
+                return [.bluetoothHFP, .headsetMic]
+            }
+        }()
 
         for port in priorityOrder {
             if let match = inputs.first(where: { $0.portType == port }) {
@@ -202,25 +192,6 @@ private extension MicrophoneCaptureService {
         }
 
         return inputs.first
-    }
-
-    func applyPreferredDataSourceIfNeeded(to port: AVAudioSessionPortDescription) throws {
-        guard let dataSources = port.dataSources, !dataSources.isEmpty else { return }
-
-        let preferredDataSource: AVAudioSessionDataSourceDescription? = {
-            if let headset = dataSources.first(where: { $0.location == .headset }) {
-                return headset
-            }
-            if let external = dataSources.first(where: { $0.location == .external }) {
-                return external
-            }
-            return port.preferredDataSource ?? dataSources.first
-        }()
-
-        if let preferredDataSource,
-           port.selectedDataSource?.dataSourceID != preferredDataSource.dataSourceID {
-            try port.setPreferredDataSource(preferredDataSource)
-        }
     }
 }
 
