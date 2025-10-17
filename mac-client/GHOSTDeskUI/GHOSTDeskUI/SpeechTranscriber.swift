@@ -79,6 +79,11 @@ fileprivate struct EnergyVAD {
 
 final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
 
+    enum CaptureMode {
+        case systemAudio
+        case microphone
+    }
+
     // MARK: - UI / State
     enum Phase { case idle, starting, running, stopping }
     @Published private(set) var phase: Phase = .idle
@@ -91,7 +96,9 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
 
     // MARK: - Capture
     private var stream: SCStream?
-    private let outputQueue = DispatchQueue(label: "SystemAudio.StreamOutput")
+    private var microphoneService: MicrophoneCaptureService?
+    private let captureMode: CaptureMode
+    private let outputQueue: DispatchQueue
 
     // MARK: - Audio converter (-> 16 kHz mono Float32)
     private var converter: AVAudioConverter?
@@ -142,6 +149,27 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
     // Акумулятор до ровных чанков ~20мс
     private var acc: [Float] = []
     private var minChunk: Int { sampleRate / 50 } // 20ms => 320 при 16кГц
+
+    // MARK: - Init
+    override convenience init() {
+        self.init(captureMode: .systemAudio)
+    }
+
+    init(captureMode: CaptureMode) {
+        self.captureMode = captureMode
+        switch captureMode {
+        case .systemAudio:
+            self.outputQueue = DispatchQueue(label: "SystemAudio.StreamOutput")
+        case .microphone:
+            self.outputQueue = DispatchQueue(label: "MicrophoneAudio.StreamOutput")
+        }
+        super.init()
+
+        if captureMode == .microphone {
+            self.microphoneService = MicrophoneCaptureService(targetSampleRate: Double(sampleRate),
+                                                             queueLabel: "MicrophoneCaptureService.Stream")
+        }
+    }
 
     // MARK: - Known-hallucinations filter (regex)
     private lazy var hallucinationRegexes: [NSRegularExpression] = {
@@ -232,6 +260,21 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         t.resume()
     }
 
+    private func processIncomingSamples(_ floats: [Float]) {
+        let gated = vad.process(floats)
+        guard !gated.isEmpty else { return }
+
+        acc.append(contentsOf: gated)
+        while acc.count >= minChunk {
+            let frame = Array(acc.prefix(minChunk))
+            acc.removeFirst(minChunk)
+            audioPackets += 1
+            totalFedSamples += frame.count
+            append(samples: frame)
+            bufferCallback?(frame)
+        }
+    }
+
     // MARK: - Public API
     @MainActor
     func clearLog() {
@@ -260,13 +303,17 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
 
         Task {
             do {
-                guard ensureScreenRecordingAuthorized() else {
-                    throw NSError(domain: "SystemAudio", code: 1,
-                                  userInfo: [NSLocalizedDescriptionKey:
-                                             "Доступ к записи экрана не выдан. Включи и перезапусти приложение."])
+                switch captureMode {
+                case .systemAudio:
+                    guard ensureScreenRecordingAuthorized() else {
+                        throw NSError(domain: "SystemAudio", code: 1,
+                                      userInfo: [NSLocalizedDescriptionKey:
+                                                 "Доступ к записи экрана не выдан. Включи и перезапусти приложение."])
+                    }
+                    try await startSystemAudioStream()
+                case .microphone:
+                    try await startMicrophoneStream()
                 }
-
-                try await startSystemAudioStream()
 
                 var cfg = WhisperKitConfig(
                     model: "medium",
@@ -458,6 +505,27 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
     }
 
     // MARK: - ScreenCaptureKit (audio-only)
+    private func startMicrophoneStream() async throws {
+        let service: MicrophoneCaptureService
+        if let existing = microphoneService {
+            service = existing
+        } else {
+            let created = MicrophoneCaptureService(targetSampleRate: Double(sampleRate),
+                                                   queueLabel: "MicrophoneCaptureService.Stream")
+            microphoneService = created
+            service = created
+        }
+
+        service.onSamples = { [weak self] samples in
+            guard let self else { return }
+            self.outputQueue.async {
+                self.processIncomingSamples(samples)
+            }
+        }
+
+        try await service.start()
+    }
+
     private func startSystemAudioStream() async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard let display = content.displays.first else {
@@ -485,9 +553,15 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
     }
 
     private func stopCapture() {
-        let s = stream
-        stream = nil
-        Task { try? await s?.stopCapture() }
+        switch captureMode {
+        case .systemAudio:
+            let s = stream
+            stream = nil
+            Task { try? await s?.stopCapture() }
+        case .microphone:
+            microphoneService?.stop()
+            microphoneService?.onSamples = nil
+        }
     }
 }
 
@@ -502,20 +576,7 @@ extension SpeechTranscriber: SCStreamOutput {
               CMSampleBufferDataIsReady(sampleBuffer) else { return }
 
         if let floats = convertTo16kMonoFloat(sampleBuffer: sampleBuffer) {
-            // Пропускаем через внешний VAD: тишина -> нули той же длины
-            let gated = vad.process(floats)
-            guard !gated.isEmpty else { return }
-
-            // Аккумулируем до ровных ~20мс чанков (уменьшает рваные стыки)
-            acc.append(contentsOf: gated)
-            while acc.count >= minChunk {
-                let frame = Array(acc.prefix(minChunk))
-                acc.removeFirst(minChunk)
-                audioPackets += 1
-                totalFedSamples += frame.count
-                append(samples: frame)
-                bufferCallback?(frame)
-            }
+            processIncomingSamples(floats)
         }
     }
 }
