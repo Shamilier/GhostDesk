@@ -202,6 +202,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         transcriptLog.append(clean)
         partialText = ""
         lastPartial = ""
+        Task { await OverlayModel.shared.appendTranscript(clean, from: .system, at: Date()) }
     }
 
     @inline(__always)
@@ -238,12 +239,15 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         transcriptLog.removeAll()
         partialText = ""
         TranscriptBuffer.shared.clear()
+        OverlayModel.shared.clearTranscripts(for: .system)
     }
 
     func start() {
         guard phase == .idle else { return }
         phase = .starting
         lastError = nil
+
+        Task { await OverlayModel.shared.clearTranscripts(for: .system) }
 
         // сброс состояния
         vad = EnergyVAD(sr: sampleRate)

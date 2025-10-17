@@ -22,6 +22,7 @@ struct OverlayRootView: View {
     @State private var smartMode: Bool = false
     @FocusState private var askFocused: Bool
     @ObservedObject private var hint = HintAgent.shared
+    @ObservedObject private var overlayModel = OverlayModel.shared
     @State private var showTranscript = false
     @State private var showResponse: Bool = false
 
@@ -156,9 +157,11 @@ struct OverlayRootView: View {
                 // BODY — вертикальная колонка
                 Group {
                     if showTranscript {
-                        TranscriptView(
-                            logLines: transcriber.transcriptLog,
-                            partial: transcriber.partialText,
+                        TranscriptStreamsView(
+                            systemMessages: overlayModel.systemMessages,
+                            microphoneMessages: overlayModel.microphoneMessages,
+                            systemPartial: transcriber.partialText,
+                            microphonePartial: nil,
                             autoScroll: $autoScroll
                         )
                         .transition(.opacity.combined(with: .move(edge: .top)))
@@ -210,6 +213,213 @@ struct OverlayRootView: View {
                 .frame(maxWidth: 420) // чтобы сетка держала красивую ширину
             }
             .frame(maxWidth: .infinity, minHeight: 240, alignment: .center)
+        }
+    }
+
+    private struct TranscriptStreamsView: View {
+        let systemMessages: [TranscriptMessage]
+        let microphoneMessages: [TranscriptMessage]
+        let systemPartial: String
+        let microphonePartial: String?
+        @Binding var autoScroll: Bool
+
+        var body: some View {
+            HStack(spacing: 12) {
+                TranscriptColumnView(
+                    source: .system,
+                    messages: systemMessages,
+                    partial: systemPartial,
+                    autoScroll: $autoScroll
+                )
+
+                TranscriptColumnView(
+                    source: .microphone,
+                    messages: microphoneMessages,
+                    partial: microphonePartial ?? "",
+                    autoScroll: $autoScroll
+                )
+            }
+            .frame(maxWidth: .infinity, alignment: .top)
+        }
+    }
+
+    private struct TranscriptColumnView: View {
+        let source: TranscriptSource
+        let messages: [TranscriptMessage]
+        let partial: String
+        @Binding var autoScroll: Bool
+
+        private var partialID: String { "__partial_\(source.id)" }
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                columnHeader
+
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            if messages.isEmpty && partial.isEmpty {
+                                Text("Пока нет реплик")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                                    .padding(.vertical, 40)
+                            }
+
+                            ForEach(messages) { message in
+                                TranscriptBubble(message: message, accent: source.tintColor)
+                            }
+
+                            if !partial.isEmpty {
+                                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                    Text("…")
+                                        .foregroundStyle(.secondary)
+                                    Text(partial)
+                                        .italic()
+                                        .foregroundStyle(source.tintColor)
+                                }
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .strokeBorder(source.tintColor.opacity(0.35), lineWidth: 1)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                .fill(source.tintColor.opacity(0.08))
+                                        )
+                                )
+                                .id(partialID)
+                            }
+                        }
+                        .padding(12)
+                    }
+                    .scrollIndicators(.hidden)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color.white.opacity(0.04))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .stroke(source.tintColor.opacity(0.18), lineWidth: 1)
+                            )
+                    )
+                    .onAppear {
+                        guard autoScroll else { return }
+                        if let last = messages.last {
+                            DispatchQueue.main.async {
+                                withAnimation(.easeOut(duration: 0.25)) {
+                                    proxy.scrollTo(last.id, anchor: .bottom)
+                                }
+                            }
+                        }
+                    }
+                    .onChange(of: messages.last?.id) { newID in
+                        guard autoScroll, let newID else { return }
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            proxy.scrollTo(newID, anchor: .bottom)
+                        }
+                    }
+                    .onChange(of: partial) { newPartial in
+                        guard autoScroll, !newPartial.isEmpty else { return }
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo(partialID, anchor: .bottom)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .top)
+        }
+
+        private var columnHeader: some View {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Image(systemName: source.iconName)
+                        .font(.system(size: 16, weight: .semibold))
+                        .frame(width: 28, height: 28)
+                        .background(
+                            Circle()
+                                .fill(source.tintColor.opacity(0.18))
+                        )
+                        .overlay(
+                            Circle()
+                                .stroke(source.tintColor.opacity(0.5), lineWidth: 1)
+                        )
+                        .foregroundStyle(source.tintColor)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(source.displayName)
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(.primary)
+
+                        Text(source.subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private struct TranscriptBubble: View {
+        let message: TranscriptMessage
+        let accent: Color
+
+        private static let timeFormatter: DateFormatter = {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "HH:mm:ss"
+            return formatter
+        }()
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(message.text)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+
+                Text(Self.timeFormatter.string(from: message.timestamp))
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(accent.opacity(0.14))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(accent.opacity(0.35), lineWidth: 1)
+                    )
+            )
+        }
+    }
+
+    private extension TranscriptSource {
+        var displayName: String {
+            switch self {
+            case .system: return "Системный поток"
+            case .microphone: return "Микрофон"
+            }
+        }
+
+        var subtitle: String {
+            switch self {
+            case .system: return "Звук macOS"
+            case .microphone: return "Ваш голос"
+            }
+        }
+
+        var iconName: String {
+            switch self {
+            case .system: return "waveform"
+            case .microphone: return "mic.fill"
+            }
+        }
+
+        var tintColor: Color {
+            switch self {
+            case .system: return Color.blue
+            case .microphone: return Color.pink
+            }
         }
     }
 

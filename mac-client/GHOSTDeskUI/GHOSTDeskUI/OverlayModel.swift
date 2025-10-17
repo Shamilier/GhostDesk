@@ -10,6 +10,9 @@ final class OverlayModel: ObservableObject {
     @Published var partialText: String = ""
     @Published var lastError: String? = nil
 
+    @Published private(set) var systemMessages: [TranscriptMessage] = []
+    @Published private(set) var microphoneMessages: [TranscriptMessage] = []
+
     // Видимость/поведение
     @Published var isOverlayVisible: Bool = true
     @Published var isFocusable: Bool = true
@@ -32,6 +35,7 @@ final class OverlayModel: ObservableObject {
     let transparencySteps: [CGFloat] = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5]
     let fontScaleSteps: [CGFloat]     = [0.9, 1.0, 1.15, 1.3, 1.5, 1.7]
     let moveStep: CGFloat = 10.0
+    private let maxTranscriptMessages = 500
 
     // Вычисляемые
     var alpha: CGFloat { transparencySteps[clamp(transparencyIndex, 0, transparencySteps.count - 1)] }
@@ -55,6 +59,36 @@ final class OverlayModel: ObservableObject {
     }
     func askSolve() {
         ServerClient.shared.log("[STUB] solve: сделать скрин и отправить на бэк (пока нет)")
+    }
+
+    @MainActor
+    func appendTranscript(_ text: String, from source: TranscriptSource, at timestamp: Date = .init()) {
+        let message = TranscriptMessage(source: source, text: text, timestamp: timestamp)
+        switch source {
+        case .system:
+            systemMessages.append(message)
+            if systemMessages.count > maxTranscriptMessages {
+                systemMessages.removeFirst(systemMessages.count - maxTranscriptMessages)
+            }
+        case .microphone:
+            microphoneMessages.append(message)
+            if microphoneMessages.count > maxTranscriptMessages {
+                microphoneMessages.removeFirst(microphoneMessages.count - maxTranscriptMessages)
+            }
+        }
+    }
+
+    @MainActor
+    func clearTranscripts(for source: TranscriptSource? = nil) {
+        switch source {
+        case .system?:
+            systemMessages.removeAll(keepingCapacity: false)
+        case .microphone?:
+            microphoneMessages.removeAll(keepingCapacity: false)
+        case nil:
+            systemMessages.removeAll(keepingCapacity: false)
+            microphoneMessages.removeAll(keepingCapacity: false)
+        }
     }
 }
 //
