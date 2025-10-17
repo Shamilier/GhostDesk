@@ -30,6 +30,7 @@ final class MicrophoneCaptureService {
     private let processingQueue: DispatchQueue
     private let tapBufferSize: AVAudioFrameCount
     private var state: State = .idle
+    private var routeChangeObserver: NSObjectProtocol?
 
     var onSamples: (([Float]) -> Void)?
 
@@ -42,6 +43,8 @@ final class MicrophoneCaptureService {
                                           interleaved: false)!
         self.tapBufferSize = bufferSize
         self.processingQueue = DispatchQueue(label: queueLabel)
+
+        configureAudioRouteNotifications()
     }
 
     func start() async throws {
@@ -50,6 +53,8 @@ final class MicrophoneCaptureService {
         guard await ensureMicrophonePermission() else {
             throw CaptureError.permissionDenied
         }
+
+        await configurePreferredInputRoute()
 
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
@@ -86,6 +91,12 @@ final class MicrophoneCaptureService {
         engine.stop()
         converter = nil
         state = .idle
+    }
+
+    deinit {
+        if let routeChangeObserver {
+            NotificationCenter.default.removeObserver(routeChangeObserver)
+        }
     }
 
     private func ensureMicrophonePermission() async -> Bool {
@@ -129,6 +140,58 @@ final class MicrophoneCaptureService {
         let frames = Int(outBuffer.frameLength)
         let samples = Array(UnsafeBufferPointer(start: channelData[0], count: frames))
         onSamples?(samples)
+    }
+}
+
+// MARK: - Audio Route Management
+
+private extension MicrophoneCaptureService {
+    func configureAudioRouteNotifications() {
+        guard #available(macOS 10.15, *) else { return }
+        routeChangeObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { [weak self] in
+                await self?.configurePreferredInputRoute()
+            }
+        }
+    }
+
+    func configurePreferredInputRoute() async {
+        guard #available(macOS 10.15, *) else { return }
+        await MainActor.run {
+            let session = AVAudioSession.sharedInstance()
+            do {
+                try session.setCategory(.playAndRecord, mode: .voiceChat, options: [])
+                try session.setActive(true, options: [])
+                if let preferredPort = preferredInputPort(from: session.availableInputs) {
+                    try session.setPreferredInput(preferredPort)
+                }
+            } catch {
+                print("[MicrophoneCapture] audio route configuration error: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func preferredInputPort(from inputs: [AVAudioSessionPortDescription]?) -> AVAudioSessionPortDescription? {
+        guard let inputs else { return nil }
+        let priorityOrder: [AVAudioSession.Port] = {
+            if #available(macOS 11.0, *) {
+                return [.bluetoothHFP, .bluetoothLE, .bluetoothA2DP, .headsetMic]
+            } else {
+                return [.bluetoothHFP, .headsetMic]
+            }
+        }()
+
+        for port in priorityOrder {
+            if let match = inputs.first(where: { $0.portType == port }) {
+                return match
+            }
+        }
+
+        return inputs.first
     }
 }
 
