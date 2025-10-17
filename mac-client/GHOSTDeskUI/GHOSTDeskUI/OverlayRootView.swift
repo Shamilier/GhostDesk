@@ -255,11 +255,6 @@ struct OverlayRootView: View {
 
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
-                    TranscriptStatusBadge(kind: .system, state: systemState)
-                    TranscriptStatusBadge(kind: .microphone, state: microphoneState)
-                }
-
                 ScrollViewReader { proxy in
                     ZStack {
                         let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
