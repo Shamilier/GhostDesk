@@ -12,7 +12,8 @@ import CoreGraphics
 
 
 struct OverlayRootView: View {
-    
+
+    @ObservedObject private var overlay = OverlayModel.shared
     @State private var autoScroll = true
     @State private var showCopiedToast = false
     @State private var isExpanded = false
@@ -25,21 +26,29 @@ struct OverlayRootView: View {
     @State private var showTranscript = false
     @State private var showResponse: Bool = false
 
-    
+
 
 
 
     // наш безопасный ленивый транскрайбер
-    @StateObject private var transcriber = SpeechTranscriber()
+    @StateObject private var transcriptionCoordinator = TranscriptionCoordinator()
 
     // NEW: вью-модель для снапшота/отправки
     @StateObject private var askVM = AskVM()
+
+    private var systemChannelState: OverlayModel.TranscriptionChannelState {
+        overlay.transcriptionState(for: .system)
+    }
+
+    private var hasAnyTranscript: Bool {
+        overlay.transcriptionStates.values.contains { !$0.transcriptLog.isEmpty || !$0.partialText.isEmpty }
+    }
 
     var body: some View {
         ZStack {
             VStack(spacing: 14) {
                 FloatingToolbar(
-                    isRecording: transcriber.isTranscribing,
+                    isRecording: overlay.anyChannelIsTranscribing,
                     selected: $selectedTab,
                     onPrimaryTap: { isExpanded = true },
                     onEyeTap: { isExpanded.toggle() },
@@ -104,10 +113,10 @@ struct OverlayRootView: View {
                         Text(showTranscript ? "Транскрипт" : "Инсайты в реальном времени")
                             .font(.headline.weight(.semibold))
                         HStack(spacing: 8) {
-                            LiveDot(active: transcriber.isTranscribing)
-                            Text(transcriber.isTranscribing ? "Идёт запись…" : "Готов к запуску")
+                            LiveDot(active: overlay.anyChannelIsTranscribing)
+                            Text(overlay.anyChannelIsTranscribing ? "Идёт запись…" : "Готов к запуску")
                                 .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(transcriber.isTranscribing ? .green.opacity(0.9) : .secondary)
+                                .foregroundStyle(overlay.anyChannelIsTranscribing ? .green.opacity(0.9) : .secondary)
                         }
                     }
 
@@ -122,9 +131,7 @@ struct OverlayRootView: View {
 
                     Button(action: {
                         #if os(macOS)
-                        let lines = transcriber.transcriptLog
-                        let tail  = transcriber.partialText.isEmpty ? [] : [transcriber.partialText]
-                        let text  = (lines + tail).joined(separator: "\n")
+                        let text = transcriptionCoordinator.combinedTranscript()
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(text, forType: .string)
                         #endif
@@ -136,19 +143,19 @@ struct OverlayRootView: View {
                         Label("Копия", systemImage: "doc.on.doc")
                     }
                     .buttonStyle(GlassPill())
-                    .disabled(transcriber.transcriptLog.isEmpty && transcriber.partialText.isEmpty)
+                    .disabled(!hasAnyTranscript)
 
                     Button(action: {
-                        if transcriber.phase == .running { transcriber.stop() }
-                        else if transcriber.phase == .idle { transcriber.start() }
+                        if transcriptionCoordinator.overallPhase == .running { transcriptionCoordinator.stopAll() }
+                        else if transcriptionCoordinator.overallPhase == .idle { transcriptionCoordinator.startAll() }
                     }) {
-                        let running  = transcriber.phase == .running
-                        let starting = transcriber.phase == .starting
+                        let running  = transcriptionCoordinator.overallPhase == .running
+                        let starting = transcriptionCoordinator.overallPhase == .starting
                         Label(starting ? "Запуск…" : (running ? "Стоп" : "Старт"),
                               systemImage: running ? "stop.fill" : "play.fill")
                     }
-                    .buttonStyle(GlassPill(tint: (transcriber.phase == .running) ? .red : .accentColor))
-                    .disabled(transcriber.phase == .starting)
+                    .buttonStyle(GlassPill(tint: (transcriptionCoordinator.overallPhase == .running) ? .red : .accentColor))
+                    .disabled(transcriptionCoordinator.overallPhase == .starting)
                 }
 
                 Divider().overlay(Color.white.opacity(0.10))
@@ -157,8 +164,8 @@ struct OverlayRootView: View {
                 Group {
                     if showTranscript {
                         TranscriptView(
-                            logLines: transcriber.transcriptLog,
-                            partial: transcriber.partialText,
+                            logLines: systemChannelState.transcriptLog,
+                            partial: systemChannelState.partialText,
                             autoScroll: $autoScroll
                         )
                         .transition(.opacity.combined(with: .move(edge: .top)))
@@ -308,38 +315,36 @@ struct OverlayRootView: View {
                     .font(.headline)
 
                 HStack(spacing: 8) {
-                    LiveDot(active: transcriber.isTranscribing)
-                    Text(transcriber.isTranscribing ? "Идёт запись…" : "Готов к запуску")
+                    LiveDot(active: overlay.anyChannelIsTranscribing)
+                    Text(overlay.anyChannelIsTranscribing ? "Идёт запись…" : "Готов к запуску")
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(transcriber.isTranscribing ? .green.opacity(0.9) : .secondary)
+                        .foregroundStyle(overlay.anyChannelIsTranscribing ? .green.opacity(0.9) : .secondary)
                 }
             }
 
             Spacer()
 
             HStack(spacing: 10) {
-                // Start/Stop управляет ТРАНСКРАЙБЕРОМ
+                // Start/Stop управляет обоими каналами
                 Button {
-                    if transcriber.phase == .running {
-                        transcriber.stop()
-                    } else if transcriber.phase == .idle {
-                        transcriber.start()
+                    if transcriptionCoordinator.overallPhase == .running {
+                        transcriptionCoordinator.stopAll()
+                    } else if transcriptionCoordinator.overallPhase == .idle {
+                        transcriptionCoordinator.startAll()
                     }
                 } label: {
-                    let running = transcriber.phase == .running
-                    let starting = transcriber.phase == .starting
+                    let running = transcriptionCoordinator.overallPhase == .running
+                    let starting = transcriptionCoordinator.overallPhase == .starting
                     Label(starting ? "Запуск…" : (running ? "Стоп" : "Старт"),
                           systemImage: running ? "stop.fill" : "play.fill")
                 }
-                .buttonStyle(GlassPill(tint: (transcriber.phase == .running) ? .red : .accentColor))
-                .disabled(transcriber.phase == .starting)
+                .buttonStyle(GlassPill(tint: (transcriptionCoordinator.overallPhase == .running) ? .red : .accentColor))
+                .disabled(transcriptionCoordinator.overallPhase == .starting)
 
                 // Copy
                 Button {
-                    let lines = transcriber.transcriptLog
-                    let tail = transcriber.partialText.isEmpty ? [] : [transcriber.partialText]
-                    let text = (lines + tail).joined(separator: "\n")
                     #if os(macOS)
+                    let text = transcriptionCoordinator.combinedTranscript()
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(text, forType: .string)
                     #endif
@@ -351,7 +356,7 @@ struct OverlayRootView: View {
                     Label("Копия", systemImage: "doc.on.doc")
                 }
                 .buttonStyle(GlassPill())
-                .disabled(transcriber.transcriptLog.isEmpty && transcriber.partialText.isEmpty)
+                .disabled(!hasAnyTranscript)
             }
         }
     }
@@ -367,12 +372,12 @@ struct OverlayRootView: View {
             Spacer()
 
             Button {
-                transcriber.clearLog()
+                transcriptionCoordinator.clearLogs(for: .system)
             } label: {
                 Label("Очистить", systemImage: "trash")
             }
             .buttonStyle(GlassPill(tint: .secondary))
-            .disabled(transcriber.transcriptLog.isEmpty)
+            .disabled(systemChannelState.transcriptLog.isEmpty && systemChannelState.partialText.isEmpty)
         }
         .padding(.top, 2)
     }
@@ -394,11 +399,8 @@ struct OverlayRootView: View {
     }
 
     // Хвост транскрибации из текущего транскрайбера (если не подключён TranscriptBuffer)
-    private func makeTranscriptTail(seconds: Int = 40, maxChars: Int = 900) -> String {
-        var s = transcriber.transcriptLog.suffix(14).joined(separator: " ")
-        if !transcriber.partialText.isEmpty { s += " " + transcriber.partialText }
-        if s.count > maxChars { s = String(s.suffix(maxChars)) }
-        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func makeTranscriptTail(seconds _: Int = 40, maxChars: Int = 900) -> String {
+        transcriptionCoordinator.transcriptTail(for: .system, maxChars: maxChars)
     }
 
 }
