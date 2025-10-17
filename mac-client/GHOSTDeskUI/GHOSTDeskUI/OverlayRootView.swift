@@ -15,7 +15,6 @@ struct OverlayRootView: View {
 
     @ObservedObject private var overlay = OverlayModel.shared
     @State private var autoScroll = true
-    @State private var showCopiedToast = false
     @State private var isExpanded = false
     @State private var selectedTab: CommandTab = .listen
     @Namespace private var islandNS
@@ -42,10 +41,6 @@ struct OverlayRootView: View {
 
     private var microphoneChannelState: OverlayModel.TranscriptionChannelState {
         overlay.transcriptionState(for: .microphone)
-    }
-
-    private var hasAnyTranscript: Bool {
-        overlay.transcriptionStates.values.contains { !$0.transcriptLog.isEmpty || !$0.partialText.isEmpty }
     }
 
     var body: some View {
@@ -86,15 +81,6 @@ struct OverlayRootView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .animation(.spring(response: 0.35, dampingFraction: 0.86), value: isExpanded)
 
-            if showCopiedToast {
-                CopiedToast()
-                    .matchedGeometryEffect(id: "toast", in: islandNS)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .padding(.top, 60)
-                    .allowsHitTesting(false)
-                    .allowsHitTesting(false)
-                    .zIndex(2)
-            }
         }
         .background(Color.clear)
 
@@ -134,31 +120,30 @@ struct OverlayRootView: View {
                     .buttonStyle(GlassPill())
 
                     Button(action: {
-                        #if os(macOS)
-                        let text = transcriptionCoordinator.combinedTranscript()
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(text, forType: .string)
-                        #endif
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showCopiedToast = true }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
-                            withAnimation(.easeOut(duration: 0.25)) { showCopiedToast = false }
+                        switch transcriptionCoordinator.overallPhase {
+                        case .idle:
+                            transcriptionCoordinator.startAll()
+                        case .starting, .running, .stopping:
+                            transcriptionCoordinator.stopAll()
                         }
                     }) {
-                        Label("Копия", systemImage: "doc.on.doc")
+                        let phase = transcriptionCoordinator.overallPhase
+                        let running  = phase == .running
+                        let starting = phase == .starting
+                        let stopping = phase == .stopping
+                        Label(
+                            starting ? "Запуск…" : (stopping ? "Остановка…" : (running ? "Стоп" : "Старт")),
+                            systemImage: (running || stopping) ? "stop.fill" : "play.fill"
+                        )
                     }
-                    .buttonStyle(GlassPill())
-                    .disabled(!hasAnyTranscript)
-
-                    Button(action: {
-                        if transcriptionCoordinator.overallPhase == .running { transcriptionCoordinator.stopAll() }
-                        else if transcriptionCoordinator.overallPhase == .idle { transcriptionCoordinator.startAll() }
-                    }) {
-                        let running  = transcriptionCoordinator.overallPhase == .running
-                        let starting = transcriptionCoordinator.overallPhase == .starting
-                        Label(starting ? "Запуск…" : (running ? "Стоп" : "Старт"),
-                              systemImage: running ? "stop.fill" : "play.fill")
-                    }
-                    .buttonStyle(GlassPill(tint: (transcriptionCoordinator.overallPhase == .running) ? .red : .accentColor))
+                    .buttonStyle(
+                        GlassPill(
+                            tint: {
+                                let phase = transcriptionCoordinator.overallPhase
+                                return (phase == .running || phase == .stopping) ? .red : .accentColor
+                            }()
+                        )
+                    )
                     .disabled(transcriptionCoordinator.overallPhase == .starting)
                 }
 
@@ -595,36 +580,31 @@ struct OverlayRootView: View {
             HStack(spacing: 10) {
                 // Start/Stop управляет обоими каналами
                 Button {
-                    if transcriptionCoordinator.overallPhase == .running {
-                        transcriptionCoordinator.stopAll()
-                    } else if transcriptionCoordinator.overallPhase == .idle {
+                    switch transcriptionCoordinator.overallPhase {
+                    case .idle:
                         transcriptionCoordinator.startAll()
+                    case .starting, .running, .stopping:
+                        transcriptionCoordinator.stopAll()
                     }
                 } label: {
-                    let running = transcriptionCoordinator.overallPhase == .running
-                    let starting = transcriptionCoordinator.overallPhase == .starting
-                    Label(starting ? "Запуск…" : (running ? "Стоп" : "Старт"),
-                          systemImage: running ? "stop.fill" : "play.fill")
+                    let phase = transcriptionCoordinator.overallPhase
+                    let running  = phase == .running
+                    let starting = phase == .starting
+                    let stopping = phase == .stopping
+                    Label(
+                        starting ? "Запуск…" : (stopping ? "Остановка…" : (running ? "Стоп" : "Старт")),
+                        systemImage: (running || stopping) ? "stop.fill" : "play.fill"
+                    )
                 }
-                .buttonStyle(GlassPill(tint: (transcriptionCoordinator.overallPhase == .running) ? .red : .accentColor))
+                .buttonStyle(
+                    GlassPill(
+                        tint: {
+                            let phase = transcriptionCoordinator.overallPhase
+                            return (phase == .running || phase == .stopping) ? .red : .accentColor
+                        }()
+                    )
+                )
                 .disabled(transcriptionCoordinator.overallPhase == .starting)
-
-                // Copy
-                Button {
-                    #if os(macOS)
-                    let text = transcriptionCoordinator.combinedTranscript()
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(text, forType: .string)
-                    #endif
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showCopiedToast = true }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
-                        withAnimation(.easeOut(duration: 0.25)) { showCopiedToast = false }
-                    }
-                } label: {
-                    Label("Копия", systemImage: "doc.on.doc")
-                }
-                .buttonStyle(GlassPill())
-                .disabled(!hasAnyTranscript)
             }
         }
     }

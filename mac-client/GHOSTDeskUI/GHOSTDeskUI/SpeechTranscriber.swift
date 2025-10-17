@@ -591,16 +591,17 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
                 }
 
                 self.transcriber = tr
-                try await tr.startStreamTranscription()
-                print("[WK] stream transcription started")
-
-                // soft-confirm таймер: дожимает хвост на паузе
-                startSoftConfirmTimer()
 
                 await MainActor.run {
                     self.isTranscribing = true
                     self.phase = .running
                 }
+
+                // soft-confirm таймер: дожимает хвост на паузе
+                startSoftConfirmTimer()
+
+                try await tr.startStreamTranscription()
+                print("[WK] stream transcription started")
             } catch {
                 await MainActor.run {
                     self.lastError = "Старт не удался: \(error.localizedDescription)"
