@@ -17,12 +17,12 @@ fileprivate struct EnergyVAD {
     let sr: Int
     var mode: Mode = .zeroFill
     var noiseDb: Float = -50
-    let enterMarginDb: Float = 8
-    let exitMarginDb: Float = 4
+    let enterMarginDb: Float = 6      // было 8 — чуть легче входить в речь
+    let exitMarginDb: Float = 3       // было 4 — легче удерживать "речь"
     let hardSpeechFloorDb: Float = -45
     let emaAlpha: Float = 0.95
-    let hangoverFrames: Int = 10      // ~300 мс держим "речь"
-    let attackFrames: Int = 2         // ~160 мс ждём стабильной атаки
+    let hangoverFrames: Int = 18      // было 10 — дольше держим после микропауз
+    let attackFrames: Int = 2         // быстрый старт
 
     private(set) var inSpeech = false
     private var hangover = 0
@@ -115,6 +115,12 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
     // Confirmed bookkeeping
     private var lastConfirmed = ""
     private var lastPartial = ""
+
+    // Pending confirmed (анти-обрыв слова)
+    private var pendingConfirmed: String = ""
+    private var commitTimer: DispatchSourceTimer?
+
+    // Counters
     private var audioPackets = 0
     private var totalFedSamples = 0
 
@@ -130,8 +136,12 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
     private var energyWindow: Int = 10
     private var bufferCallback: (([Float]) -> Void)? // приходит от WK
 
-    // Soft-confirm timer
+    // Soft-confirm timer (дожим хвоста по тишине)
     private var softConfirmTimer: DispatchSourceTimer?
+
+    // Акумулятор до ровных чанков ~20мс
+    private var acc: [Float] = []
+    private var minChunk: Int { sampleRate / 50 } // 20ms => 320 при 16кГц
 
     // MARK: - Known-hallucinations filter (regex)
     private lazy var hallucinationRegexes: [NSRegularExpression] = {
@@ -160,6 +170,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
          .replacingOccurrences(of: "Waiting for speech...", with: "")
          .trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
 
     private func streamFriendlyPartial(_ s: String) -> String {
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -193,6 +204,34 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         lastPartial = ""
     }
 
+    @inline(__always)
+    private func endsWithBoundary(_ s: String) -> Bool {
+        guard let ch = s.trimmingCharacters(in: .whitespacesAndNewlines).last else { return false }
+        return " .,!?:;…—-«»\"'()[]{}".contains(ch)
+    }
+
+    @inline(__always)
+    private func isLikelyMidWord(_ s: String) -> Bool {
+        guard let u = s.unicodeScalars.last else { return false }
+        return CharacterSet.alphanumerics.contains(u) // буква/цифра в конце → слово не закончено
+    }
+
+    private func scheduleCommit(delay: TimeInterval = 0.22) {
+        commitTimer?.cancel()
+        let t = DispatchSource.makeTimerSource(queue: outputQueue)
+        t.schedule(deadline: .now() + delay)
+        t.setEventHandler { [weak self] in
+            guard let self else { return }
+            let chunk = self.pendingConfirmed.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !chunk.isEmpty else { return }
+            self.pendingConfirmed = ""
+            DispatchQueue.main.async { self.applyConfirmedDelta(chunk) }
+            TranscriptBuffer.shared.appendFinal(chunk, at: Date())
+        }
+        commitTimer = t
+        t.resume()
+    }
+
     // MARK: - Public API
     @MainActor
     func clearLog() {
@@ -206,15 +245,18 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         phase = .starting
         lastError = nil
 
-        // сброс VAD и счётчиков
+        // сброс состояния
         vad = EnergyVAD(sr: sampleRate)
         samples.removeAll(keepingCapacity: true)
         energy.removeAll(keepingCapacity: true)
+        acc.removeAll(keepingCapacity: true)
         lastConfirmed = ""
         lastPartial = ""
         lastShownPartial = ""
         lastNonEmptyPartialAt = Date()
         lastPartialChangeAt = Date()
+        pendingConfirmed = ""
+        commitTimer?.cancel(); commitTimer = nil
 
         Task {
             do {
@@ -226,13 +268,17 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
 
                 try await startSystemAudioStream()
 
-                let cfg = WhisperKitConfig(
+                var cfg = WhisperKitConfig(
                     model: "medium",
                     audioProcessor: self,
                     load: true,
-                    download: true,
-                    useBackgroundDownloadSession: false
+                    download: false   // ничего не качаем
                 )
+
+                // WhisperKit по умолчанию ищет модели прямо в Resources,
+                // поэтому cfg.modelFolder можно не трогать
+                // Если хочешь явно:
+                cfg.modelFolder = Bundle.main.resourcePath
                 let wk = try await WhisperKit(cfg)
                 self.whisper = wk
 
@@ -244,7 +290,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
                     skipSpecialTokens: true,
                     withoutTimestamps: true,
                     wordTimestamps: false,
-                    windowClipTime: 1.0 // длиннее окно — увереннее закрытие
+                    windowClipTime: 1.0 // подлиннее окно — проще закрывать сегмент
                 )
                 options.maxWindowSeek = sampleRate * 3
                 options.suppressBlank = false            // важно: не душим blank-токены
@@ -261,20 +307,34 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
                     audioProcessor: self,
                     decodingOptions: options,
                     requiredSegmentsForConfirmation: 1,
-                    silenceThreshold: 0.3,              // 0.35–0.40 — обычно оптимум
+                    silenceThreshold: 0.30,                // мягче, меньше обрубов в середине слов
                     compressionCheckWindow: 8,
-                    useVAD: true                          // вкл. внутренний VAD WhisperKit
+                    useVAD: true
                 ) { [weak self] _, state in
                     guard let self else { return }
 
-                    // CONFIRMED -> в лог (без фильтра по энергии)
+                    // CONFIRMED -> в лог (с «анти-обрыв» логикой)
                     let confirmedRaw = state.confirmedSegments.map(\.text).joined()
                     let confirmed = self.stripSpecialTokens(confirmedRaw)
                     if !confirmed.isEmpty, confirmed != self.lastConfirmed {
-                        let delta = String(confirmed.dropFirst(self.lastConfirmed.count))
+                        var delta = String(confirmed.dropFirst(self.lastConfirmed.count))
                             .trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !delta.isEmpty && !self.isKnownHallucination(delta) {
-                            self.lastConfirmed = confirmed
+                        guard !delta.isEmpty, !self.isKnownHallucination(delta) else { return }
+
+                        self.lastConfirmed = confirmed
+
+                        // если на конце нет явной границы и похоже на середину слова — ждём 220мс
+                        if !self.endsWithBoundary(delta) && self.isLikelyMidWord(delta) {
+                            self.pendingConfirmed += delta // без вставки пробелов — это может быть продолжение слова
+                            self.scheduleCommit()           // чуть ждём возможное продолжение
+                        } else {
+                            // есть граница — коммитим сразу + добавляем то, что накопили ранее
+                            if !self.pendingConfirmed.isEmpty {
+                                delta = self.pendingConfirmed + delta
+                                self.pendingConfirmed = ""
+                                self.commitTimer?.cancel()
+                                self.commitTimer = nil
+                            }
                             DispatchQueue.main.async { self.applyConfirmedDelta(delta) }
                             TranscriptBuffer.shared.appendFinal(delta, at: Date())
                         }
@@ -338,12 +398,14 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         phase = .stopping
 
         stopSoftConfirmTimer()
+        commitTimer?.cancel(); commitTimer = nil
 
         Task { await transcriber?.stopStreamTranscription() }
         transcriber = nil
 
         // добиваем хвост, если он остался
-        let tail = partialText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tail = (pendingConfirmed + " " + partialText).trimmingCharacters(in: .whitespacesAndNewlines)
+        pendingConfirmed = ""
         if !tail.isEmpty {
             applyConfirmedDelta(tail)
             TranscriptBuffer.shared.appendFinal(tail, at: Date())
@@ -444,10 +506,16 @@ extension SpeechTranscriber: SCStreamOutput {
             let gated = vad.process(floats)
             guard !gated.isEmpty else { return }
 
-            audioPackets += 1
-            totalFedSamples += gated.count
-            append(samples: gated)
-            bufferCallback?(gated)
+            // Аккумулируем до ровных ~20мс чанков (уменьшает рваные стыки)
+            acc.append(contentsOf: gated)
+            while acc.count >= minChunk {
+                let frame = Array(acc.prefix(minChunk))
+                acc.removeFirst(minChunk)
+                audioPackets += 1
+                totalFedSamples += frame.count
+                append(samples: frame)
+                bufferCallback?(frame)
+            }
         }
     }
 }
