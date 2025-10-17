@@ -23,7 +23,7 @@ struct OverlayRootView: View {
     @State private var smartMode: Bool = false
     @FocusState private var askFocused: Bool
     @ObservedObject private var hint = HintAgent.shared
-    @State private var showTranscript = false
+    @State private var showTranscript = true
     @State private var showResponse: Bool = false
 
 
@@ -463,6 +463,7 @@ struct OverlayRootView: View {
                             .stroke(Color.white.opacity(0.08), lineWidth: 1)
                     )
             )
+            .frame(maxWidth: .infinity, alignment: style.bubbleAlignment)
         }
     }
 
