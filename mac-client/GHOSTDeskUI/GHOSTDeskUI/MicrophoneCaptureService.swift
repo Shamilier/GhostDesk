@@ -1,7 +1,11 @@
 import Foundation
 import AVFoundation
+import CoreMedia
 
-final class MicrophoneCaptureService {
+final class MicrophoneCaptureService: NSObject {
+
+    // MARK: - Public types
+
     enum State {
         case idle
         case running
@@ -10,202 +14,294 @@ final class MicrophoneCaptureService {
     enum CaptureError: LocalizedError {
         case permissionDenied
         case noInputAvailable
-        case engineStartFailed(Error)
+        case noOutputAvailable
+        case sessionStartFailed
 
         var errorDescription: String? {
             switch self {
-            case .permissionDenied:
-                return "Доступ к микрофону отклонён."
-            case .noInputAvailable:
-                return "Микрофон недоступен."
-            case .engineStartFailed(let error):
-                return "Не удалось запустить аудио-движок: \(error.localizedDescription)"
+            case .permissionDenied:   return "Доступ к микрофону отклонён."
+            case .noInputAvailable:   return "Микрофон недоступен."
+            case .noOutputAvailable:  return "Невозможно добавить аудио-выход."
+            case .sessionStartFailed: return "Не удалось запустить аудио-сессию."
             }
         }
     }
 
-    private let engine = AVAudioEngine()
-    private var converter: AVAudioConverter?
-    private let targetFormat: AVAudioFormat
-    private let processingQueue: DispatchQueue
-    private let tapBufferSize: AVAudioFrameCount
-    private var state: State = .idle
-    private var routeChangeObserver: NSObjectProtocol?
+    // MARK: - Public API
 
+    /// Коллбэк с нормализованными сэмплами Float32 16kHz mono
     var onSamples: (([Float]) -> Void)?
 
+    private(set) var state: State = .idle
+
+    // MARK: - Init
+
     init(targetSampleRate: Double = 16_000,
-         bufferSize: AVAudioFrameCount = 2048,
-         queueLabel: String = "MicrophoneCaptureService") {
+         queueLabel: String = "MicCapture.AutoZoomLike") {
         self.targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
                                           sampleRate: targetSampleRate,
                                           channels: 1,
                                           interleaved: false)!
-        self.tapBufferSize = bufferSize
-        self.processingQueue = DispatchQueue(label: queueLabel)
-
-        configureAudioRouteNotifications()
+        self.captureQueue = DispatchQueue(label: queueLabel)
+        super.init()
+        observeHotPlug()
     }
 
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+        stop()
+    }
+
+    // MARK: - Start/Stop
+
+    /// Старт захвата: автоматически выбирает лучшее устройство (BT/USB/проводной > камера > встроенный)
     func start() async throws {
         guard state == .idle else { return }
 
         guard await ensureMicrophonePermission() else {
             throw CaptureError.permissionDenied
         }
-
-        await configurePreferredInputRoute()
-
-        let inputNode = engine.inputNode
-        let inputFormat = inputNode.outputFormat(forBus: 0)
-        guard inputFormat.channelCount > 0 else {
+        guard let device = pickBestInputDevice() else {
             throw CaptureError.noInputAvailable
         }
-
-        converter = nil
-        inputNode.removeTap(onBus: 0)
-
-        inputNode.installTap(onBus: 0,
-                              bufferSize: tapBufferSize,
-                              format: inputFormat) { [weak self] buffer, _ in
-            guard let self else { return }
-            guard let copied = buffer.copy() else { return }
-            self.processingQueue.async {
-                self.process(buffer: copied)
-            }
-        }
-
-        engine.prepare()
-        do {
-            try engine.start()
-            state = .running
-        } catch {
-            inputNode.removeTap(onBus: 0)
-            throw CaptureError.engineStartFailed(error)
-        }
+        try startCapture(with: device)
+        state = .running
+        #if DEBUG
+        print("🎙️ [MicCapture] Input = \(device.localizedName)")
+        #endif
     }
 
     func stop() {
         guard state == .running else { return }
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
+        session?.stopRunning()
+        session = nil
+        deviceInput = nil
+        audioOutput = nil
         converter = nil
         state = .idle
     }
 
-    deinit {
-        if let routeChangeObserver {
-            NotificationCenter.default.removeObserver(routeChangeObserver)
-        }
+    // MARK: - Private (session & conversion)
+
+    private var session: AVCaptureSession?
+    private var deviceInput: AVCaptureDeviceInput?
+    private var audioOutput: AVCaptureAudioDataOutput?
+    private var converter: AVAudioConverter?
+
+    private let targetFormat: AVAudioFormat
+    private let captureQueue: DispatchQueue
+
+    private func startCapture(with device: AVCaptureDevice) throws {
+        let s = AVCaptureSession()
+        s.beginConfiguration()
+
+        let input = try AVCaptureDeviceInput(device: device)
+        guard s.canAddInput(input) else { throw CaptureError.noInputAvailable }
+        s.addInput(input)
+
+        let out = AVCaptureAudioDataOutput()
+        out.setSampleBufferDelegate(self, queue: captureQueue)
+        guard s.canAddOutput(out) else { throw CaptureError.noOutputAvailable }
+        s.addOutput(out)
+
+        s.commitConfiguration()
+        s.startRunning()
+
+        guard s.isRunning else { throw CaptureError.sessionStartFailed }
+
+        self.session = s
+        self.deviceInput = input
+        self.audioOutput = out
+        self.converter = nil // создадим лениво под фактический входной формат
     }
+
+    // MARK: - Permissions
 
     private func ensureMicrophonePermission() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
-        case .authorized:
-            return true
+        case .authorized: return true
         case .notDetermined:
             return await withCheckedContinuation { continuation in
                 AVCaptureDevice.requestAccess(for: .audio) { granted in
                     continuation.resume(returning: granted)
                 }
             }
-        case .denied, .restricted:
-            return false
-        @unknown default:
-            return false
+        case .denied, .restricted: return false
+        @unknown default: return false
         }
     }
 
-    private func process(buffer: AVAudioPCMBuffer) {
-        if converter == nil || converter?.inputFormat != buffer.format {
-            converter = AVAudioConverter(from: buffer.format, to: targetFormat)
+    // MARK: - Device picking "как Zoom" (без AVAudioSession)
+
+    /// Список «виртуальных» устройств, которые не хотим выбирать по умолчанию.
+    private let virtualMarks = [
+        "blackhole","loopback","soundflower","vb-audio","dante","reastream","audio hijack","aggregate"
+    ]
+
+    private func looksVirtual(_ dev: AVCaptureDevice) -> Bool {
+        let n = dev.localizedName.lowercased()
+        return virtualMarks.contains { n.contains($0) }
+    }
+
+    /// Эвристика: определить BT-гарнитуру по uniqueID/имени/форматам (HFP/HSP 8–16kHz mono).
+    private func isBluetoothDevice(_ dev: AVCaptureDevice) -> Bool {
+        let uid = dev.uniqueID.lowercased()
+        if uid.contains("bluetooth") || uid.contains("hands-free") { return true }
+
+        let n = dev.localizedName.lowercased()
+        if n.contains("airpods") || n.contains("beats") || n.contains("bluetooth") || n.contains("headset") || n.contains("hands-free") {
+            return true
         }
 
+        for f in dev.formats {
+            if let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(f.formatDescription) {
+                let sr = asbd.pointee.mSampleRate
+                let ch = asbd.pointee.mChannelsPerFrame
+                if (sr <= 16_000) && (ch == 1) { return true }
+            }
+        }
+        return false
+    }
+
+    /// Баллы по имени (USB-мики, бренды и т.п.)
+    private func nameScore(_ name: String) -> Int {
+        let s = name.lowercased()
+        if s.contains("airpods") || s.contains("beats") || s.contains("hands-free") || s.contains("headset") || s.contains("bluetooth") { return 30 }
+        if s.contains("usb") || s.contains("focusrite") || s.contains("yeti") || s.contains("rode") { return 25 }
+        if s.contains("camera") || s.contains("webcam") { return 10 }
+        if s.contains("macbook") || s.contains("built") { return 5 }
+        return 0
+    }
+
+    /// По возможностям форматов: большие sample rate и кол-во каналов — косвенно лучше тракт.
+    private func capabilityScore(for dev: AVCaptureDevice) -> Int {
+        var bestSR: Double = 0
+        var bestCh: Int32 = 0
+        for f in dev.formats {
+            if let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(f.formatDescription) {
+                bestSR = max(bestSR, asbd.pointee.mSampleRate)
+                bestCh = max(bestCh, Int32(asbd.pointee.mChannelsPerFrame))
+            }
+        }
+        let sr = (bestSR >= 48_000 ? 40 : bestSR >= 44_100 ? 30 : bestSR >= 16_000 ? 20 : 5)
+        let ch = (bestCh >= 2 ? 10 : 5)
+        return sr + ch
+    }
+
+    /// Выбираем лучший доступный вход: BT/USB/проводной > камера > встроенный. Отбрасываем виртуальные.
+    private func pickBestInputDevice() -> AVCaptureDevice? {
+        let all = AVCaptureDevice.devices(for: .audio).filter { !looksVirtual($0) }
+        guard !all.isEmpty else { return nil }
+
+        let ranked: [(AVCaptureDevice, Int)] = all.map { d in
+            var score = 0
+            if isBluetoothDevice(d) { score += 100 } // жёсткий буст для BT-гарнитур
+            score += nameScore(d.localizedName)
+            score += capabilityScore(for: d)
+            return (d, score)
+        }
+
+        return ranked.max(by: { $0.1 < $1.1 })?.0
+    }
+
+    // MARK: - Hot-plug наблюдение
+
+    private func observeHotPlug() {
+        let nc = NotificationCenter.default
+        nc.addObserver(forName: .AVCaptureDeviceWasConnected, object: nil, queue: .main) { [weak self] _ in
+            self?.restartOnTopologyChange()
+        }
+        nc.addObserver(forName: .AVCaptureDeviceWasDisconnected, object: nil, queue: .main) { [weak self] _ in
+            self?.restartOnTopologyChange()
+        }
+    }
+
+    private func restartOnTopologyChange() {
+        guard state == .running else { return }
+        stop()
+        Task { try? await start() }
+    }
+}
+
+// MARK: - AVCaptureAudioDataOutputSampleBufferDelegate
+
+extension MicrophoneCaptureService: AVCaptureAudioDataOutputSampleBufferDelegate {
+
+    func captureOutput(_ output: AVCaptureOutput,
+                       didOutput sampleBuffer: CMSampleBuffer,
+                       from connection: AVCaptureConnection) {
+        guard CMSampleBufferDataIsReady(sampleBuffer),
+              let pcmIn = sampleBuffer.asPCMBuffer() else { return }
+
+        // Ленивая (пере)инициализация конвертера под фактический входной формат
+        if converter == nil || converter?.inputFormat != pcmIn.format {
+            converter = AVAudioConverter(from: pcmIn.format, to: targetFormat)
+        }
         guard let converter else { return }
 
-        let ratio = targetFormat.sampleRate / buffer.format.sampleRate
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 32)
-        guard let outBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return }
+        let ratio = targetFormat.sampleRate / pcmIn.format.sampleRate
+        let outFrames = AVAudioFrameCount(Double(pcmIn.frameLength) * ratio + 32)
+        guard let out = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outFrames) else { return }
 
-        var error: NSError?
         var provided = false
-        converter.convert(to: outBuffer, error: &error) { _, outStatus in
-            defer { provided = true }
-            outStatus.pointee = provided ? .noDataNow : .haveData
-            return provided ? nil : buffer
+        var err: NSError?
+        converter.convert(to: out, error: &err) { _, io in
+            if provided {
+                io.pointee = .noDataNow
+                return nil
+            } else {
+                provided = true
+                io.pointee = .haveData
+                return pcmIn
+            }
+        }
+        if let err {
+            #if DEBUG
+            print("[MicCapture] convert error: \(err.localizedDescription)")
+            #endif
+            return
         }
 
-        if let error { print("[MicrophoneCapture] converter error: \(error.localizedDescription)"); return }
-        guard let channelData = outBuffer.floatChannelData else { return }
-        let frames = Int(outBuffer.frameLength)
-        let samples = Array(UnsafeBufferPointer(start: channelData[0], count: frames))
+        guard let ch = out.floatChannelData else { return }
+        let count = Int(out.frameLength)
+        let samples = Array(UnsafeBufferPointer(start: ch[0], count: count))
         onSamples?(samples)
     }
 }
 
-// MARK: - Audio Route Management
+// MARK: - Helpers
 
-private extension MicrophoneCaptureService {
-    func configureAudioRouteNotifications() {
-        guard #available(macOS 10.15, *) else { return }
-        routeChangeObserver = NotificationCenter.default.addObserver(
-            forName: AVAudioSession.routeChangeNotification,
-            object: nil,
-            queue: nil
-        ) { [weak self] _ in
-            Task { [weak self] in
-                await self?.configurePreferredInputRoute()
-            }
-        }
-    }
+private extension CMSampleBuffer {
+    /// Преобразуем CMSampleBuffer -> AVAudioPCMBuffer (входной формат устройства)
+    func asPCMBuffer() -> AVAudioPCMBuffer? {
+        guard let fmtDesc = CMSampleBufferGetFormatDescription(self),
+              let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(fmtDesc),
+              let format = AVAudioFormat(streamDescription: asbd) else { return nil }
 
-    func configurePreferredInputRoute() async {
-        guard #available(macOS 10.15, *) else { return }
-        await MainActor.run {
-            let session = AVAudioSession.sharedInstance()
-            do {
-                try session.setCategory(.playAndRecord, mode: .voiceChat, options: [])
-                try session.setActive(true, options: [])
-                if let preferredPort = preferredInputPort(from: session.availableInputs) {
-                    try session.setPreferredInput(preferredPort)
-                }
-            } catch {
-                print("[MicrophoneCapture] audio route configuration error: \(error.localizedDescription)")
-            }
-        }
-    }
+        guard let block = CMSampleBufferGetDataBuffer(self) else { return nil }
 
-    func preferredInputPort(from inputs: [AVAudioSessionPortDescription]?) -> AVAudioSessionPortDescription? {
-        guard let inputs else { return nil }
-        let priorityOrder: [AVAudioSession.Port] = {
-            if #available(macOS 11.0, *) {
-                return [.bluetoothHFP, .bluetoothLE, .bluetoothA2DP, .headsetMic]
-            } else {
-                return [.bluetoothHFP, .headsetMic]
-            }
-        }()
+        var lengthAtOffset: Int = 0
+        var totalLength: Int = 0
+        var dataPointer: UnsafeMutablePointer<Int8>?
+        let status = CMBlockBufferGetDataPointer(block,
+                                                 atOffset: 0,
+                                                 lengthAtOffsetOut: &lengthAtOffset,
+                                                 totalLengthOut: &totalLength,
+                                                 dataPointerOut: &dataPointer)
+        guard status == kCMBlockBufferNoErr, let dataPointer else { return nil }
 
-        for port in priorityOrder {
-            if let match = inputs.first(where: { $0.portType == port }) {
-                return match
-            }
-        }
+        let bytesPerFrame = Int(format.streamDescription.pointee.mBytesPerFrame)
+        guard bytesPerFrame > 0 else { return nil }
+        let frames = AVAudioFrameCount(totalLength / bytesPerFrame)
 
-        return inputs.first
-    }
-}
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return nil }
+        buffer.frameLength = frames
 
-private extension AVAudioPCMBuffer {
-    func copy() -> AVAudioPCMBuffer? {
-        guard let newBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameLength) else { return nil }
-        newBuffer.frameLength = frameLength
+        // Копируем «как есть» — формат (int16/float32/… ) нам не важен здесь,
+        // конвертация произойдёт в AVAudioConverter далее.
+        let dst = buffer.audioBufferList.pointee.mBuffers.mData
+        memcpy(dst, dataPointer, totalLength)
 
-        guard let src = floatChannelData, let dst = newBuffer.floatChannelData else { return nil }
-        let channels = Int(format.channelCount)
-        let frames = Int(frameLength)
-        for ch in 0..<channels {
-            memcpy(dst[ch], src[ch], frames * MemoryLayout<Float>.size)
-        }
-        return newBuffer
+        return buffer
     }
 }
