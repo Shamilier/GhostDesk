@@ -270,6 +270,11 @@ struct OverlayRootView: View {
 
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    TranscriptStatusBadge(kind: .system, state: systemState)
+                    TranscriptStatusBadge(kind: .microphone, state: microphoneState)
+                }
+
                 ScrollViewReader { proxy in
                     ZStack {
                         let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -315,6 +320,14 @@ struct OverlayRootView: View {
                         scrollToBottom(proxy)
                     }
                     .onChange(of: microphoneState.transcriptLog.last?.id) { _ in
+                        guard hasAppeared else { return }
+                        scrollToBottom(proxy)
+                    }
+                    .onChange(of: systemState.partialText) { _ in
+                        guard hasAppeared else { return }
+                        scrollToBottom(proxy)
+                    }
+                    .onChange(of: microphoneState.partialText) { _ in
                         guard hasAppeared else { return }
                         scrollToBottom(proxy)
                     }
@@ -405,9 +418,59 @@ struct OverlayRootView: View {
         }
     }
 
+    private struct TranscriptStatusBadge: View {
+        let kind: OverlayModel.AudioSourceKind
+        let state: OverlayModel.TranscriptionChannelState
+
+        private var style: TranscriptSourceStyle { .for(kind: kind) }
+
+        var body: some View {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(style.color.opacity(0.18))
+                        .frame(width: 30, height: 30)
+                    Image(systemName: style.icon)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(style.color)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(style.title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(style.caption)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 4)
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    LiveDot(active: state.isTranscribing)
+                    Text(state.isTranscribing ? "Активно" : "Ожидание")
+                        .font(.caption2)
+                        .foregroundStyle(state.isTranscribing ? style.color : .secondary)
+                }
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.white.opacity(0.04))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+            )
+            .frame(maxWidth: .infinity, alignment: style.bubbleAlignment)
+        }
+    }
+
     private struct TranscriptSourceStyle {
         let icon: String
         let color: Color
+        let caption: String
         let title: String
         let bubbleAlignment: Alignment
 
@@ -417,6 +480,7 @@ struct OverlayRootView: View {
                 return TranscriptSourceStyle(
                     icon: "waveform.circle.fill",
                     color: .cyan,
+                    caption: "Системный поток",
                     title: kind.title,
                     bubbleAlignment: .leading
                 )
@@ -424,6 +488,7 @@ struct OverlayRootView: View {
                 return TranscriptSourceStyle(
                     icon: "mic.circle.fill",
                     color: .pink,
+                    caption: "Микрофон",
                     title: kind.title,
                     bubbleAlignment: .trailing
                 )
