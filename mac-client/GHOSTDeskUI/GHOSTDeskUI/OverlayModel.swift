@@ -158,8 +158,9 @@ final class OverlayModel: ObservableObject {
 
     func startStopRecording() {
         isRecording.toggle()
-        ServerClient.shared.log("[STUB] recording = \(isRecording ? \"on\" : \"off\")")
+        ServerClient.shared.log("[STUB] recording = \(isRecording ? "on" : "off")")
     }
+
     func askHint() {
         Task { await HintAgent.shared.requestHint(windowSeconds: 40, maxChars: 900) }
     }

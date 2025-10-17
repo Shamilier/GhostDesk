@@ -36,7 +36,7 @@ final class TranscriptionCoordinator: ObservableObject {
         microphoneTranscriber.stop()
     }
 
-    func clearLogs(for source: OverlayModel.AudioSourceKind) {
+    @MainActor func clearLogs(for source: OverlayModel.AudioSourceKind) {
         switch source {
         case .system:
             systemTranscriber.clearLog()

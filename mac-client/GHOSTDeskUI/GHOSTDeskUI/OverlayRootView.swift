@@ -164,7 +164,7 @@ struct OverlayRootView: View {
 
                 Divider().overlay(Color.white.opacity(0.10))
 
-                // BODY — вертикальная колонка
+                // BODY — единая чатовая лента
                 Group {
                     if showTranscript {
                         TranscriptColumnsView(
@@ -182,7 +182,7 @@ struct OverlayRootView: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
-                .frame(minHeight: 320, maxHeight: 520) // ↑ вертикальная ориентация
+                .frame(minHeight: 320, maxHeight: 520) // ↑ единое окно с чатом
                 HintStrip()
             }
         }
@@ -1462,6 +1462,5 @@ final class TranscriptBuffer {
         }
     }
 }
-
 
 
