@@ -87,7 +87,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
     // MARK: - UI / State
     enum Phase { case idle, starting, running, stopping }
     @Published private(set) var phase: Phase = .idle
-    @Published private(set) var transcriptLog: [String] = []
+    @Published private(set) var transcriptLog: [OverlayModel.TranscriptMessage] = []
     @Published private(set) var partialText: String = ""
     @Published var lastError: String?
     @Published private(set) var isTranscribing = false
@@ -98,6 +98,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
     private var stream: SCStream?
     private var microphoneService: MicrophoneCaptureService?
     private let captureMode: CaptureMode
+    private let sourceKind: OverlayModel.AudioSourceKind
     private let outputQueue: DispatchQueue
 
     // MARK: - Audio converter (-> 16 kHz mono Float32)
@@ -159,8 +160,10 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         self.captureMode = captureMode
         switch captureMode {
         case .systemAudio:
+            self.sourceKind = .system
             self.outputQueue = DispatchQueue(label: "SystemAudio.StreamOutput")
         case .microphone:
+            self.sourceKind = .microphone
             self.outputQueue = DispatchQueue(label: "MicrophoneAudio.StreamOutput")
         }
         super.init()
@@ -224,10 +227,19 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         return slice.reduce(0, +) / Float(slice.count)
     }
 
+    @MainActor
+    private func appendMessage(_ text: String, at time: Date = Date()) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        let message = OverlayModel.TranscriptMessage(source: sourceKind, text: clean, timestamp: time)
+        transcriptLog.append(message)
+    }
+
+    @MainActor
     private func applyConfirmedDelta(_ delta: String) {
         let clean = delta.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
-        transcriptLog.append(clean)
+        appendMessage(clean)
         partialText = ""
         lastPartial = ""
     }
@@ -454,7 +466,9 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         let tail = (pendingConfirmed + " " + partialText).trimmingCharacters(in: .whitespacesAndNewlines)
         pendingConfirmed = ""
         if !tail.isEmpty {
-            applyConfirmedDelta(tail)
+            Task { @MainActor in
+                self.applyConfirmedDelta(tail)
+            }
             TranscriptBuffer.shared.appendFinal(tail, at: Date())
         }
 

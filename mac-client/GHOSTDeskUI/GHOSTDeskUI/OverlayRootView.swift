@@ -40,6 +40,10 @@ struct OverlayRootView: View {
         overlay.transcriptionState(for: .system)
     }
 
+    private var microphoneChannelState: OverlayModel.TranscriptionChannelState {
+        overlay.transcriptionState(for: .microphone)
+    }
+
     private var hasAnyTranscript: Bool {
         overlay.transcriptionStates.values.contains { !$0.transcriptLog.isEmpty || !$0.partialText.isEmpty }
     }
@@ -163,9 +167,9 @@ struct OverlayRootView: View {
                 // BODY — вертикальная колонка
                 Group {
                     if showTranscript {
-                        TranscriptView(
-                            logLines: systemChannelState.transcriptLog,
-                            partial: systemChannelState.partialText,
+                        TranscriptColumnsView(
+                            systemState: systemChannelState,
+                            microphoneState: microphoneChannelState,
                             autoScroll: $autoScroll
                         )
                         .transition(.opacity.combined(with: .move(edge: .top)))
@@ -222,7 +226,217 @@ struct OverlayRootView: View {
 
 
 
-    
+    private struct TranscriptColumnsView: View {
+        let systemState: OverlayModel.TranscriptionChannelState
+        let microphoneState: OverlayModel.TranscriptionChannelState
+        @Binding var autoScroll: Bool
+
+        var body: some View {
+            HStack(alignment: .top, spacing: 12) {
+                TranscriptColumnView(kind: .system, state: systemState, autoScroll: $autoScroll)
+                TranscriptColumnView(kind: .microphone, state: microphoneState, autoScroll: $autoScroll)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+    }
+
+    private struct TranscriptColumnView: View {
+        let kind: OverlayModel.AudioSourceKind
+        let state: OverlayModel.TranscriptionChannelState
+        @Binding var autoScroll: Bool
+
+        @State private var hasAppeared = false
+
+        private var style: TranscriptColumnStyle { TranscriptColumnStyle.for(kind: kind) }
+        private var partialIdentifier: String { "partial_\(kind.rawValue)" }
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 12) {
+                columnHeader
+                columnBody
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+
+        private var columnHeader: some View {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(style.color.opacity(0.16))
+                        .frame(width: 32, height: 32)
+                    Image(systemName: style.icon)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(style.color)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(kind.title)
+                        .font(.subheadline.weight(.semibold))
+                    Text(style.caption)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 0)
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    LiveDot(active: state.isTranscribing)
+                    Text(state.isTranscribing ? "Активно" : "Ожидание")
+                        .font(.caption2)
+                        .foregroundStyle(state.isTranscribing ? style.color : .secondary)
+                }
+            }
+        }
+
+        private var columnBody: some View {
+            ScrollViewReader { proxy in
+                ZStack {
+                    let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    shape
+                        .fill(style.color.opacity(0.08))
+                        .overlay(shape.stroke(style.color.opacity(0.18), lineWidth: 1))
+
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            ForEach(state.transcriptLog) { message in
+                                TranscriptMessageBubble(message: message, tint: style.color)
+                                    .id(message.id)
+                                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                            }
+
+                            if !state.partialText.isEmpty {
+                                PartialTranscriptBubble(text: state.partialText, tint: style.color)
+                                    .id(partialIdentifier)
+                                    .transition(.opacity)
+                            }
+                        }
+                        .padding(.vertical, 14)
+                        .padding(.horizontal, 12)
+                    }
+                    .clipShape(shape)
+                }
+                .frame(minHeight: 260, maxHeight: .infinity, alignment: .top)
+                .onAppear {
+                    hasAppeared = true
+                    DispatchQueue.main.async {
+                        scrollToBottom(proxy, animated: false)
+                    }
+                }
+                .onChange(of: state.transcriptLog.last?.id) { _ in
+                    guard hasAppeared else { return }
+                    scrollToBottom(proxy)
+                }
+                .onChange(of: state.partialText) { _ in
+                    guard hasAppeared else { return }
+                    scrollToPartial(proxy)
+                }
+                .onChange(of: autoScroll) { enabled in
+                    guard enabled, hasAppeared else { return }
+                    scrollToBottom(proxy, animated: false)
+                }
+            }
+            .animation(.spring(response: 0.32, dampingFraction: 0.85), value: state.transcriptLog)
+        }
+
+        private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool = true) {
+            guard autoScroll else { return }
+            if let last = state.transcriptLog.last?.id {
+                let action = { proxy.scrollTo(last, anchor: .bottom) }
+                if animated {
+                    withAnimation(.easeOut(duration: 0.22)) { action() }
+                } else {
+                    action()
+                }
+            } else if !state.partialText.isEmpty {
+                scrollToPartial(proxy, animated: animated)
+            }
+        }
+
+        private func scrollToPartial(_ proxy: ScrollViewProxy, animated: Bool = true) {
+            guard autoScroll, !state.partialText.isEmpty else { return }
+            let action = { proxy.scrollTo(partialIdentifier, anchor: .bottom) }
+            if animated {
+                withAnimation(.easeOut(duration: 0.18)) { action() }
+            } else {
+                action()
+            }
+        }
+    }
+
+    private struct TranscriptMessageBubble: View {
+        let message: OverlayModel.TranscriptMessage
+        let tint: Color
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(message.text)
+                    .font(.system(size: 14))
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+
+                Text(message.timestamp, style: .time)
+                    .font(.caption2)
+                    .foregroundStyle(tint.opacity(0.8))
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(tint.opacity(0.12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(tint.opacity(0.24), lineWidth: 1)
+                    )
+            )
+        }
+    }
+
+    private struct PartialTranscriptBubble: View {
+        let text: String
+        let tint: Color
+
+        var body: some View {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "ellipsis")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(tint.opacity(0.8))
+                Text(text)
+                    .italic()
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(tint.opacity(0.08))
+            )
+        }
+    }
+
+    private struct TranscriptColumnStyle {
+        let icon: String
+        let color: Color
+        let caption: String
+
+        static func `for`(kind: OverlayModel.AudioSourceKind) -> TranscriptColumnStyle {
+            switch kind {
+            case .system:
+                return TranscriptColumnStyle(
+                    icon: "waveform.circle.fill",
+                    color: .cyan,
+                    caption: "Системный поток"
+                )
+            case .microphone:
+                return TranscriptColumnStyle(
+                    icon: "mic.circle.fill",
+                    color: .pink,
+                    caption: "Микрофон"
+                )
+            }
+        }
+    }
+
     private struct GlassCard<Content: View>: View {
         @ViewBuilder var content: () -> Content
 
