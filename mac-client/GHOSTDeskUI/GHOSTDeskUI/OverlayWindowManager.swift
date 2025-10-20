@@ -8,15 +8,18 @@ final class OverlayWindowManager {
     private init() {}
 
     private var window: OverlayPanel?
+    private var authState: AuthState?
     private let snapDistance: CGFloat = 12
 
     var isVisible: Bool { window?.isVisible ?? false }
 
-    func show(model: OverlayModel) {
+    func show(model: OverlayModel, auth: AuthState) {
+        authState = auth
         if window == nil {
             let panel = OverlayPanel(contentRect: NSRect(x: 0, y: 0, width: 920, height: 160))
             let root = OverlayRootView()
                 .environmentObject(model)
+                .environmentObject(auth)
                 .background(WindowDragHandle()) // << drag только по «пустому» месту
             panel.contentView = NSHostingView(rootView: root)
             panel.alphaValue = model.alpha
@@ -47,7 +50,8 @@ final class OverlayWindowManager {
             hide()
             return false
         } else {
-            show(model: OverlayModel.shared)
+            guard let auth = authState else { return false }
+            show(model: OverlayModel.shared, auth: auth)
             return true
         }
     }
