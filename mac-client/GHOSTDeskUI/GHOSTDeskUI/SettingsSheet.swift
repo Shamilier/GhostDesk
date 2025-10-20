@@ -27,32 +27,16 @@ struct SettingsSheet: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            // Panel background with a subtle border and minimal shadow
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(.ultraThinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(
-                            Color.white.opacity(colorScheme == .dark ? 0.08 : 0.13),
-                            lineWidth: 1
-                        )
+                        .stroke(Color.white.opacity(colorScheme == .dark ? 0.08 : 0.13), lineWidth: 1)
                 )
                 .shadow(color: Color.black.opacity(0.07), radius: 8, y: 2)
 
-            VStack(alignment: .leading, spacing: 26) {
-                // Header row
-                HStack {
-                    Label("Настройки", systemImage: "slider.horizontal.3")
-                        .labelStyle(.titleOnly)
-                        .font(.system(.title3, design: .rounded).weight(.semibold))
-                        .foregroundStyle(.primary)
-
-                    Spacer()
-                    CloseCircleButton {
-                        withAnimation(.spring) { isShown = false }
-                    }
-                }
-                .padding(.top, 2)
+            VStack(spacing: 0) {
+                header
 
                 VStack(alignment: .leading, spacing: 18) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -110,9 +94,9 @@ struct SettingsSheet: View {
                     }
                 }
             }
-            .padding(.all, 22)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
-        .frame(width: 340, height: 220, alignment: .topTrailing)
+        .frame(width: 360, alignment: .topTrailing)
         .padding(.top, 10)
         .padding(.trailing, 16)
         .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .topTrailing)))
@@ -153,6 +137,7 @@ struct SettingsSheet: View {
             .foregroundStyle(tint)
     }
 }
+
 
 // MARK: - Minimalist Close Button
 
