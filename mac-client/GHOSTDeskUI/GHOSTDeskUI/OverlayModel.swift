@@ -74,6 +74,7 @@ final class OverlayModel: ObservableObject {
     let transparencySteps: [CGFloat] = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5]
     let fontScaleSteps: [CGFloat]     = [0.9, 1.0, 1.15, 1.3, 1.5, 1.7]
     let moveStep: CGFloat = 10.0
+    private weak var authState: AuthState?
 
     // Вычисляемые
     var alpha: CGFloat { transparencySteps[clamp(transparencyIndex, 0, transparencySteps.count - 1)] }
@@ -156,15 +157,52 @@ final class OverlayModel: ObservableObject {
         if let screen = NSScreen.main { OverlayWindowManager.shared.center(on: screen) }
     }
 
+    func attachAuth(_ auth: AuthState) {
+        Task { @MainActor [weak self] in
+            self?.authState = auth
+        }
+    }
+
     func startStopRecording() {
         isRecording.toggle()
         ServerClient.shared.log("[STUB] recording = \(isRecording ? "on" : "off")")
     }
 
     func askHint() {
-        Task { await HintAgent.shared.requestHint(windowSeconds: 40, maxChars: 900) }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            guard let auth = self.authState else {
+                HintAgent.shared.error = "Авторизация не инициализирована. Перезапустите приложение."
+                return
+            }
+
+            guard auth.isAuthorized else {
+                let message = auth.authorizationIssue ?? "API-ключ недействителен. Обновите ключ, чтобы получить подсказку."
+                HintAgent.shared.error = message
+                return
+            }
+
+            await HintAgent.shared.requestHint(windowSeconds: 40, maxChars: 900)
+        }
     }
+
     func askSolve() {
-        ServerClient.shared.log("[STUB] solve: сделать скрин и отправить на бэк (пока нет)")
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            guard let auth = self.authState else {
+                ServerClient.shared.log("Авторизация недоступна. Добавьте API-ключ, чтобы отправлять запросы.")
+                return
+            }
+
+            guard auth.isAuthorized else {
+                let message = auth.authorizationIssue ?? "API-ключ недействителен. Обновите ключ, чтобы продолжить."
+                ServerClient.shared.log(message)
+                return
+            }
+
+            ServerClient.shared.log("[STUB] solve: сделать скрин и отправить на бэк (пока нет)")
+        }
     }
 }

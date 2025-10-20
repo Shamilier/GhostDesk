@@ -14,6 +14,7 @@ import CoreGraphics
 struct OverlayRootView: View {
 
     @ObservedObject private var overlay = OverlayModel.shared
+    @EnvironmentObject private var auth: AuthState
     @State private var autoScroll = true
     @State private var isExpanded = false
     @State private var selectedTab: CommandTab = .listen
@@ -44,6 +45,20 @@ struct OverlayRootView: View {
     }
 
     var body: some View {
+        Group {
+            if auth.isAuthorized {
+                authorizedOverlay
+            } else {
+                ApiKeyGateView()
+            }
+        }
+
+
+        // Если когда-нибудь захочешь дать AskVM доступ к активному SCStream,
+        // просто присвой сюда askVM.stream = <твой stream> после старта.
+    }
+
+    private var authorizedOverlay: some View {
         ZStack {
             VStack(spacing: 14) {
                 FloatingToolbar(
@@ -70,7 +85,7 @@ struct OverlayRootView: View {
                 }
 
                 Spacer(minLength: 0)
-            
+
                     .onChange(of: isExpanded) { v in
                         if v && selectedTab == .ask { askFocused = true }
                     }
@@ -83,10 +98,6 @@ struct OverlayRootView: View {
 
         }
         .background(Color.clear)
-
-
-        // Если когда-нибудь захочешь дать AskVM доступ к активному SCStream,
-        // просто присвой сюда askVM.stream = <твой stream> после старта.
     }
 
     // MARK: - Listen Panel

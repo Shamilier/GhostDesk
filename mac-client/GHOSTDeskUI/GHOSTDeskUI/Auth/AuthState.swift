@@ -16,6 +16,7 @@ final class AuthState: ObservableObject {
     @Published var apiKey: String? {
         didSet {
             guard apiKey != oldValue else { return }
+            draftKey = apiKey ?? ""
             saveKeychainValue(apiKey)
         }
     }
@@ -39,8 +40,12 @@ final class AuthState: ObservableObject {
         }
     }
 
+    @Published var draftKey: String = ""
+    @Published var isVerifying: Bool = false
+    @Published var lastError: String? = nil
+
     init() {
-        apiKey = Self.loadKeychainValue()
+        apiKey = Self.normalizeKey(Self.loadKeychainValue())
 
         let defaults = UserDefaults.standard
         if defaults.object(forKey: Keys.isVerified) != nil {
@@ -55,15 +60,55 @@ final class AuthState: ObservableObject {
         } else {
             expiresAt = nil
         }
+
+        draftKey = apiKey ?? ""
+    }
+
+    var isAuthorized: Bool {
+        guard let key = apiKey, !key.isEmpty else { return false }
+        guard isVerified else { return false }
+        if let expiresAt { return expiresAt > Date() }
+        return true
+    }
+
+    var authorizationIssue: String? {
+        if isAuthorized { return nil }
+        if let lastError { return lastError }
+        if apiKey?.isEmpty ?? true {
+            return "Добавьте API-ключ, чтобы пользоваться GhostDesk."
+        }
+        if let expiresAt, expiresAt <= Date() {
+            return "Срок действия API-ключа истёк. Введите новый ключ."
+        }
+        if !isVerified {
+            return "API-ключ ещё не подтверждён."
+        }
+        return nil
     }
 
     func updateApiKey(_ key: String?) {
-        apiKey = key
+        let normalized = Self.normalizeKey(key)
+        apiKey = normalized
+        if normalized == nil {
+            isVerified = false
+            expiresAt = nil
+        }
     }
 
-    func verifyKey() async {
+    func verifyDraftKey() async {
+        guard let candidate = Self.normalizeKey(draftKey) else {
+            lastError = "Введите API-ключ, чтобы продолжить."
+            return
+        }
+
+        isVerifying = true
+        lastError = nil
+        defer { isVerifying = false }
+
+        updateApiKey(candidate)
         isVerified = true
         expiresAt = Calendar.current.date(byAdding: .day, value: 7, to: Date())
+        lastError = nil
     }
 
     private func saveKeychainValue(_ value: String?) {
@@ -97,5 +142,10 @@ final class AuthState: ObservableObject {
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess, let data = item as? Data else { return nil }
         return String(data: data, encoding: .utf8)
+    }
+
+    private static func normalizeKey(_ key: String?) -> String? {
+        guard let trimmed = key?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        return trimmed
     }
 }
