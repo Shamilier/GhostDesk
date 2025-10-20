@@ -88,27 +88,48 @@ final class AuthState: ObservableObject {
 
     func updateApiKey(_ key: String?) {
         let normalized = Self.normalizeKey(key)
+        let previousKey = apiKey
         apiKey = normalized
-        if normalized == nil {
+        if normalized != previousKey {
             isVerified = false
             expiresAt = nil
         }
     }
 
-    func verifyDraftKey() async {
+    var isDraftValid: Bool {
+        Self.normalizeKey(draftKey) != nil
+    }
+
+    @discardableResult
+    func verifyKey() async -> Bool {
         guard let candidate = Self.normalizeKey(draftKey) else {
             lastError = "Введите API-ключ, чтобы продолжить."
-            return
+            return false
         }
 
         isVerifying = true
         lastError = nil
         defer { isVerifying = false }
 
-        updateApiKey(candidate)
-        isVerified = true
-        expiresAt = Calendar.current.date(byAdding: .day, value: 7, to: Date())
-        lastError = nil
+        // TODO: Replace with a real network call to validate the key.
+        let isValid = true
+
+        if isValid {
+            updateApiKey(candidate)
+            isVerified = true
+            expiresAt = Calendar.current.date(byAdding: .day, value: 7, to: Date())
+            lastError = nil
+            return true
+        } else {
+            isVerified = false
+            expiresAt = nil
+            lastError = "API-ключ не прошёл проверку."
+            return false
+        }
+    }
+
+    func verifyDraftKey() async {
+        _ = await verifyKey()
     }
 
     private func saveKeychainValue(_ value: String?) {

@@ -10,6 +10,20 @@ import SwiftUI
 struct SettingsSheet: View {
     @Binding var isShown: Bool
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var auth: AuthState
+
+    private var isSaveDisabled: Bool {
+        auth.isVerifying || !auth.isDraftValid
+    }
+
+    private var isVerifyDisabled: Bool {
+        auth.isVerifying || !auth.isDraftValid
+    }
+
+    private var expiresDescription: String {
+        guard let expiresAt = auth.expiresAt else { return "Не установлен" }
+        return expiresAt.formatted(date: .abbreviated, time: .shortened)
+    }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -40,14 +54,61 @@ struct SettingsSheet: View {
                 }
                 .padding(.top, 2)
 
-                // Info/placeholder content
-                Text("Здесь появятся настройки сервера, токена, звука и другие опции.")
-                    .font(.system(size: 15, weight: .regular, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .padding(.top, -6)
-                    .padding(.trailing, 2)
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("API-ключ")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
 
-                Spacer()
+                        TextField("sk-...", text: $auth.draftKey)
+                            .textFieldStyle(.roundedBorder)
+                            .disabled(auth.isVerifying)
+                    }
+
+                    if let message = auth.lastError {
+                        Text(message)
+                            .font(.system(size: 13, weight: .regular, design: .rounded))
+                            .foregroundStyle(.red)
+                    }
+
+                    HStack(spacing: 12) {
+                        statusChip(systemImage: auth.isVerified ? "checkmark.seal.fill" : "exclamationmark.triangle.fill",
+                                   title: auth.isVerified ? "Проверено" : "Не подтверждено",
+                                   tint: auth.isVerified ? .green : .orange)
+
+                        statusChip(systemImage: "calendar",
+                                   title: "Действует до: \(expiresDescription)",
+                                   tint: .blue)
+                    }
+
+                    Spacer()
+
+                    HStack(spacing: 12) {
+                        Button(action: verifyKey) {
+                            if auth.isVerifying {
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                        .progressViewStyle(.circular)
+                                        .controlSize(.small)
+                                    Text("Проверяем…")
+                                }
+                            } else {
+                                Text("Проверить")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isVerifyDisabled)
+
+                        Button("Сохранить", action: saveDraft)
+                            .buttonStyle(.bordered)
+                            .disabled(isSaveDisabled)
+
+                        Button("Очистить", action: clearKey)
+                            .buttonStyle(.borderless)
+                            .disabled(auth.isVerifying)
+
+                        Spacer()
+                    }
+                }
             }
             .padding(.all, 22)
         }
@@ -56,6 +117,40 @@ struct SettingsSheet: View {
         .padding(.trailing, 16)
         .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .topTrailing)))
         .accessibilityElement(children: .contain)
+    }
+
+    private func verifyKey() {
+        Task {
+            let success = await auth.verifyKey()
+            if success {
+                withAnimation(.spring) {
+                    isShown = false
+                }
+            }
+        }
+    }
+
+    private func saveDraft() {
+        auth.updateApiKey(auth.draftKey)
+        auth.lastError = nil
+    }
+
+    private func clearKey() {
+        auth.updateApiKey(nil)
+        auth.lastError = nil
+    }
+
+    @ViewBuilder
+    private func statusChip(systemImage: String, title: String, tint: Color) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.system(size: 12, weight: .semibold, design: .rounded))
+            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(tint.opacity(colorScheme == .dark ? 0.24 : 0.18))
+            )
+            .foregroundStyle(tint)
     }
 }
 
