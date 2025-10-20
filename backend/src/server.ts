@@ -3,6 +3,37 @@ import multer from "multer";
 import cors from "cors";
 import OpenAI from "openai";
 
+function readAuthKey(req: express.Request): string | null {
+  const header = req.get("authorization") ?? req.get("Authorization");
+  if (header?.startsWith("Bearer ")) {
+    const token = header.slice("Bearer ".length).trim();
+    if (token) return token;
+  }
+
+  const queryValue = req.query["key"] ?? req.query["apiKey"];
+  if (Array.isArray(queryValue)) {
+    const first = queryValue.find((v) => typeof v === "string" && v.trim().length > 0);
+    return first ? (first as string).trim() : null;
+  }
+  if (typeof queryValue === "string" && queryValue.trim().length > 0) {
+    return queryValue.trim();
+  }
+
+  return null;
+}
+
+function maskKey(token: string): string {
+  if (token.length <= 8) {
+    return token.replace(/.(?=.{0,2}$)/g, "*");
+  }
+  return `${token.slice(0, 4)}…${token.slice(-4)}`;
+}
+
+function logAuthUsage(endpoint: string, token: string | null) {
+  const masked = token ? maskKey(token) : "<missing>";
+  console.log(`[auth] ${endpoint} token=${masked}`);
+}
+
 // -------------------- App & middleware --------------------
 const app = express();
 const upload = multer({ limits: { fileSize: 3 * 1024 * 1024 } }); // PNG до ~3 МБ
@@ -43,6 +74,9 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 // -------------------- Hint endpoint (speech-only) -----------------------
 app.post("/hint", async (req, res) => {
   try {
+    const token = readAuthKey(req);
+    logAuthUsage("/hint", token);
+
     const sessionId = String(req.body?.sessionId ?? "default");
     const instruction = String(req.body?.instruction ?? "").trim();
     const context = String(req.body?.context ?? "").trim();
@@ -148,6 +182,9 @@ app.post("/hint", async (req, res) => {
 // -------------------- Main endpoint -----------------------
 app.post("/ask", upload.single("image"), async (req, res) => {
   try {
+    const token = readAuthKey(req);
+    logAuthUsage("/ask", token);
+
     const question = String(req.body.question ?? "").trim();
     const smart = String(req.body.smart ?? "false") === "true";
     const sessionId = String(req.body.sessionId ?? "default");

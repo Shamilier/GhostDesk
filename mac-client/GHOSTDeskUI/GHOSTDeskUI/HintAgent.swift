@@ -4,7 +4,12 @@ import Combine
 @MainActor
 final class HintAgent: ObservableObject {
     static let shared = HintAgent()
-    private init() {}
+    private weak var auth: AuthState?
+    private let serverClient: ServerClient
+
+    private init(serverClient: ServerClient = .shared) {
+        self.serverClient = serverClient
+    }
 
     @Published var isRunning = false
     @Published var draft = ""          // сюда льётся поток
@@ -39,6 +44,11 @@ final class HintAgent: ObservableObject {
             return
         }
 
+        guard let auth, let token = auth.currentKey, !token.isEmpty else {
+            error = "Добавьте API-ключ, чтобы получать подсказки."
+            return
+        }
+
         isRunning = true
         canStop = true
 
@@ -50,7 +60,7 @@ final class HintAgent: ObservableObject {
                 let hintPaths = ["/hint", "/api/hint", "/v1/hint", "/hints/stream"]
                 var success = false
                 for p in hintPaths {
-                    if try await self.tryHintJSON(path: p, context: ctx) {
+                    if try await self.tryHintJSON(path: p, context: ctx, token: token) {
                         success = true
                         break
                     }
@@ -58,7 +68,7 @@ final class HintAgent: ObservableObject {
 
                 // 3) Если /hint отсутствует → фолбэк на /ask (multipart + SSE)
                 if !success {
-                    try await self.fallbackAskWithMultipart(context: ctx)
+                    try await self.fallbackAskWithMultipart(context: ctx, token: token)
                 }
             } catch {
                 if !Task.isCancelled { self.error = error.localizedDescription }
@@ -72,11 +82,12 @@ final class HintAgent: ObservableObject {
     }
 
     // MARK: - /hint (JSON) → true если 2xx и стрим прочитан
-    private func tryHintJSON(path: String, context: String) async throws -> Bool {
+    private func tryHintJSON(path: String, context: String, token: String) async throws -> Bool {
         var req = URLRequest(url: baseURL.appendingPathComponent(path))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        serverClient.authorize(&req, token: token)
 
         struct Payload: Codable { let sessionId: String; let instruction: String; let context: String }
         let payload = Payload(sessionId: sessionId, instruction: systemInstruction, context: context)
@@ -84,6 +95,11 @@ final class HintAgent: ObservableObject {
 
         let (bytes, response) = try await URLSession.shared.bytes(for: req)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+
+        if serverClient.handleUnauthorizedStatus(http.statusCode, auth: self.auth) {
+            throw NSError(domain: "auth", code: http.statusCode,
+                          userInfo: [NSLocalizedDescriptionKey: serverClient.unauthorizedMessage])
+        }
 
         // 404/405/415/501 и т.п. — считаем, что маршрута нет → вернуть false без ошибки
         if http.statusCode == 404 || http.statusCode == 405 || http.statusCode == 415 || http.statusCode == 501 {
@@ -105,11 +121,12 @@ final class HintAgent: ObservableObject {
     }
 
     // MARK: - Фолбэк: /ask (multipart) — без реального скрина (1×1 PNG)
-    private func fallbackAskWithMultipart(context: String) async throws {
+    private func fallbackAskWithMultipart(context: String, token: String) async throws {
         let path = "/ask"
         var req = URLRequest(url: baseURL.appendingPathComponent(path))
         req.httpMethod = "POST"
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        serverClient.authorize(&req, token: token)
 
         let boundary = "----ghostdesk-hint-\(UUID().uuidString)"
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
@@ -152,6 +169,11 @@ final class HintAgent: ObservableObject {
         let (bytes, response) = try await URLSession.shared.bytes(for: req)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
 
+        if serverClient.handleUnauthorizedStatus(http.statusCode, auth: self.auth) {
+            throw NSError(domain: "auth", code: http.statusCode,
+                          userInfo: [NSLocalizedDescriptionKey: serverClient.unauthorizedMessage])
+        }
+
         if !(200..<300).contains(http.statusCode) {
             let bodyText = (try? await collectToString(bytes, limit: 16_000)) ?? ""
             throw NSError(domain: "net", code: http.statusCode,
@@ -160,6 +182,10 @@ final class HintAgent: ObservableObject {
         }
 
         try await readSSE(bytes)
+    }
+
+    func attachAuth(_ auth: AuthState) {
+        self.auth = auth
     }
 
     // MARK: - SSE reader

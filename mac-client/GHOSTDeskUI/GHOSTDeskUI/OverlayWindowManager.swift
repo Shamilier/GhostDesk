@@ -18,7 +18,7 @@ final class OverlayWindowManager {
         model.attachAuth(auth)
         if window == nil {
             let panel = OverlayPanel(contentRect: NSRect(x: 0, y: 0, width: 920, height: 160))
-            let root = OverlayRootView()
+            let root = OverlayRootView(auth: auth)
                 .environmentObject(model)
                 .environmentObject(auth)
                 .background(WindowDragHandle()) // << drag только по «пустому» месту

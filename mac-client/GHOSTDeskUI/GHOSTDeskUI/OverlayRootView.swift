@@ -34,7 +34,11 @@ struct OverlayRootView: View {
     @StateObject private var transcriptionCoordinator = TranscriptionCoordinator()
 
     // NEW: вью-модель для снапшота/отправки
-    @StateObject private var askVM = AskVM()
+    @StateObject private var askVM: AskVM
+
+    init(auth: AuthState) {
+        _askVM = StateObject(wrappedValue: AskVM(auth: auth))
+    }
 
     private var systemChannelState: OverlayModel.TranscriptionChannelState {
         overlay.transcriptionState(for: .system)
@@ -1100,6 +1104,13 @@ final class AskVM: ObservableObject {
     private var streamTask: Task<Void, Never>?       // чтобы уметь отменять
     private let baseURL = URL(string: "https://api.disciplaner.online")!
     private let sessionId = UUID().uuidString        // одна сессия на жизненный цикл VM
+    private let auth: AuthState
+    private let serverClient: ServerClient
+
+    init(auth: AuthState, serverClient: ServerClient = .shared) {
+        self.auth = auth
+        self.serverClient = serverClient
+    }
 
     func cancelStream() {
         streamTask?.cancel()
@@ -1120,6 +1131,11 @@ final class AskVM: ObservableObject {
             return
         }
 
+        guard let token = auth.currentKey, !token.isEmpty else {
+            answerError = "Добавьте API-ключ, чтобы отправить вопрос."
+            return
+        }
+
         // сброс состояния ответа
         answerDraft = ""
         answerError = nil
@@ -1137,7 +1153,8 @@ final class AskVM: ObservableObject {
                 question: q,
                 screenshotPNG: png,
                 smart: smart,
-                transcript: transcript
+                transcript: transcript,
+                token: token
             )
         } catch {
             answerError = error.localizedDescription
@@ -1153,11 +1170,13 @@ final class AskVM: ObservableObject {
         question: String,
         screenshotPNG: Data,
         smart: Bool,
-        transcript: String
+        transcript: String,
+        token: String
     ) async throws {
         var req = URLRequest(url: baseURL.appendingPathComponent("/ask"))
         req.httpMethod = "POST"
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept") // ожидаем SSE
+        serverClient.authorize(&req, token: token)
 
         // multipart/form-data
         let boundary = "----ghostdesk-\(UUID().uuidString)"
@@ -1198,6 +1217,11 @@ final class AskVM: ObservableObject {
             do {
                 let (bytes, response) = try await URLSession.shared.bytes(for: req)
                 guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+
+                if serverClient.handleUnauthorizedStatus(http.statusCode, auth: auth) {
+                    throw NSError(domain: "auth", code: http.statusCode,
+                                  userInfo: [NSLocalizedDescriptionKey: serverClient.unauthorizedMessage])
+                }
 
                 if !(200..<300).contains(http.statusCode) {
                     var errText = "HTTP \(http.statusCode) \(HTTPURLResponse.localizedString(forStatusCode: http.statusCode))"
