@@ -15,6 +15,7 @@ final class OverlayWindowManager {
 
     func show(model: OverlayModel, auth: AuthState) {
         authState = auth
+        model.attachAuth(auth)
         if window == nil {
             let panel = OverlayPanel(contentRect: NSRect(x: 0, y: 0, width: 920, height: 160))
             let root = OverlayRootView()
