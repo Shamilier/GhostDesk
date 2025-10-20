@@ -66,7 +66,7 @@ struct OverlayRootView: View {
                     selected: $selectedTab,
                     onPrimaryTap: { isExpanded = true },
                     onEyeTap: { isExpanded.toggle() },
-                    onMenuTap: {}
+                    onMenuTap: { overlay.showSettings = true }
                 )
                 .padding(.top, 8)
 
@@ -98,6 +98,18 @@ struct OverlayRootView: View {
 
         }
         .background(Color.clear)
+        .sheet(isPresented: Binding(
+            get: { overlay.showSettings },
+            set: { overlay.showSettings = $0 }
+        )) {
+            SettingsSheet(
+                isShown: Binding(
+                    get: { overlay.showSettings },
+                    set: { overlay.showSettings = $0 }
+                )
+            )
+                .environmentObject(auth)
+        }
     }
 
     // MARK: - Listen Panel
