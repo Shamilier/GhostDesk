@@ -25,12 +25,14 @@ type ChatMsg =
   | { role: "assistant"; content: string };
 
 const sessions = new Map<string, ChatMsg[]>();
+const MAX_HISTORY_PAIRS = 6; // user+assistant пар
+const MAX_HISTORY_MESSAGES = MAX_HISTORY_PAIRS * 2;
 
 function push(sessionId: string, msg: ChatMsg) {
   const arr = sessions.get(sessionId) ?? [];
   arr.push(msg);
-  // держим короткую историю (например, 6 сообщений)
-  while (arr.length > 6) arr.shift();
+  // Обрезаем историю по парам user+assistant, чтобы ранние шаги дольше сохранялись
+  while (arr.length > MAX_HISTORY_MESSAGES) arr.splice(0, 2);
   sessions.set(sessionId, arr);
 }
 
@@ -74,7 +76,7 @@ app.post("/hint", async (req, res) => {
     };
 
     const history = sessions.get(sessionId) ?? [];
-    const messages: ChatMsg[] = [system, ...history.slice(-4), user];
+    const messages: ChatMsg[] = [system, ...history, user];
 
     // SSE headers
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
@@ -175,7 +177,7 @@ app.post("/ask", upload.single("image"), async (req, res) => {
     };
 
     const history = sessions.get(sessionId) ?? [];
-    const messages: ChatMsg[] = [system, ...history.slice(-4), user];
+    const messages: ChatMsg[] = [system, ...history, user];
 
     // SSE заголовки (стрим)
     res.setHeader("Content-Type", "text/event-stream");
