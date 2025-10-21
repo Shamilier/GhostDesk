@@ -139,6 +139,9 @@ struct OverlayRootView: View {
 
                     Spacer()
 
+                    let microphonePhase = microphoneChannelState.phase
+                    let microphoneBusy = microphonePhase == .starting || microphonePhase == .stopping
+
                     Button(showTranscript ? "Показать инсайты" : "Показать транскрипт") {
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
                             showTranscript.toggle()
@@ -147,9 +150,17 @@ struct OverlayRootView: View {
                     .buttonStyle(GlassPill())
 
                     Button(action: {
+                        transcriptionCoordinator.setMicrophoneArmed(!transcriptionCoordinator.isMicrophoneArmed)
+                    }) {
+                        Label("Микрофон", systemImage: transcriptionCoordinator.isMicrophoneArmed ? "mic.fill" : "mic")
+                    }
+                    .buttonStyle(GlassPill(tint: transcriptionCoordinator.isMicrophoneArmed ? .pink : .secondary))
+                    .disabled(microphoneBusy)
+
+                    Button(action: {
                         switch transcriptionCoordinator.overallPhase {
                         case .idle:
-                            transcriptionCoordinator.startAll()
+                            transcriptionCoordinator.startRecording()
                         case .starting, .running, .stopping:
                             transcriptionCoordinator.stopAll()
                         }
@@ -600,16 +611,27 @@ struct OverlayRootView: View {
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(overlay.anyChannelIsTranscribing ? .green.opacity(0.9) : .secondary)
                 }
-            }
+                    }
 
             Spacer()
 
             HStack(spacing: 10) {
+                let microphonePhase = microphoneChannelState.phase
+                let microphoneBusy = microphonePhase == .starting || microphonePhase == .stopping
+
+                Button {
+                    transcriptionCoordinator.setMicrophoneArmed(!transcriptionCoordinator.isMicrophoneArmed)
+                } label: {
+                    Label("Микрофон", systemImage: transcriptionCoordinator.isMicrophoneArmed ? "mic.fill" : "mic")
+                }
+                .buttonStyle(GlassPill(tint: transcriptionCoordinator.isMicrophoneArmed ? .pink : .secondary))
+                .disabled(microphoneBusy)
+
                 // Start/Stop управляет обоими каналами
                 Button {
                     switch transcriptionCoordinator.overallPhase {
                     case .idle:
-                        transcriptionCoordinator.startAll()
+                        transcriptionCoordinator.startRecording()
                     case .starting, .running, .stopping:
                         transcriptionCoordinator.stopAll()
                     }
