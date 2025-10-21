@@ -69,6 +69,9 @@ final class OverlayModel: ObservableObject {
     // Настройки
     @Published var showSettings: Bool = false
 
+    // Триггер горячей клавиши «решить задачу»
+    @Published var solveTrigger: Int = 0
+
 
     // Константы
     let transparencySteps: [CGFloat] = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5]
@@ -164,6 +167,7 @@ final class OverlayModel: ObservableObject {
         Task { await HintAgent.shared.requestHint(windowSeconds: 40, maxChars: 900) }
     }
     func askSolve() {
-        ServerClient.shared.log("[STUB] solve: сделать скрин и отправить на бэк (пока нет)")
+        solveTrigger &+= 1
+        ServerClient.shared.log("solve shortcut triggered (#\(solveTrigger))")
     }
 }
