@@ -126,6 +126,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
 
     // Pending confirmed (анти-обрыв слова)
     private var pendingConfirmed: String = ""
+    private var confirmedAccumulator: String = ""
     private var commitTimer: DispatchSourceTimer?
 
     // Counters
@@ -187,6 +188,20 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         return patterns.compactMap { try? NSRegularExpression(pattern: $0) }
     }()
 
+    private lazy var noiseTagRegexes: [NSRegularExpression] = {
+        [
+            #"(?i)\[[^\[\]]{1,120}\]"#,
+            #"(?i)\([^\(\)]{1,120}\)"#
+        ].compactMap { try? NSRegularExpression(pattern: $0) }
+    }()
+
+    private let noiseKeywords = [
+        "музык", "динамич", "песня", "инструмент", "минус", "мелод",
+        "music", "melody", "song", "instrumental", "beat", "rhythm",
+        "аплод", "applause", "laugh", "смех", "noise", "шум", "тишин",
+        "background", "fx", "зву"
+    ]
+
     @inline(__always)
     private func isKnownHallucination(_ s: String) -> Bool {
         guard !s.isEmpty else { return false }
@@ -199,7 +214,48 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
     private func stripSpecialTokens(_ s: String) -> String {
         s.replacingOccurrences(of: #"<\|[^>]+\|>"#, with: "", options: .regularExpression)
          .replacingOccurrences(of: "Waiting for speech...", with: "")
-         .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func stripNoiseTags(_ s: String) -> String {
+        guard !s.isEmpty else { return s }
+        let nsSource = s as NSString
+        let mutable = NSMutableString(string: s)
+
+        for regex in noiseTagRegexes {
+            let matches = regex.matches(in: s, options: [], range: NSRange(location: 0, length: nsSource.length))
+            for match in matches.reversed() {
+                let tag = nsSource.substring(with: match.range).lowercased()
+                if noiseKeywords.contains(where: { tag.contains($0) }) {
+                    mutable.replaceCharacters(in: match.range, with: " ")
+                }
+            }
+        }
+
+        var result = mutable as String
+        result = result.replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+        return result
+    }
+
+    private func sanitizeTranscription(_ s: String) -> String {
+        stripNoiseTags(stripSpecialTokens(s))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func isNoiseTag(_ s: String) -> Bool {
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        let ns = trimmed as NSString
+        let range = NSRange(location: 0, length: ns.length)
+        for regex in noiseTagRegexes {
+            if let match = regex.firstMatch(in: trimmed, options: [], range: range),
+               match.range.length == ns.length {
+                let lower = trimmed.lowercased()
+                if noiseKeywords.contains(where: { lower.contains($0) }) {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
 
@@ -236,12 +292,109 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
     }
 
     @MainActor
-    private func applyConfirmedDelta(_ delta: String) {
+    private func applyConfirmedDelta(_ delta: String, at time: Date = Date(), force: Bool = false) {
         let clean = delta.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
-        appendMessage(clean)
+
+        appendToConfirmedBuffer(clean, at: time, force: force)
         partialText = ""
         lastPartial = ""
+    }
+
+    @MainActor
+    private func appendToConfirmedBuffer(_ text: String, at time: Date, force: Bool) {
+        guard !text.isEmpty else { return }
+
+        if !confirmedAccumulator.isEmpty,
+           let lastChar = confirmedAccumulator.last,
+           let firstChar = text.first,
+           shouldInsertSpace(between: lastChar, and: firstChar) {
+            confirmedAccumulator.append(" ")
+        }
+
+        confirmedAccumulator.append(text)
+        flushConfirmedBuffer(force: force, at: time)
+    }
+
+    @MainActor
+    private func flushConfirmedBuffer(force: Bool, at time: Date) {
+        guard !confirmedAccumulator.isEmpty else { return }
+
+        let sentenceTerminators: Set<Character> = [".", "!", "?", "…", "\n"]
+        let trailingClosers = "»\"')]}”’"
+
+        var start = confirmedAccumulator.startIndex
+        var idx = start
+        while idx < confirmedAccumulator.endIndex {
+            let ch = confirmedAccumulator[idx]
+            if sentenceTerminators.contains(ch) {
+                var end = confirmedAccumulator.index(after: idx)
+                while end < confirmedAccumulator.endIndex,
+                      let closer = confirmedAccumulator[end].unicodeScalars.first,
+                      trailingClosers.unicodeScalars.contains(closer) {
+                    end = confirmedAccumulator.index(after: end)
+                }
+                while end < confirmedAccumulator.endIndex,
+                      confirmedAccumulator[end].isWhitespace {
+                    end = confirmedAccumulator.index(after: end)
+                }
+
+                let sentence = confirmedAccumulator[start..<end]
+                let trimmed = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    appendMessage(trimmed, at: time)
+                    TranscriptBuffer.shared.appendFinal(trimmed, at: time)
+                }
+                start = end
+                idx = end
+                continue
+            }
+            idx = confirmedAccumulator.index(after: idx)
+        }
+
+        if start < confirmedAccumulator.endIndex {
+            confirmedAccumulator = String(confirmedAccumulator[start...])
+        } else {
+            confirmedAccumulator = ""
+        }
+
+        if force {
+            let remainder = confirmedAccumulator.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !remainder.isEmpty {
+                appendMessage(remainder, at: time)
+                TranscriptBuffer.shared.appendFinal(remainder, at: time)
+            }
+            confirmedAccumulator = ""
+        }
+    }
+
+    private func shouldInsertSpace(between lhs: Character, and rhs: Character) -> Bool {
+        if lhs.isWhitespace || rhs.isWhitespace { return false }
+        if "-—–".contains(lhs) { return false }
+        if "'’\"“”".contains(lhs) { return false }
+        let punctuation = CharacterSet(charactersIn: ".,!?:;…—-")
+        if let scalar = rhs.unicodeScalars.first, punctuation.contains(scalar) { return false }
+        if "'’\"«()[]{}".contains(rhs) { return false }
+        return true
+    }
+
+    private func mergeChunksForCommit(_ chunks: [String]) -> String {
+        let cleaned = chunks
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard var result = cleaned.first else { return "" }
+
+        for part in cleaned.dropFirst() {
+            if let lastChar = result.last,
+               let firstChar = part.first,
+               shouldInsertSpace(between: lastChar, and: firstChar) {
+                result.append(" ")
+            }
+            result.append(part)
+        }
+
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     @inline(__always)
@@ -265,8 +418,10 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
             let chunk = self.pendingConfirmed.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !chunk.isEmpty else { return }
             self.pendingConfirmed = ""
-            DispatchQueue.main.async { self.applyConfirmedDelta(chunk) }
-            TranscriptBuffer.shared.appendFinal(chunk, at: Date())
+            let timestamp = Date()
+            DispatchQueue.main.async {
+                self.applyConfirmedDelta(chunk, at: timestamp)
+            }
         }
         commitTimer = t
         t.resume()
@@ -292,6 +447,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
     func clearLog() {
         transcriptLog.removeAll()
         partialText = ""
+        confirmedAccumulator = ""
         TranscriptBuffer.shared.clear()
     }
 
@@ -311,6 +467,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         lastNonEmptyPartialAt = Date()
         lastPartialChangeAt = Date()
         pendingConfirmed = ""
+        confirmedAccumulator = ""
         commitTimer?.cancel(); commitTimer = nil
 
         Task {
@@ -374,7 +531,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
 
                     // CONFIRMED -> в лог (с «анти-обрыв» логикой)
                     let confirmedRaw = state.confirmedSegments.map(\.text).joined()
-                    let confirmed = self.stripSpecialTokens(confirmedRaw)
+                    let confirmed = self.sanitizeTranscription(confirmedRaw)
                     if !confirmed.isEmpty, confirmed != self.lastConfirmed {
                         var delta = String(confirmed.dropFirst(self.lastConfirmed.count))
                             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -394,22 +551,26 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
                                 self.commitTimer?.cancel()
                                 self.commitTimer = nil
                             }
-                            DispatchQueue.main.async { self.applyConfirmedDelta(delta) }
-                            TranscriptBuffer.shared.appendFinal(delta, at: Date())
+                            let timestamp = Date()
+                            DispatchQueue.main.async {
+                                self.applyConfirmedDelta(delta, at: timestamp)
+                            }
                         }
                     }
 
                     // PARTIAL -> живой хвост с «липкостью»
                     let unconf = state.unconfirmedSegments.map(\.text).joined()
                     let liveRaw = state.currentText.isEmpty ? unconf : state.currentText
-                    let live = self.stripSpecialTokens(liveRaw)
+                    let live = self.sanitizeTranscription(liveRaw)
 
                     if live != self.lastPartial {
                         self.lastPartial = live
                         let candidate = self.streamFriendlyPartial(live)
 
                         DispatchQueue.main.async {
-                            if !candidate.isEmpty && !self.isKnownHallucination(candidate) {
+                            if !candidate.isEmpty &&
+                                !self.isKnownHallucination(candidate) &&
+                                !self.isNoiseTag(candidate) {
                                 self.partialText = candidate
                                 self.lastShownPartial = candidate
                                 self.lastNonEmptyPartialAt = Date()
@@ -430,16 +591,17 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
                 }
 
                 self.transcriber = tr
-                try await tr.startStreamTranscription()
-                print("[WK] stream transcription started")
-
-                // soft-confirm таймер: дожимает хвост на паузе
-                startSoftConfirmTimer()
 
                 await MainActor.run {
                     self.isTranscribing = true
                     self.phase = .running
                 }
+
+                // soft-confirm таймер: дожимает хвост на паузе
+                startSoftConfirmTimer()
+
+                try await tr.startStreamTranscription()
+                print("[WK] stream transcription started")
             } catch {
                 await MainActor.run {
                     self.lastError = "Старт не удался: \(error.localizedDescription)"
@@ -463,19 +625,18 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         transcriber = nil
 
         // добиваем хвост, если он остался
-        let tail = (pendingConfirmed + " " + partialText).trimmingCharacters(in: .whitespacesAndNewlines)
+        let tail = mergeChunksForCommit([pendingConfirmed, lastPartial])
         pendingConfirmed = ""
-        if !tail.isEmpty {
-            Task { @MainActor in
-                self.applyConfirmedDelta(tail)
-            }
-            TranscriptBuffer.shared.appendFinal(tail, at: Date())
-        }
-
+        let flushTime = Date()
         stopCapture()
         converter = nil
 
         Task { @MainActor in
+            if !tail.isEmpty {
+                self.applyConfirmedDelta(tail, at: flushTime, force: true)
+            } else {
+                self.flushConfirmedBuffer(force: true, at: flushTime)
+            }
             self.isTranscribing = false
             self.partialText = ""
             self.phase = .idle
@@ -503,16 +664,21 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         // Тихо уже ~0.8 c и partial не менялся ~0.6 c — коммитим хвост
         let silent = recentEnergyMean(seconds: 0.8) < 0.08
         let stable = Date().timeIntervalSince(lastPartialChangeAt) > 0.6
-        let tail = partialText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tail = mergeChunksForCommit([pendingConfirmed, lastPartial])
 
         guard silent, stable, !tail.isEmpty else { return }
 
         // Не коммитим совсем короткие/обрывочные куски
-        if tail.count > 20 || [".","!","?","…",":",";"].contains(tail.last) {
+        let tailBoundaryChars: Set<Character> = [".","!","?","…",":",";"]
+        let tailHasBoundary = tail.last.map { tailBoundaryChars.contains($0) } ?? false
+        if tail.count > 20 || tailHasBoundary {
+            let timestamp = Date()
+            pendingConfirmed = ""
+            commitTimer?.cancel()
+            commitTimer = nil
             DispatchQueue.main.async {
-                self.applyConfirmedDelta(tail)
+                self.applyConfirmedDelta(tail, at: timestamp, force: true)
             }
-            TranscriptBuffer.shared.appendFinal(tail, at: Date())
             lastPartial = ""
             lastShownPartial = ""
         }

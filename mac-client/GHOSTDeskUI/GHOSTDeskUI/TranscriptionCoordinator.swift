@@ -3,11 +3,13 @@ import Combine
 
 final class TranscriptionCoordinator: ObservableObject {
     @Published private(set) var overallPhase: OverlayModel.AudioChannelPhase = .idle
+    @Published var isMicrophoneArmed = false
 
     private let overlay: OverlayModel
     private let systemTranscriber: SpeechTranscriber
     private let microphoneTranscriber: SpeechTranscriber
     private var cancellables: Set<AnyCancellable> = []
+    private var shouldResetMicrophoneAfterStop = false
 
     init(overlay: OverlayModel = .shared) {
         self.overlay = overlay
@@ -26,17 +28,26 @@ final class TranscriptionCoordinator: ObservableObject {
         overlay.anyChannelIsTranscribing
     }
 
-    func startAll() {
+    func startRecording() {
         systemTranscriber.start()
-        microphoneTranscriber.start()
+        if isMicrophoneArmed {
+            microphoneTranscriber.start()
+        }
     }
 
     func stopAll() {
         systemTranscriber.stop()
         microphoneTranscriber.stop()
+        shouldResetMicrophoneAfterStop = true
     }
 
-    func clearLogs(for source: OverlayModel.AudioSourceKind) {
+    func setMicrophoneArmed(_ armed: Bool) {
+        guard armed != isMicrophoneArmed else { return }
+        isMicrophoneArmed = armed
+        alignMicrophoneStateWithDesiredConfiguration()
+    }
+
+    @MainActor func clearLogs(for source: OverlayModel.AudioSourceKind) {
         switch source {
         case .system:
             systemTranscriber.clearLog()
@@ -90,6 +101,7 @@ final class TranscriptionCoordinator: ObservableObject {
                 guard let self else { return }
                 self.overlay.updateTranscriptionState(for: source) { $0.phase = self.mapPhase(phase) }
                 self.updateOverallPhase()
+                self.handlePhaseChange(for: source, phase: phase)
             }
             .store(in: &cancellables)
     }
@@ -113,6 +125,38 @@ final class TranscriptionCoordinator: ObservableObject {
             overallPhase = .running
         } else {
             overallPhase = .idle
+        }
+    }
+
+    private func handlePhaseChange(for source: OverlayModel.AudioSourceKind, phase _: SpeechTranscriber.Phase) {
+        if source == .microphone {
+            alignMicrophoneStateWithDesiredConfiguration()
+        }
+
+        if shouldResetMicrophoneAfterStop,
+           systemTranscriber.phase == .idle,
+           microphoneTranscriber.phase == .idle {
+            shouldResetMicrophoneAfterStop = false
+            if isMicrophoneArmed {
+                isMicrophoneArmed = false
+            }
+        }
+    }
+
+    private func alignMicrophoneStateWithDesiredConfiguration() {
+        let microphonePhase = microphoneTranscriber.phase
+        if isMicrophoneArmed {
+            guard overallPhase != .idle else { return }
+            if microphonePhase == .idle {
+                microphoneTranscriber.start()
+            }
+        } else {
+            switch microphonePhase {
+            case .running, .starting:
+                microphoneTranscriber.stop()
+            case .idle, .stopping:
+                break
+            }
         }
     }
 }
