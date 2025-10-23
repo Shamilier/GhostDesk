@@ -3,8 +3,7 @@ import multer from "multer";
 import cors from "cors";
 import OpenAI from "openai";
 import { createOAuthRouter } from "./routes/oauth.js";
-import { getDatabase } from "./services/database.js";
-import { OAuthRepository } from "./services/oauthRepository.js";
+import { OAuthStore } from "./services/oauthStore.js";
 
 export function readAuthKey(req: express.Request): string | null {
   const header = req.get("authorization") ?? req.get("Authorization");
@@ -43,16 +42,17 @@ app.set("trust proxy", 1);
 const upload = multer({ limits: { fileSize: 3 * 1024 * 1024 } }); // PNG до ~3 МБ
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
-app.use(express.urlencoded({ extended: false }));
 
-const db = getDatabase();
-const oauthRepository = new OAuthRepository(db);
-oauthRepository.initialize();
+const oauthStore = new OAuthStore();
+const oauthClients = {
+  "ghostdesk-desktop": ["ghostdesk://auth/callback"] as const,
+};
 
 app.use(
   "/oauth",
   createOAuthRouter({
-    repository: oauthRepository,
+    store: oauthStore,
+    clientRegistry: oauthClients,
     readAuthKey,
     logAuthUsage,
   })

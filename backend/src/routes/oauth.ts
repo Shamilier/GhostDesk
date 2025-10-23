@@ -1,12 +1,14 @@
 import type { Request, Response, Router } from "express";
 import { Router as createRouter } from "express";
-import {
-  OAuthFlowError,
-  type OAuthRepository,
-} from "../services/oauthRepository.js";
+import { hashPkceVerifier, OAuthStore, type PKCEMethod } from "../services/oauthStore.js";
+
+export interface ClientRegistry {
+  [clientId: string]: readonly string[];
+}
 
 interface OAuthRouterOptions {
-  repository: OAuthRepository;
+  store: OAuthStore;
+  clientRegistry: ClientRegistry;
   readAuthKey: (req: Request) => string | null;
   logAuthUsage: (endpoint: string, token: string | null) => void;
   authorizationCodeTTLSeconds?: number;
@@ -15,262 +17,252 @@ interface OAuthRouterOptions {
   defaultScope?: string;
 }
 
-const DEFAULT_CODE_TTL_SECONDS = 300; // 5 minutes
-const DEFAULT_ACCESS_TTL_SECONDS = 900; // 15 minutes
-const DEFAULT_REFRESH_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+interface AuthorizeBody {
+  response_type?: string;
+  client_id?: string;
+  redirect_uri?: string;
+  code_challenge?: string;
+  code_challenge_method?: string;
+  scope?: string;
+  state?: string;
+}
+
+interface TokenBody {
+  grant_type?: string;
+  code?: string;
+  redirect_uri?: string;
+  client_id?: string;
+  code_verifier?: string;
+  refresh_token?: string;
+  scope?: string;
+  plan?: string;
+  referral?: string;
+}
+
+const DEFAULT_CODE_TTL = 300; // 5 minutes
+const DEFAULT_ACCESS_TTL = 3600; // 1 hour
+const DEFAULT_REFRESH_TTL = 60 * 60 * 24 * 30; // 30 days
 
 export function createOAuthRouter(options: OAuthRouterOptions): Router {
   const router = createRouter();
   const {
-    repository,
+    store,
+    clientRegistry,
     readAuthKey,
     logAuthUsage,
-    authorizationCodeTTLSeconds = DEFAULT_CODE_TTL_SECONDS,
-    accessTokenTTLSeconds = DEFAULT_ACCESS_TTL_SECONDS,
-    refreshTokenTTLSeconds = DEFAULT_REFRESH_TTL_SECONDS,
-    defaultScope = "",
+    authorizationCodeTTLSeconds = DEFAULT_CODE_TTL,
+    accessTokenTTLSeconds = DEFAULT_ACCESS_TTL,
+    refreshTokenTTLSeconds = DEFAULT_REFRESH_TTL,
+    defaultScope = "basic",
   } = options;
 
-  router.get("/authorize", (req: Request, res: Response) => {
+  router.post("/authorize", (req: Request, res: Response) => {
+    const body = req.body as AuthorizeBody;
     const userToken = readAuthKey(req);
     logAuthUsage("/oauth/authorize", userToken);
 
     if (!userToken) {
-      return sendAuthorizeError(req, res, null, null, "invalid_request", "Missing authorization token", 401);
+      return res.status(401).json({ error: "Missing or invalid authorization token" });
     }
 
-    const responseType = getFirstQueryValue(req.query["response_type"]) ?? "code";
-    const clientId = getFirstQueryValue(req.query["client_id"]);
-    const redirectUri = getFirstQueryValue(req.query["redirect_uri"]);
-    const codeChallenge = getFirstQueryValue(req.query["code_challenge"]);
-    const codeChallengeMethod = getFirstQueryValue(req.query["code_challenge_method"]);
-    const scope = getFirstQueryValue(req.query["scope"]) ?? defaultScope;
-    const state = getFirstQueryValue(req.query["state"]);
-
-    if (responseType !== "code") {
-      return sendAuthorizeError(req, res, redirectUri, state, "invalid_request", "response_type must be code");
+    if ((body.response_type ?? "code") !== "code") {
+      return res.status(400).json({ error: "Unsupported response_type" });
     }
+
+    const clientId = body.client_id?.trim();
+    const redirectUri = body.redirect_uri?.trim();
+    const codeChallenge = body.code_challenge?.trim();
+    const method = normalizePkceMethod(body.code_challenge_method);
 
     if (!clientId) {
-      return sendAuthorizeError(req, res, redirectUri, state, "invalid_request", "Missing client_id");
+      return res.status(400).json({ error: "Missing client_id" });
     }
 
     if (!redirectUri) {
-      return sendAuthorizeError(req, res, null, state, "invalid_request", "Missing redirect_uri");
+      return res.status(400).json({ error: "Missing redirect_uri" });
     }
 
-    if (!state) {
-      return sendAuthorizeError(req, res, redirectUri, state, "invalid_request", "Missing state parameter");
+    const allowedRedirects = clientRegistry[clientId] ?? [];
+    if (!allowedRedirects.includes(redirectUri)) {
+      return res.status(400).json({ error: "Invalid redirect_uri for client" });
     }
 
     if (!codeChallenge) {
-      return sendAuthorizeError(req, res, redirectUri, state, "invalid_request", "Missing code_challenge");
+      return res.status(400).json({ error: "Missing code_challenge" });
     }
 
-    if (!codeChallengeMethod || codeChallengeMethod.toUpperCase() !== "S256") {
-      return sendAuthorizeError(req, res, redirectUri, state, "invalid_request", "Unsupported code_challenge_method");
+    if (!method) {
+      return res.status(400).json({ error: "Unsupported code_challenge_method" });
     }
 
-    try {
-      repository.assertClientExists(clientId);
-    } catch (error) {
-      if (error instanceof OAuthFlowError) {
-        return sendAuthorizeError(req, res, redirectUri, state, error.error, error.message, error.status);
-      }
-      throw error;
-    }
+    const scope = body.scope?.trim() ?? defaultScope;
+    const codeRecord = store.createAuthorizationCode({
+      clientId,
+      userToken,
+      redirectUri,
+      codeChallenge,
+      codeChallengeMethod: method,
+      scope,
+      lifetimeSeconds: authorizationCodeTTLSeconds,
+    });
 
-    const allowedRedirects = repository.listRedirectUris(clientId);
-    if (!allowedRedirects.includes(redirectUri)) {
-      return sendAuthorizeError(req, res, null, state, "invalid_request", "redirect_uri is not registered for client");
-    }
+    const response = {
+      code: codeRecord.code,
+      expires_in: authorizationCodeTTLSeconds,
+      redirect_uri: redirectUri,
+      scope,
+      state: body.state,
+    };
 
-    try {
-      const record = repository.createAuthorizationCode({
-        userToken,
-        clientId,
-        redirectUri,
-        codeChallenge,
-        scope,
-        lifetimeSeconds: authorizationCodeTTLSeconds,
-      });
-
-      const redirectURL = new URL(redirectUri);
-      redirectURL.searchParams.set("code", record.code);
-      redirectURL.searchParams.set("state", state);
-      if (scope) {
-        redirectURL.searchParams.set("scope", scope);
-      }
-
-      return res.redirect(302, redirectURL.toString());
-    } catch (error) {
-      if (error instanceof OAuthFlowError) {
-        return sendAuthorizeError(req, res, redirectUri, state, error.error, error.message, error.status);
-      }
-      throw error;
-    }
+    return res.status(201).json(response);
   });
 
   router.post("/token", (req: Request, res: Response) => {
-    logAuthUsage("/oauth/token", null);
-    const grantType = getFirstBodyValue(req.body?.grant_type) ?? "authorization_code";
+    const body = req.body as TokenBody;
+    const grantType = body.grant_type ?? "authorization_code";
 
     if (grantType === "authorization_code") {
-      return handleAuthorizationCodeGrant(req, res);
+      return handleAuthorizationCodeGrant();
     }
 
     if (grantType === "refresh_token") {
-      return handleRefreshTokenGrant(req, res);
+      return handleRefreshTokenGrant();
     }
 
-    return res.status(400).json({ error: "unsupported_grant_type", error_description: "Unsupported grant_type" });
+    return res.status(400).json({ error: "Unsupported grant_type" });
+
+    function handleAuthorizationCodeGrant() {
+      const code = body.code?.trim();
+      const verifier = body.code_verifier?.trim();
+      const clientId = body.client_id?.trim();
+      const redirectUri = body.redirect_uri?.trim();
+
+      if (!code) {
+        return res.status(400).json({ error: "Missing code" });
+      }
+      if (!verifier) {
+        return res.status(400).json({ error: "Missing code_verifier" });
+      }
+
+      const codeRecord = store.peekAuthorizationCode(code);
+      if (!codeRecord) {
+        return res.status(400).json({ error: "Invalid or expired authorization code" });
+      }
+
+      if (codeRecord.consumed) {
+        return res.status(400).json({ error: "Authorization code already used" });
+      }
+
+      if (clientId && clientId !== codeRecord.clientId) {
+        return res.status(400).json({ error: "client_id mismatch" });
+      }
+
+      if (redirectUri && redirectUri !== codeRecord.redirectUri) {
+        return res.status(400).json({ error: "redirect_uri mismatch" });
+      }
+
+      if (!verifyPkce(verifier, codeRecord.codeChallenge, codeRecord.codeChallengeMethod)) {
+        return res.status(400).json({ error: "Invalid PKCE verifier" });
+      }
+
+      const consumed = store.consumeAuthorizationCode(code);
+      if (!consumed) {
+        return res.status(400).json({ error: "Authorization code already consumed" });
+      }
+
+      const scope = codeRecord.scope || defaultScope;
+      const accessToken = store.createAccessToken({
+        clientId: codeRecord.clientId,
+        userToken: codeRecord.userToken,
+        scope,
+        plan: body.plan?.trim() || undefined,
+        referral: body.referral?.trim() || undefined,
+        lifetimeSeconds: accessTokenTTLSeconds,
+      });
+
+      const refreshToken = store.createRefreshToken({
+        clientId: codeRecord.clientId,
+        userToken: codeRecord.userToken,
+        scope,
+        accessToken: accessToken.token,
+        lifetimeSeconds: refreshTokenTTLSeconds,
+      });
+
+      return res.status(200).json({
+        access_token: accessToken.token,
+        refresh_token: refreshToken.token,
+        token_type: "Bearer",
+        expires_in: Math.round((accessToken.expiresAt.getTime() - Date.now()) / 1000),
+        scope,
+      });
+    }
+
+    function handleRefreshTokenGrant() {
+      const refreshTokenValue = body.refresh_token?.trim();
+      const clientId = body.client_id?.trim();
+
+      if (!refreshTokenValue) {
+        return res.status(400).json({ error: "Missing refresh_token" });
+      }
+
+      const record = store.getRefreshToken(refreshTokenValue);
+      if (!record) {
+        return res.status(400).json({ error: "Invalid or expired refresh token" });
+      }
+
+      if (clientId && clientId !== record.clientId) {
+        return res.status(400).json({ error: "client_id mismatch" });
+      }
+
+      store.revokeRefreshToken(refreshTokenValue);
+
+      const accessToken = store.createAccessToken({
+        clientId: record.clientId,
+        userToken: record.userToken,
+        scope: record.scope,
+        plan: body.plan?.trim() || undefined,
+        referral: body.referral?.trim() || undefined,
+        lifetimeSeconds: accessTokenTTLSeconds,
+      });
+
+      const nextRefreshToken = store.createRefreshToken({
+        clientId: record.clientId,
+        userToken: record.userToken,
+        scope: record.scope,
+        accessToken: accessToken.token,
+        lifetimeSeconds: refreshTokenTTLSeconds,
+      });
+
+      return res.status(200).json({
+        access_token: accessToken.token,
+        refresh_token: nextRefreshToken.token,
+        token_type: "Bearer",
+        expires_in: Math.round((accessToken.expiresAt.getTime() - Date.now()) / 1000),
+        scope: record.scope,
+      });
+    }
   });
-
-  function handleAuthorizationCodeGrant(req: Request, res: Response) {
-    const code = getFirstBodyValue(req.body?.code);
-    const verifier = getFirstBodyValue(req.body?.code_verifier);
-    const clientId = getFirstBodyValue(req.body?.client_id);
-    const redirectUri = getFirstBodyValue(req.body?.redirect_uri);
-    const plan = getFirstBodyValue(req.body?.plan);
-    const referral = getFirstBodyValue(req.body?.referral);
-
-    if (!code) {
-      return res.status(400).json({ error: "invalid_request", error_description: "Missing code" });
-    }
-    if (!verifier) {
-      return res.status(400).json({ error: "invalid_request", error_description: "Missing code_verifier" });
-    }
-    if (!clientId) {
-      return res.status(400).json({ error: "invalid_request", error_description: "Missing client_id" });
-    }
-    if (!redirectUri) {
-      return res.status(400).json({ error: "invalid_request", error_description: "Missing redirect_uri" });
-    }
-
-    try {
-      const tokens = repository.redeemAuthorizationCode({
-        code,
-        codeVerifier: verifier,
-        clientId,
-        redirectUri,
-        accessTokenTTLSeconds,
-        refreshTokenTTLSeconds,
-        plan: plan ?? undefined,
-        referral: referral ?? undefined,
-      });
-
-      const expiresIn = Math.max(0, Math.round((tokens.accessTokenExpiresAt - Date.now()) / 1000));
-
-      return res.status(200).json({
-        token_type: "Bearer",
-        access_token: tokens.accessToken,
-        refresh_token: tokens.refreshToken,
-        expires_in: expiresIn,
-        scope: tokens.scope,
-      });
-    } catch (error) {
-      if (error instanceof OAuthFlowError) {
-        return res
-          .status(error.status)
-          .json({ error: error.error, error_description: error.message });
-      }
-      throw error;
-    }
-  }
-
-  function handleRefreshTokenGrant(req: Request, res: Response) {
-    const refreshToken = getFirstBodyValue(req.body?.refresh_token);
-    const clientId = getFirstBodyValue(req.body?.client_id);
-
-    if (!refreshToken) {
-      return res.status(400).json({ error: "invalid_request", error_description: "Missing refresh_token" });
-    }
-    if (!clientId) {
-      return res.status(400).json({ error: "invalid_request", error_description: "Missing client_id" });
-    }
-
-    try {
-      const tokens = repository.rotateRefreshToken({
-        refreshToken,
-        clientId,
-        accessTokenTTLSeconds,
-        refreshTokenTTLSeconds,
-      });
-
-      const expiresIn = Math.max(0, Math.round((tokens.accessTokenExpiresAt - Date.now()) / 1000));
-
-      return res.status(200).json({
-        token_type: "Bearer",
-        access_token: tokens.accessToken,
-        refresh_token: tokens.refreshToken,
-        expires_in: expiresIn,
-        scope: tokens.scope,
-      });
-    } catch (error) {
-      if (error instanceof OAuthFlowError) {
-        return res
-          .status(error.status)
-          .json({ error: error.error, error_description: error.message });
-      }
-      throw error;
-    }
-  }
 
   return router;
 }
 
-function wantsJsonResponse(req: Request): boolean {
-  const accepted = req.accepts(["json", "html", "text"]);
-  return accepted === "json";
-}
-
-function sendAuthorizeError(
-  req: Request,
-  res: Response,
-  redirectUri: string | null,
-  state: string | null,
-  error: string,
-  description: string,
-  status = 400
-) {
-  if (wantsJsonResponse(req) || !redirectUri) {
-    return res.status(status).json({ error, error_description: description });
-  }
-
-  const redirectURL = new URL(redirectUri);
-  redirectURL.searchParams.set("error", error);
-  redirectURL.searchParams.set("error_description", description);
-  if (state) {
-    redirectURL.searchParams.set("state", state);
-  }
-
-  return res.redirect(302, redirectURL.toString());
-}
-
-function getFirstQueryValue(value: unknown): string | null {
-  if (Array.isArray(value)) {
-    const first = value.find((item) => typeof item === "string" && item.trim().length > 0);
-    return first ? first.trim() : null;
-  }
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
+function normalizePkceMethod(input?: string | null): PKCEMethod | null {
+  if (!input) return "S256";
+  const trimmed = input.trim();
+  if (!trimmed) return "S256";
+  if (trimmed.toUpperCase() === "S256") return "S256";
+  if (trimmed.toLowerCase() === "plain") return "plain";
   return null;
 }
 
-function getFirstBodyValue(value: unknown): string | null {
-  if (Array.isArray(value)) {
-    const first = value.find((item) => typeof item === "string" && item.trim().length > 0);
-    return first ? first.trim() : null;
+function verifyPkce(verifier: string, challenge: string, method: PKCEMethod): boolean {
+  if (method === "plain") {
+    return verifier === challenge;
   }
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
+
+  if (method === "S256") {
+    return hashPkceVerifier(verifier) === challenge;
   }
-  if (value == null) return null;
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  return null;
+
+  return false;
 }

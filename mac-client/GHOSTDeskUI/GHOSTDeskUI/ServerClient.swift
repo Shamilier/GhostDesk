@@ -14,7 +14,7 @@ final class ServerClient {
 
     func log(_ message: String) { print("➡️ \(message)") }
 
-    let unauthorizedMessage = "Сервер не принял API-ключ. Введите новый ключ и попробуйте снова."
+    let unauthorizedMessage = "Сервер отклонил текущую сессию. Войдите снова, чтобы продолжить."
 
     func authorize(_ request: inout URLRequest, token: String) {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -23,10 +23,10 @@ final class ServerClient {
     @discardableResult
     func handleUnauthorizedStatus(_ statusCode: Int, auth: AuthState?) -> Bool {
         guard statusCode == 401 || statusCode == 403 else { return false }
-        log("Unauthorized response (status=\(statusCode)). Forcing API key reset prompt.")
+        log("Unauthorized response (status=\(statusCode)). Clearing stored auth session.")
         Task { @MainActor in
-            auth?.isVerified = false
             auth?.lastError = unauthorizedMessage
+            auth?.signOut()
         }
         return true
     }
