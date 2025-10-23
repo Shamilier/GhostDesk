@@ -19,6 +19,14 @@
             <button type="button" class="toggle-password" data-target="password" aria-label="Показать пароль"></button>
           </div>
 
+          <% if (typeof oauthRequest !== 'undefined' && oauthRequest) { %>
+          <input type="hidden" name="client_id" value="<%= oauthRequest.clientId %>" />
+          <input type="hidden" name="redirect_uri" value="<%= oauthRequest.redirectUri %>" />
+          <input type="hidden" name="state" value="<%= oauthRequest.state || '' %>" />
+          <input type="hidden" name="code_challenge" value="<%= oauthRequest.codeChallenge %>" />
+          <input type="hidden" name="code_challenge_method" value="<%= oauthRequest.codeChallengeMethod %>" />
+          <% } %>
+
           <button type="submit" class="primary-button full-width">Войти</button>
         </form>
         <p class="auth-switch">
