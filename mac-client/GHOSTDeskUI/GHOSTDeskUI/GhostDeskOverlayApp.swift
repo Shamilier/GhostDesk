@@ -23,6 +23,7 @@ struct GhostDeskOverlayApp: App {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var authState: AuthState? {
         didSet {
