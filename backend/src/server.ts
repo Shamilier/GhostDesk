@@ -2,8 +2,10 @@ import express from "express";
 import multer from "multer";
 import cors from "cors";
 import OpenAI from "openai";
+import { createOAuthRouter } from "./routes/oauth.js";
+import { OAuthStore } from "./services/oauthStore.js";
 
-function readAuthKey(req: express.Request): string | null {
+export function readAuthKey(req: express.Request): string | null {
   const header = req.get("authorization") ?? req.get("Authorization");
   if (header?.startsWith("Bearer ")) {
     const token = header.slice("Bearer ".length).trim();
@@ -29,7 +31,7 @@ function maskKey(token: string): string {
   return `${token.slice(0, 4)}…${token.slice(-4)}`;
 }
 
-function logAuthUsage(endpoint: string, token: string | null) {
+export function logAuthUsage(endpoint: string, token: string | null) {
   const masked = token ? maskKey(token) : "<missing>";
   console.log(`[auth] ${endpoint} token=${masked}`);
 }
@@ -40,6 +42,20 @@ const upload = multer({ limits: { fileSize: 3 * 1024 * 1024 } }); // PNG до ~3
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 
+const oauthStore = new OAuthStore();
+const oauthClients = {
+  "ghostdesk-desktop": ["ghostdesk://auth/callback"] as const,
+};
+
+app.use(
+  "/oauth",
+  createOAuthRouter({
+    store: oauthStore,
+    clientRegistry: oauthClients,
+    readAuthKey,
+    logAuthUsage,
+  })
+);
 
 const client = new OpenAI({ apiKey: "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" });
 
