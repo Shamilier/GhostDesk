@@ -3,9 +3,11 @@ const express = require('express');
 const session = require('express-session');
 const helmet = require('helmet');
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const { customAlphabet } = require('nanoid');
 
 const db = require('./db');
+const oauth = require('./oauth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -52,6 +54,64 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use((req, res, next) => {
+  if (typeof req.session.oauthRequest === 'undefined') {
+    req.session.oauthRequest = null;
+  }
+  next();
+});
+
+const normalizeOAuthQuery = (query = {}) => {
+  if (!query.client_id || !query.redirect_uri || !query.code_challenge) {
+    return null;
+  }
+
+  return {
+    clientId: query.client_id,
+    redirectUri: query.redirect_uri,
+    state: query.state || null,
+    codeChallenge: query.code_challenge,
+    codeChallengeMethod: query.code_challenge_method || 'S256',
+  };
+};
+
+const finalizeOAuthIfNeeded = async (req, user) => {
+  const pending = req.session.oauthRequest;
+  if (!pending) {
+    return null;
+  }
+
+  const client = oauth.getClient(pending.clientId);
+  if (!client || !oauth.validateRedirectUri(client, pending.redirectUri)) {
+    req.session.oauthRequest = null;
+    return null;
+  }
+
+  try {
+    const { code } = await oauth.createAuthorizationCode({
+      userId: user.id,
+      clientId: pending.clientId,
+      redirectUri: pending.redirectUri,
+      codeChallenge: pending.codeChallenge,
+      codeChallengeMethod: pending.codeChallengeMethod,
+      state: pending.state,
+    });
+
+    req.session.oauthRequest = null;
+
+    const separator = pending.redirectUri.includes('?') ? '&' : '?';
+    const redirectUrl = `${pending.redirectUri}${separator}code=${encodeURIComponent(
+      code
+    )}${pending.state ? `&state=${encodeURIComponent(pending.state)}` : ''}`;
+
+    return redirectUrl;
+  } catch (err) {
+    console.error('Error creating authorization code', err);
+    req.session.oauthRequest = null;
+    throw err;
+  }
+};
+
 const requireAuth = (req, res, next) => {
   if (!req.session.user) {
     req.session.flash = { type: 'error', message: 'Пожалуйста, войдите в аккаунт.' };
@@ -72,11 +132,27 @@ app.get('/', (req, res) => {
 });
 
 app.get('/register', (req, res) => {
-  res.render('register', { title: 'Регистрация' });
+  const oauthRequest = normalizeOAuthQuery(req.query) || req.session.oauthRequest;
+  if (oauthRequest) {
+    req.session.oauthRequest = oauthRequest;
+  }
+
+  res.render('register', { title: 'Регистрация', oauthRequest });
 });
 
 app.post('/register', async (req, res) => {
   const { email, password, confirmPassword, referral } = req.body;
+
+  const oauthFromBody = normalizeOAuthQuery({
+    client_id: req.body.client_id,
+    redirect_uri: req.body.redirect_uri,
+    code_challenge: req.body.code_challenge,
+    state: req.body.state,
+    code_challenge_method: req.body.code_challenge_method,
+  });
+  if (oauthFromBody) {
+    req.session.oauthRequest = oauthFromBody;
+  }
 
   if (!email || !password || !confirmPassword) {
     req.session.flash = { type: 'error', message: 'Заполните все обязательные поля.' };
@@ -120,7 +196,18 @@ app.post('/register', async (req, res) => {
 
           req.session.user = { id: this.lastID, email: email.toLowerCase(), token, plan: 'free', referral: referral || null };
           req.session.flash = { type: 'success', message: 'Добро пожаловать в GhostDesk!' };
-          return res.redirect('/dashboard');
+
+          return finalizeOAuthIfNeeded(req, req.session.user)
+            .then((redirectUrl) => {
+              if (redirectUrl) {
+                return res.redirect(redirectUrl);
+              }
+              return res.redirect('/dashboard');
+            })
+            .catch(() => {
+              req.session.flash = { type: 'error', message: 'Не удалось завершить OAuth-аутентификацию.' };
+              return res.redirect('/dashboard');
+            });
         }
       );
     } catch (hashErr) {
@@ -132,11 +219,27 @@ app.post('/register', async (req, res) => {
 });
 
 app.get('/login', (req, res) => {
-  res.render('login', { title: 'Вход' });
+  const oauthRequest = normalizeOAuthQuery(req.query) || req.session.oauthRequest;
+  if (oauthRequest) {
+    req.session.oauthRequest = oauthRequest;
+  }
+
+  res.render('login', { title: 'Вход', oauthRequest });
 });
 
 app.post('/login', (req, res) => {
   const { email, password } = req.body;
+
+  const oauthFromBody = normalizeOAuthQuery({
+    client_id: req.body.client_id,
+    redirect_uri: req.body.redirect_uri,
+    code_challenge: req.body.code_challenge,
+    state: req.body.state,
+    code_challenge_method: req.body.code_challenge_method,
+  });
+  if (oauthFromBody) {
+    req.session.oauthRequest = oauthFromBody;
+  }
 
   if (!email || !password) {
     req.session.flash = { type: 'error', message: 'Введите email и пароль.' };
@@ -170,7 +273,18 @@ app.post('/login', (req, res) => {
       created_at: user.created_at,
     };
     req.session.flash = { type: 'success', message: 'С возвращением!' };
-    return res.redirect('/dashboard');
+
+    return finalizeOAuthIfNeeded(req, req.session.user)
+      .then((redirectUrl) => {
+        if (redirectUrl) {
+          return res.redirect(redirectUrl);
+        }
+        return res.redirect('/dashboard');
+      })
+      .catch(() => {
+        req.session.flash = { type: 'error', message: 'Не удалось завершить OAuth-аутентификацию.' };
+        return res.redirect('/dashboard');
+      });
   });
 });
 
@@ -185,6 +299,184 @@ app.get('/dashboard', requireAuth, (req, res) => {
     title: 'Личный кабинет',
     user: req.session.user,
   });
+});
+
+app.get('/oauth/authorize', async (req, res) => {
+  const { response_type, client_id, redirect_uri, state, code_challenge, code_challenge_method } = req.query;
+
+  if (response_type !== 'code') {
+    return res.status(400).json({ error: 'unsupported_response_type' });
+  }
+
+  const client = oauth.getClient(client_id);
+  if (!client || !oauth.validateRedirectUri(client, redirect_uri)) {
+    return res.status(400).json({ error: 'invalid_client' });
+  }
+
+  if (!code_challenge || (code_challenge_method || 'S256') !== 'S256') {
+    return res.status(400).json({ error: 'invalid_request', error_description: 'PKCE with S256 is required.' });
+  }
+
+  if (!req.session.user) {
+    req.session.oauthRequest = {
+      clientId: client_id,
+      redirectUri: redirect_uri,
+      state: state || null,
+      codeChallenge: code_challenge,
+      codeChallengeMethod: 'S256',
+    };
+
+    const params = new URLSearchParams({
+      client_id,
+      redirect_uri,
+      code_challenge,
+    });
+    if (state) {
+      params.append('state', state);
+    }
+
+    return res.redirect(`/login?${params.toString()}`);
+  }
+
+  try {
+    const { code } = await oauth.createAuthorizationCode({
+      userId: req.session.user.id,
+      clientId: client_id,
+      redirectUri: redirect_uri,
+      codeChallenge: code_challenge,
+      codeChallengeMethod: 'S256',
+      state: state || null,
+    });
+
+    const separator = redirect_uri.includes('?') ? '&' : '?';
+    const redirectLocation = `${redirect_uri}${separator}code=${encodeURIComponent(code)}${
+      state ? `&state=${encodeURIComponent(state)}` : ''
+    }`;
+    return res.redirect(redirectLocation);
+  } catch (err) {
+    console.error('Error issuing authorization code', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+app.post('/oauth/token', async (req, res) => {
+  const { grant_type, client_id } = req.body;
+  const client = oauth.getClient(client_id);
+
+  if (!client) {
+    return res.status(400).json({ error: 'invalid_client' });
+  }
+
+  try {
+    if (grant_type === 'authorization_code') {
+      const { code, redirect_uri, code_verifier } = req.body;
+      if (!code || !redirect_uri || !code_verifier) {
+        return res.status(400).json({ error: 'invalid_request' });
+      }
+
+      const authCode = await oauth.consumeAuthorizationCode(code, client_id, redirect_uri);
+      if (!authCode) {
+        return res.status(400).json({ error: 'invalid_grant' });
+      }
+
+      if (authCode.code_challenge_method !== 'S256') {
+        return res.status(400).json({ error: 'invalid_grant' });
+      }
+
+      const computedChallenge = crypto.createHash('sha256').update(code_verifier).digest('base64url');
+      if (computedChallenge !== authCode.code_challenge) {
+        return res.status(400).json({ error: 'invalid_grant', error_description: 'PKCE verification failed' });
+      }
+
+      const tokenPair = await oauth.createTokenPair({ userId: authCode.user_id, clientId: client_id });
+
+      return res.json({
+        access_token: tokenPair.accessToken,
+        refresh_token: tokenPair.refreshToken,
+        expires_in: oauth.ACCESS_TOKEN_TTL_SECONDS,
+        token_type: 'bearer',
+      });
+    }
+
+    if (grant_type === 'refresh_token') {
+      const { refresh_token } = req.body;
+      if (!refresh_token) {
+        return res.status(400).json({ error: 'invalid_request' });
+      }
+
+      const tokenRow = await oauth.findTokenByRefreshToken(refresh_token, client_id);
+      if (!tokenRow) {
+        return res.status(400).json({ error: 'invalid_grant' });
+      }
+
+      await oauth.revokeByRefreshToken(refresh_token, client_id);
+      const tokenPair = await oauth.createTokenPair({ userId: tokenRow.user_id, clientId: client_id });
+
+      return res.json({
+        access_token: tokenPair.accessToken,
+        refresh_token: tokenPair.refreshToken,
+        expires_in: oauth.ACCESS_TOKEN_TTL_SECONDS,
+        token_type: 'bearer',
+      });
+    }
+
+    return res.status(400).json({ error: 'unsupported_grant_type' });
+  } catch (err) {
+    console.error('OAuth token endpoint error', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+app.post('/oauth/revoke', async (req, res) => {
+  const { token, token_type_hint, client_id } = req.body;
+
+  if (!token || !client_id) {
+    return res.status(400).json({ error: 'invalid_request' });
+  }
+
+  const client = oauth.getClient(client_id);
+  if (!client) {
+    return res.status(400).json({ error: 'invalid_client' });
+  }
+
+  try {
+    if (!token_type_hint || token_type_hint === 'refresh_token') {
+      await oauth.revokeByRefreshToken(token, client_id);
+    }
+    return res.status(200).json({ revoked: true });
+  } catch (err) {
+    console.error('OAuth revoke endpoint error', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+app.get('/oauth/profile', async (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const tokenMatch = authHeader.match(/^Bearer\s+(\S+)$/i);
+
+  if (!tokenMatch) {
+    res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
+    return res.status(401).json({ error: 'invalid_token' });
+  }
+
+  try {
+    const tokenRow = await oauth.getUserByAccessToken(tokenMatch[1]);
+    if (!tokenRow) {
+      res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
+      return res.status(401).json({ error: 'invalid_token' });
+    }
+
+    return res.json({
+      email: tokenRow.email,
+      plan: tokenRow.plan,
+      referral: tokenRow.referral,
+      created_at: tokenRow.created_at,
+      token: tokenRow.user_token,
+    });
+  } catch (err) {
+    console.error('OAuth profile endpoint error', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
 });
 
 app.use((req, res) => {
