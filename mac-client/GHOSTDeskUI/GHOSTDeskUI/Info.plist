@@ -2,10 +2,21 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>NSAllowsArbitraryLoads</key>
-	<string></string>
-	<key>NSAppTransportSecurity</key>
-	<dict/>
+        <key>CFBundleURLTypes</key>
+        <array>
+                <dict>
+                        <key>CFBundleURLName</key>
+                        <string>com.ghostdesk.overlay.auth</string>
+                        <key>CFBundleURLSchemes</key>
+                        <array>
+                                <string>ghostdesk</string>
+                        </array>
+                </dict>
+        </array>
+        <key>NSAllowsArbitraryLoads</key>
+        <string></string>
+        <key>NSAppTransportSecurity</key>
+        <dict/>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string></string>
 </dict>
