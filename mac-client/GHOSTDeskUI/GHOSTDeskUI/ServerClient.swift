@@ -10,6 +10,8 @@ import Foundation
 
 final class ServerClient {
     static let shared = ServerClient()
+    let baseURL = URL(string: "https://resistible-opinionative-jeanie.ngrok-free.dev")!
+
     private init() {}
 
     func log(_ message: String) { print("➡️ \(message)") }
@@ -25,8 +27,7 @@ final class ServerClient {
         guard statusCode == 401 || statusCode == 403 else { return false }
         log("Unauthorized response (status=\(statusCode)). Clearing stored auth session.")
         Task { @MainActor in
-            auth?.lastError = unauthorizedMessage
-            auth?.signOut()
+            auth?.signOut(reason: unauthorizedMessage)
         }
         return true
     }
