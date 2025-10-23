@@ -12,17 +12,14 @@ struct SettingsSheet: View {
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var auth: AuthState
 
-    private var isSaveDisabled: Bool {
-        auth.isVerifying || !auth.isDraftValid
-    }
-
-    private var isVerifyDisabled: Bool {
-        auth.isVerifying || !auth.isDraftValid
-    }
-
     private var expiresDescription: String {
-        guard let expiresAt = auth.expiresAt else { return "Не установлен" }
+        guard let expiresAt = auth.expiresAt else { return "Не установлено" }
         return expiresAt.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private var createdDescription: String {
+        guard let createdAt = auth.createdAt else { return "Неизвестно" }
+        return createdAt.formatted(date: .abbreviated, time: .shortened)
     }
 
     var body: some View {
@@ -39,56 +36,80 @@ struct SettingsSheet: View {
                 header
 
                 VStack(alignment: .leading, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("API-ключ")
-                            .font(.system(size: 14, weight: .semibold, design: .rounded))
-
-                        TextField("sk-...", text: $auth.draftKey)
-                            .textFieldStyle(.roundedBorder)
-                            .disabled(auth.isVerifying)
-                    }
-
-                    if let message = auth.lastError {
-                        Text(message)
-                            .font(.system(size: 13, weight: .regular, design: .rounded))
-                            .foregroundStyle(.red)
-                    }
-
                     HStack(spacing: 12) {
-                        statusChip(systemImage: auth.isVerified ? "checkmark.seal.fill" : "exclamationmark.triangle.fill",
-                                   title: auth.isVerified ? "Проверено" : "Не подтверждено",
-                                   tint: auth.isVerified ? .green : .orange)
+                        statusChip(systemImage: auth.isAuthorized ? "checkmark.seal.fill" : "exclamationmark.triangle.fill",
+                                   title: auth.isAuthorized ? "Авторизовано" : "Нет сессии",
+                                   tint: auth.isAuthorized ? .green : .orange)
 
                         statusChip(systemImage: "calendar",
                                    title: "Действует до: \(expiresDescription)",
                                    tint: .blue)
                     }
 
+                    if let message = auth.authorizationIssue {
+                        Text(message)
+                            .font(.system(size: 13, weight: .regular, design: .rounded))
+                            .foregroundStyle(.red)
+                    }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Профиль")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+
+                        if let profileToken = auth.profileToken {
+                            Label {
+                                Text("Токен: \(profileToken)")
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            } icon: {
+                                Image(systemName: "person.text.rectangle")
+                            }
+                            .font(.system(size: 13, weight: .regular, design: .rounded))
+                        } else {
+                            Label("Токен не найден", systemImage: "person.text.rectangle")
+                                .font(.system(size: 13, weight: .regular, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        }
+
+                        if let plan = auth.plan {
+                            Label("Тариф: \(plan)", systemImage: "creditcard")
+                                .font(.system(size: 13, weight: .regular, design: .rounded))
+                        } else {
+                            Label("Тариф не определён", systemImage: "creditcard")
+                                .font(.system(size: 13, weight: .regular, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        }
+
+                        if let referral = auth.referral, !referral.isEmpty {
+                            Label("Реферал: \(referral)", systemImage: "gift")
+                                .font(.system(size: 13, weight: .regular, design: .rounded))
+                        } else {
+                            Label("Реферальный код отсутствует", systemImage: "gift")
+                                .font(.system(size: 13, weight: .regular, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Label("Создан: \(createdDescription)", systemImage: "calendar.badge.clock")
+                            .font(.system(size: 13, weight: .regular, design: .rounded))
+                    }
+
                     Spacer()
 
                     HStack(spacing: 12) {
-                        Button(action: verifyKey) {
-                            if auth.isVerifying {
-                                HStack(spacing: 8) {
-                                    ProgressView()
-                                        .progressViewStyle(.circular)
-                                        .controlSize(.small)
-                                    Text("Проверяем…")
-                                }
-                            } else {
-                                Text("Проверить")
+                        Button("Обновить данные") {
+                            auth.restoreSession()
+                        }
+                            .buttonStyle(.bordered)
+
+                        Button("Выйти", role: .destructive) {
+                            auth.signOut()
+                            withAnimation(.spring) {
+                                isShown = false
                             }
                         }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(isVerifyDisabled)
-
-                        Button("Сохранить", action: saveDraft)
-                            .buttonStyle(.bordered)
-                            .disabled(isSaveDisabled)
-
-                        Button("Очистить", action: clearKey)
-                            .buttonStyle(.borderless)
-                            .disabled(auth.isVerifying)
+                            .buttonStyle(.borderedProminent)
 
                         Spacer()
                     }
@@ -101,27 +122,6 @@ struct SettingsSheet: View {
         .padding(.trailing, 16)
         .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .topTrailing)))
         .accessibilityElement(children: .contain)
-    }
-
-    private func verifyKey() {
-        Task {
-            let success = await auth.verifyKey()
-            if success {
-                withAnimation(.spring) {
-                    isShown = false
-                }
-            }
-        }
-    }
-
-    private func saveDraft() {
-        auth.updateApiKey(auth.draftKey)
-        auth.lastError = nil
-    }
-
-    private func clearKey() {
-        auth.updateApiKey(nil)
-        auth.lastError = nil
     }
 
     @ViewBuilder
