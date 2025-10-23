@@ -35,9 +35,11 @@ struct OverlayRootView: View {
 
     // NEW: вью-модель для снапшота/отправки
     @StateObject private var askVM: AskVM
+    @ObservedObject private var oauthCoordinator = OAuthCoordinator.shared
 
     init(auth: AuthState) {
         _askVM = StateObject(wrappedValue: AskVM(auth: auth))
+        OAuthCoordinator.shared.configure(authState: auth)
     }
 
     private var systemChannelState: OverlayModel.TranscriptionChannelState {
@@ -54,6 +56,7 @@ struct OverlayRootView: View {
                 authorizedOverlay
             } else {
                 ApiKeyGateView()
+                    .environmentObject(oauthCoordinator)
             }
         }
 

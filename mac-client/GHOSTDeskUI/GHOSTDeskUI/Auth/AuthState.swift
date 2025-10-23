@@ -12,6 +12,13 @@ struct UserProfile: Codable, Equatable {
     let plan: String
     let referral: String?
     let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case token
+        case plan
+        case referral
+        case createdAt = "created_at"
+    }
 }
 
 @MainActor
@@ -31,8 +38,14 @@ final class AuthState: ObservableObject {
     @Published private(set) var profile: UserProfile?
     @Published var lastError: String? = nil
 
+    private var refreshTask: Task<Void, Never>? = nil
+
     init() {
         restoreSession()
+    }
+
+    deinit {
+        refreshTask?.cancel()
     }
 
     var accessToken: String? { session?.accessToken }
@@ -97,6 +110,8 @@ final class AuthState: ObservableObject {
         } else {
             profile = nil
         }
+
+        scheduleRefreshTask()
     }
 
     func updateSession(_ session: AuthSession, _ profile: UserProfile) {
@@ -105,14 +120,17 @@ final class AuthState: ObservableObject {
         lastError = nil
         persistSession(session)
         persistProfile(profile)
+        scheduleRefreshTask()
     }
 
-    func signOut() {
+    func signOut(reason: String? = nil) {
         session = nil
         profile = nil
-        lastError = nil
+        lastError = reason
         persistSession(nil)
         persistProfile(nil)
+        refreshTask?.cancel()
+        refreshTask = nil
     }
 
     var currentKey: String? {
@@ -178,5 +196,37 @@ final class AuthState: ObservableObject {
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess, let data = item as? Data else { return nil }
         return String(data: data, encoding: .utf8)
+    }
+
+    private func scheduleRefreshTask() {
+        refreshTask?.cancel()
+
+        guard let session, session.expiresAt > Date(), let refreshToken else { return }
+
+        let leadTime: TimeInterval = 120
+        let secondsUntilExpiry = session.expiresAt.timeIntervalSinceNow
+        let delay = max(secondsUntilExpiry - leadTime, 5)
+
+        refreshTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            } catch {
+                return
+            }
+
+            guard let self else { return }
+
+            do {
+                let newSession = try await AuthAPI.shared.refreshTokens(refreshToken: refreshToken)
+                let profile = try await AuthAPI.shared.fetchProfile(accessToken: newSession.accessToken)
+                await MainActor.run {
+                    self.updateSession(newSession, profile)
+                }
+            } catch {
+                await MainActor.run {
+                    self.signOut(reason: "Не удалось обновить сессию. Войдите снова.")
+                }
+            }
+        }
     }
 }

@@ -1,10 +1,8 @@
 import SwiftUI
-#if os(macOS)
-import AppKit
-#endif
 
 struct ApiKeyGateView: View {
-    private let portalURL = URL(string: "https://resistible-opinionative-jeanie.ngrok-free.dev")
+    @EnvironmentObject private var auth: AuthState
+    @EnvironmentObject private var oauth: OAuthCoordinator
 
     var body: some View {
         ZStack {
@@ -25,10 +23,24 @@ struct ApiKeyGateView: View {
                 }
 
                 VStack(spacing: 16) {
-                    AuthPortalButton(kind: .signIn, action: openPortal)
-                    AuthPortalButton(kind: .signUp, action: openPortal)
+                    AuthPortalButton(flow: .signIn, action: openPortal)
+                    AuthPortalButton(flow: .signUp, action: openPortal)
                 }
                 .frame(maxWidth: 420)
+
+                if let error = auth.lastError {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(.red.opacity(0.85))
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 4)
+                }
+
+                if oauth.isAuthorizing {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(.accentColor)
+                }
             }
             .padding(36)
             .frame(maxWidth: 560)
@@ -49,77 +61,30 @@ struct ApiKeyGateView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func openPortal(_ kind: AuthPortalButton.Kind) {
-        _ = kind
-        guard let url = portalURL else { return }
-        #if os(macOS)
-        NSWorkspace.shared.open(url)
-        #endif
+    private func openPortal(_ flow: OAuthFlowKind) {
+        oauth.startAuthorization(flow: flow)
     }
 }
 
 private struct AuthPortalButton: View {
-    enum Kind {
-        case signIn
-        case signUp
-
-        var title: String {
-            switch self {
-            case .signIn: return "Войти"
-            case .signUp: return "Зарегистрироваться"
-            }
-        }
-
-        var subtitle: String {
-            switch self {
-            case .signIn: return "У меня уже есть аккаунт"
-            case .signUp: return "Создать новый профиль"
-            }
-        }
-
-        var symbolName: String {
-            switch self {
-            case .signIn: return "key.fill"
-            case .signUp: return "sparkles"
-            }
-        }
-
-        var gradient: LinearGradient {
-            switch self {
-            case .signIn:
-                return LinearGradient(
-                    colors: [Color.accentColor, Color.accentColor.opacity(0.6)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            case .signUp:
-                return LinearGradient(
-                    colors: [Color.purple, Color.blue.opacity(0.7)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            }
-        }
-    }
-
-    let kind: Kind
-    let action: (Kind) -> Void
+    let flow: OAuthFlowKind
+    let action: (OAuthFlowKind) -> Void
 
     var body: some View {
         Button {
-            action(kind)
+            action(flow)
         } label: {
             HStack(spacing: 16) {
-                Image(systemName: kind.symbolName)
+                Image(systemName: symbolName)
                     .font(.system(size: 28, weight: .semibold))
                     .frame(width: 44, height: 44)
                     .background(.thinMaterial)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(kind.title)
+                    Text(title)
                         .font(.system(size: 20, weight: .semibold, design: .rounded))
-                    Text(kind.subtitle)
+                    Text(subtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -132,7 +97,7 @@ private struct AuthPortalButton: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 18)
             .frame(maxWidth: .infinity)
-            .background(kind.gradient)
+            .background(gradient)
             .overlay(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .stroke(Color.white.opacity(0.25), lineWidth: 1)
@@ -141,5 +106,43 @@ private struct AuthPortalButton: View {
             .shadow(color: Color.black.opacity(0.2), radius: 16, x: 0, y: 8)
         }
         .buttonStyle(.plain)
+    }
+
+    private var title: String {
+        switch flow {
+        case .signIn: return "Войти"
+        case .signUp: return "Зарегистрироваться"
+        }
+    }
+
+    private var subtitle: String {
+        switch flow {
+        case .signIn: return "У меня уже есть аккаунт"
+        case .signUp: return "Создать новый профиль"
+        }
+    }
+
+    private var symbolName: String {
+        switch flow {
+        case .signIn: return "key.fill"
+        case .signUp: return "sparkles"
+        }
+    }
+
+    private var gradient: LinearGradient {
+        switch flow {
+        case .signIn:
+            return LinearGradient(
+                colors: [Color.accentColor, Color.accentColor.opacity(0.6)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        case .signUp:
+            return LinearGradient(
+                colors: [Color.purple, Color.blue.opacity(0.7)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
     }
 }

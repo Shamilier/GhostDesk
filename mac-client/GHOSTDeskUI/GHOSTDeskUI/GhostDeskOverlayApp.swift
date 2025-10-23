@@ -25,8 +25,12 @@ struct GhostDeskOverlayApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var authState: AuthState? {
-        didSet { attemptInitialShowIfNeeded() }
+        didSet {
+            oauthCoordinator.configure(authState: authState)
+            attemptInitialShowIfNeeded()
+        }
     }
+    private let oauthCoordinator = OAuthCoordinator.shared
     private var pendingInitialShow = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -42,9 +46,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotKeyManager.shared.unregisterAll()
     }
 
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            if handleIncoming(url: url) { break }
+        }
+    }
+
     private func attemptInitialShowIfNeeded() {
         guard pendingInitialShow, let authState else { return }
         pendingInitialShow = false
         OverlayWindowManager.shared.show(model: OverlayModel.shared, auth: authState)
+    }
+
+    private func handleIncoming(url: URL) -> Bool {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.scheme == "ghostdesk",
+              components.host == "auth",
+              components.path == "/callback",
+              let code = components.queryItems?.first(where: { $0.name == "code" })?.value,
+              let state = components.queryItems?.first(where: { $0.name == "state" })?.value else {
+            return false
+        }
+
+        oauthCoordinator.handleCallback(code: code, state: state)
+        return true
     }
 }
