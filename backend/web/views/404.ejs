@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <%- include('partials/head', { title }) %>
+  <body class="theme-dark">
+    <div class="background-gradient"></div>
+    <%- include('partials/header') %>
+    <main class="page narrow">
+      <section class="empty-state">
+        <h1>Страница не найдена</h1>
+        <p>Мы не можем найти нужный экран GhostDesk. Попробуйте начать с главной страницы.</p>
+        <a href="/" class="primary-button">На главную</a>
+      </section>
+    </main>
+    <%- include('partials/footer') %>
+    <script src="/js/password-toggle.js" defer></script>
+  </body>
+</html>

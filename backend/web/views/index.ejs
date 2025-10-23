@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <%- include('partials/head', { title }) %>
+  <body class="theme-dark">
+    <div class="background-gradient"></div>
+    <%- include('partials/header') %>
+    <main class="page">
+      <section class="hero">
+        <div class="hero-content">
+          <p class="tagline">Невидимый ассистент GhostDesk</p>
+          <h1>Контроль каждой встречи без лишнего шума</h1>
+          <p class="description">
+            GhostDesk помогает вести диалоги уверенно: транскрибирует разговоры, дает подсказки и собирает аналитика.
+            Управляйте командой и сделками из одного портала.
+          </p>
+          <div class="hero-actions">
+            <a class="primary-button" href="/register">Создать аккаунт</a>
+            <a class="ghost-button" href="/login">Уже с нами</a>
+          </div>
+        </div>
+        <div class="hero-card">
+          <div class="card-header">
+            <span class="status-dot"></span>
+            <span>Live Transcript</span>
+          </div>
+          <div class="card-body">
+            <p>"GhostDesk заметил повторяющиеся вопросы клиента. Предложить сценарий upsell?"</p>
+            <div class="card-footer">
+              <span>AI Assist</span>
+              <span class="chip">Boost +42%</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="feature-grid" id="features">
+        <% features.forEach((feature) => { %>
+          <article class="feature-card">
+            <h3><%= feature %></h3>
+            <p>
+              GhostDesk анализирует диалоги в реальном времени и помогает фокусироваться на ключевых моментах. Получайте рекомендации и
+              моментально отправляйте follow-up.
+            </p>
+          </article>
+        <% }) %>
+      </section>
+
+      <section class="plans" id="plans">
+        <h2>Прозрачные тарифы</h2>
+        <div class="plan-cards">
+          <div class="plan-card active">
+            <h3>Free</h3>
+            <p class="price">0₽</p>
+            <ul>
+              <li>До 5 встреч в месяц</li>
+              <li>Транскрибация и заметки</li>
+              <li>Персональный токен доступа</li>
+            </ul>
+            <a href="/register" class="primary-button">Попробовать</a>
+          </div>
+          <div class="plan-card">
+            <h3>Pro</h3>
+            <p class="price">990₽</p>
+            <ul>
+              <li>Безлимитные встречи</li>
+              <li>Подсказки продаж и скрипты</li>
+              <li>CRM-интеграции и API</li>
+            </ul>
+            <a href="/register" class="ghost-button">Скоро</a>
+          </div>
+        </div>
+      </section>
+    </main>
+    <%- include('partials/footer') %>
+    <script src="/js/password-toggle.js" defer></script>
+  </body>
+</html>

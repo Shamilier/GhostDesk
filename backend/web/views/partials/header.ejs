@@ -1,0 +1,19 @@
+<header class="site-header">
+  <a href="/" class="logo">GhostDesk</a>
+  <nav class="main-nav">
+    <a href="/#features">Возможности</a>
+    <a href="/#plans">Тарифы</a>
+    <a href="/#support">Поддержка</a>
+  </nav>
+  <div class="auth-actions">
+    <% if (currentUser) { %>
+      <a class="ghost-button" href="/dashboard">Личный кабинет</a>
+      <form action="/logout" method="post">
+        <button type="submit" class="primary-button">Выйти</button>
+      </form>
+    <% } else { %>
+      <a class="ghost-button" href="/login">Войти</a>
+      <a class="primary-button" href="/register">Регистрация</a>
+    <% } %>
+  </div>
+</header>

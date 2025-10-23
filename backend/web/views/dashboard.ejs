@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <%- include('partials/head', { title }) %>
+  <body class="theme-dark">
+    <div class="background-gradient"></div>
+    <%- include('partials/header') %>
+    <main class="page dashboard">
+      <section class="dashboard-header">
+        <div>
+          <h1>Здравствуйте, <%= user.email %></h1>
+          <p>Ваш ассистент готов подключиться к следующей встрече.</p>
+        </div>
+        <form action="/logout" method="post">
+          <button type="submit" class="ghost-button">Выйти</button>
+        </form>
+      </section>
+      <%- include('partials/flash') %>
+      <section class="dashboard-grid">
+        <article class="stat-card">
+          <h3>Тариф</h3>
+          <p class="stat-value"><%= user.plan %></p>
+          <p class="stat-description">Обновите тариф, чтобы получить доступ к расширенной аналитике и API.</p>
+          <a class="ghost-button" href="/#plans">Выбрать тариф</a>
+        </article>
+        <article class="stat-card">
+          <h3>Токен доступа</h3>
+          <p class="token-value"><%= user.token %></p>
+          <p class="stat-description">Используйте этот токен, чтобы авторизовать GhostDesk в приложении.</p>
+          <button class="primary-button copy-token" data-token="<%= user.token %>">Скопировать</button>
+        </article>
+        <article class="stat-card">
+          <h3>Реферальный код</h3>
+          <p class="stat-value"><%= user.referral ? user.referral : '—' %></p>
+          <p class="stat-description">Поделитесь кодом с коллегами и получите бонусные подключения.</p>
+          <a class="ghost-button" href="mailto:support@ghostdesk.app?subject=Referral%20program">Узнать условия</a>
+        </article>
+        <article class="stat-card">
+          <h3>Дата регистрации</h3>
+          <p class="stat-value"><%= new Date(user.created_at || Date.now()).toLocaleDateString('ru-RU') %></p>
+          <p class="stat-description">GhostDesk уже отслеживает ваши ключевые встречи.</p>
+        </article>
+      </section>
+    </main>
+    <%- include('partials/footer') %>
+    <script src="/js/password-toggle.js" defer></script>
+    <script src="/js/token-copy.js" defer></script>
+  </body>
+</html>
