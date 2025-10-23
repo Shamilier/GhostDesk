@@ -61,6 +61,8 @@ app.use((req, res, next) => {
   next();
 });
 
+const DEFAULT_CLIENT_ID = 'ghostdesk-desktop';
+
 const normalizeOAuthQuery = (query = {}) => {
   if (!query.client_id || !query.redirect_uri || !query.code_challenge) {
     return null;
@@ -120,6 +122,42 @@ const requireAuth = (req, res, next) => {
   return next();
 };
 
+const formatAsIso8601 = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  const str = String(value);
+  const parsed = new Date(str);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString();
+  }
+
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?$/);
+  if (match) {
+    const [, year, month, day, hour, minute, second, fraction] = match;
+    const fractional = fraction ? Number(`0.${fraction}`) : 0;
+    const milliseconds = Math.round(fractional * 1000);
+    const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second), milliseconds));
+    if (!Number.isNaN(date.getTime())) {
+      return date.toISOString();
+    }
+  }
+
+  const normalized = str.includes('T') ? str : str.replace(' ', 'T');
+  const withTimezone = /[zZ]$/.test(normalized) ? normalized : `${normalized}Z`;
+  const normalizedDate = new Date(withTimezone);
+  if (!Number.isNaN(normalizedDate.getTime())) {
+    return normalizedDate.toISOString();
+  }
+
+  return null;
+};
+
 app.get('/', (req, res) => {
   res.render('index', {
     title: 'GhostDesk Portal',
@@ -128,6 +166,22 @@ app.get('/', (req, res) => {
       'AI-подсказки и сценарии разговоров в реальном времени',
       'Автоматическая транскрибация и последующая аналитика',
     ],
+  });
+});
+
+app.get('/oauth/client-config', (req, res) => {
+  const requestedClientId = req.query.client_id || DEFAULT_CLIENT_ID;
+  const clientConfig = oauth.getPublicClientConfig(requestedClientId);
+
+  if (!clientConfig || !clientConfig.redirectUri) {
+    return res.status(404).json({ error: 'invalid_client' });
+  }
+
+  return res.json({
+    client_id: clientConfig.clientId,
+    redirect_uri: clientConfig.redirectUri,
+    scope: clientConfig.scope,
+    prompt: clientConfig.prompt,
   });
 });
 
@@ -466,11 +520,13 @@ app.get('/oauth/profile', async (req, res) => {
       return res.status(401).json({ error: 'invalid_token' });
     }
 
+    const createdAt = formatAsIso8601(tokenRow.created_at);
+
     return res.json({
       email: tokenRow.email,
       plan: tokenRow.plan,
       referral: tokenRow.referral,
-      created_at: tokenRow.created_at,
+      created_at: createdAt || null,
       token: tokenRow.user_token,
     });
   } catch (err) {

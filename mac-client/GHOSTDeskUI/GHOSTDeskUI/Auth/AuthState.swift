@@ -8,12 +8,14 @@ struct AuthSession: Codable, Equatable {
 }
 
 struct UserProfile: Codable, Equatable {
+    let email: String
     let token: String
     let plan: String
     let referral: String?
     let createdAt: Date
 
     enum CodingKeys: String, CodingKey {
+        case email
         case token
         case plan
         case referral
@@ -51,6 +53,7 @@ final class AuthState: ObservableObject {
     var accessToken: String? { session?.accessToken }
     var refreshToken: String? { session?.refreshToken }
     var expiresAt: Date? { session?.expiresAt }
+    var email: String? { profile?.email }
     var profileToken: String? { profile?.token }
     var plan: String? { profile?.plan }
     var referral: String? { profile?.referral }

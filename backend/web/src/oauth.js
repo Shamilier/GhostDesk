@@ -7,6 +7,8 @@ const clients = {
     name: 'GhostDesk Desktop',
     redirectUris: ['ghostdesk://auth/callback'],
     public: true,
+    scope: 'profile',
+    prompt: 'login',
   },
 };
 
@@ -64,6 +66,20 @@ function migrate() {
 
 function getClient(clientId) {
   return clients[clientId] || null;
+}
+
+function getPublicClientConfig(clientId) {
+  const client = getClient(clientId);
+  if (!client || !client.public) {
+    return null;
+  }
+
+  return {
+    clientId: client.id,
+    redirectUri: client.redirectUris[0] || null,
+    scope: client.scope || 'profile',
+    prompt: client.prompt || null,
+  };
 }
 
 function validateRedirectUri(client, redirectUri) {
@@ -230,6 +246,7 @@ migrate();
 module.exports = {
   clients,
   getClient,
+  getPublicClientConfig,
   validateRedirectUri,
   createAuthorizationCode,
   consumeAuthorizationCode,
