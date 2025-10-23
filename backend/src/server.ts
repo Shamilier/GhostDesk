@@ -38,6 +38,7 @@ export function logAuthUsage(endpoint: string, token: string | null) {
 
 // -------------------- App & middleware --------------------
 const app = express();
+app.set("trust proxy", 1);
 const upload = multer({ limits: { fileSize: 3 * 1024 * 1024 } }); // PNG до ~3 МБ
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
