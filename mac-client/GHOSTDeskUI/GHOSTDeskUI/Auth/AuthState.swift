@@ -132,6 +132,10 @@ final class AuthState: ObservableObject {
         _ = await verifyKey()
     }
 
+    var currentKey: String? {
+        Self.normalizeKey(apiKey)
+    }
+
     private func saveKeychainValue(_ value: String?) {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

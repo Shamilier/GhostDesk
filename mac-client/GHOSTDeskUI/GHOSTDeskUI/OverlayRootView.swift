@@ -34,7 +34,11 @@ struct OverlayRootView: View {
     @StateObject private var transcriptionCoordinator = TranscriptionCoordinator()
 
     // NEW: вью-модель для снапшота/отправки
-    @StateObject private var askVM = AskVM()
+    @StateObject private var askVM: AskVM
+
+    init(auth: AuthState) {
+        _askVM = StateObject(wrappedValue: AskVM(auth: auth))
+    }
 
     private var systemChannelState: OverlayModel.TranscriptionChannelState {
         overlay.transcriptionState(for: .system)
@@ -135,6 +139,9 @@ struct OverlayRootView: View {
 
                     Spacer()
 
+                    let microphonePhase = microphoneChannelState.phase
+                    let microphoneBusy = microphonePhase == .starting || microphonePhase == .stopping
+
                     Button(showTranscript ? "Показать инсайты" : "Показать транскрипт") {
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
                             showTranscript.toggle()
@@ -143,9 +150,17 @@ struct OverlayRootView: View {
                     .buttonStyle(GlassPill())
 
                     Button(action: {
+                        transcriptionCoordinator.setMicrophoneArmed(!transcriptionCoordinator.isMicrophoneArmed)
+                    }) {
+                        Label("Микрофон", systemImage: transcriptionCoordinator.isMicrophoneArmed ? "mic.fill" : "mic")
+                    }
+                    .buttonStyle(GlassPill(tint: transcriptionCoordinator.isMicrophoneArmed ? .pink : .secondary))
+                    .disabled(microphoneBusy)
+
+                    Button(action: {
                         switch transcriptionCoordinator.overallPhase {
                         case .idle:
-                            transcriptionCoordinator.startAll()
+                            transcriptionCoordinator.startRecording()
                         case .starting, .running, .stopping:
                             transcriptionCoordinator.stopAll()
                         }
@@ -596,16 +611,27 @@ struct OverlayRootView: View {
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(overlay.anyChannelIsTranscribing ? .green.opacity(0.9) : .secondary)
                 }
-            }
+                    }
 
             Spacer()
 
             HStack(spacing: 10) {
+                let microphonePhase = microphoneChannelState.phase
+                let microphoneBusy = microphonePhase == .starting || microphonePhase == .stopping
+
+                Button {
+                    transcriptionCoordinator.setMicrophoneArmed(!transcriptionCoordinator.isMicrophoneArmed)
+                } label: {
+                    Label("Микрофон", systemImage: transcriptionCoordinator.isMicrophoneArmed ? "mic.fill" : "mic")
+                }
+                .buttonStyle(GlassPill(tint: transcriptionCoordinator.isMicrophoneArmed ? .pink : .secondary))
+                .disabled(microphoneBusy)
+
                 // Start/Stop управляет обоими каналами
                 Button {
                     switch transcriptionCoordinator.overallPhase {
                     case .idle:
-                        transcriptionCoordinator.startAll()
+                        transcriptionCoordinator.startRecording()
                     case .starting, .running, .stopping:
                         transcriptionCoordinator.stopAll()
                     }
@@ -1100,6 +1126,13 @@ final class AskVM: ObservableObject {
     private var streamTask: Task<Void, Never>?       // чтобы уметь отменять
     private let baseURL = URL(string: "https://api.disciplaner.online")!
     private let sessionId = UUID().uuidString        // одна сессия на жизненный цикл VM
+    private let auth: AuthState
+    private let serverClient: ServerClient
+
+    init(auth: AuthState, serverClient: ServerClient = .shared) {
+        self.auth = auth
+        self.serverClient = serverClient
+    }
 
     func cancelStream() {
         streamTask?.cancel()
@@ -1120,6 +1153,11 @@ final class AskVM: ObservableObject {
             return
         }
 
+        guard let token = auth.currentKey, !token.isEmpty else {
+            answerError = "Добавьте API-ключ, чтобы отправить вопрос."
+            return
+        }
+
         // сброс состояния ответа
         answerDraft = ""
         answerError = nil
@@ -1137,7 +1175,8 @@ final class AskVM: ObservableObject {
                 question: q,
                 screenshotPNG: png,
                 smart: smart,
-                transcript: transcript
+                transcript: transcript,
+                token: token
             )
         } catch {
             answerError = error.localizedDescription
@@ -1153,11 +1192,13 @@ final class AskVM: ObservableObject {
         question: String,
         screenshotPNG: Data,
         smart: Bool,
-        transcript: String
+        transcript: String,
+        token: String
     ) async throws {
         var req = URLRequest(url: baseURL.appendingPathComponent("/ask"))
         req.httpMethod = "POST"
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept") // ожидаем SSE
+        serverClient.authorize(&req, token: token)
 
         // multipart/form-data
         let boundary = "----ghostdesk-\(UUID().uuidString)"
@@ -1198,6 +1239,11 @@ final class AskVM: ObservableObject {
             do {
                 let (bytes, response) = try await URLSession.shared.bytes(for: req)
                 guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+
+                if serverClient.handleUnauthorizedStatus(http.statusCode, auth: auth) {
+                    throw NSError(domain: "auth", code: http.statusCode,
+                                  userInfo: [NSLocalizedDescriptionKey: serverClient.unauthorizedMessage])
+                }
 
                 if !(200..<300).contains(http.statusCode) {
                     var errText = "HTTP \(http.statusCode) \(HTTPURLResponse.localizedString(forStatusCode: http.statusCode))"

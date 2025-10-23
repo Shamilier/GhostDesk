@@ -160,6 +160,7 @@ final class OverlayModel: ObservableObject {
     func attachAuth(_ auth: AuthState) {
         Task { @MainActor [weak self] in
             self?.authState = auth
+            HintAgent.shared.attachAuth(auth)
         }
     }
 
