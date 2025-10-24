@@ -1,119 +1,154 @@
-//
-//  SettingsSheet.swift
-//  GHOSTDeskUI
-//
-//  Created by Danil Bazhitov on 20.09.2025.
-//
-
 import SwiftUI
+import AppKit
 
+// MARK: - Design Tokens
+private enum ST {
+    static let corner: CGFloat = 24
+    static let padX: CGFloat = 56
+    static let padY: CGFloat = 48
+    static let width: CGFloat = 560
+    static let minHeight: CGFloat = 480
+
+    static let textPri   = Color.white
+    static let textSec   = Color.white.opacity(0.72)
+    static let textTri   = Color.white.opacity(0.48)
+
+    static let line      = Color.white.opacity(0.06)
+
+    static let secBase        = Color.white.opacity(0.06)
+    static let secBaseHover   = Color.white.opacity(0.12)
+
+    static let redText   = Color(red: 1.00, green: 0.37, blue: 0.34)
+    static let redStroke = Color(red: 1.00, green: 0.37, blue: 0.34).opacity(0.45)
+
+    static let greenFg   = Color(red: 0.61, green: 0.95, blue: 0.79)
+    static let greenBg   = Color(red: 0.18, green: 0.73, blue: 0.46).opacity(0.18)
+
+    static let shadow    = Color.black.opacity(0.28)
+}
+
+// MARK: - SettingsSheet
 struct SettingsSheet: View {
     @Binding var isShown: Bool
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @EnvironmentObject private var auth: AuthState
+
+    @State private var isRefreshing = false
 
     private var expiresDescription: String {
         guard let expiresAt = auth.expiresAt else { return "Не установлено" }
         return expiresAt.formatted(date: .abbreviated, time: .shortened)
     }
-
     private var createdDescription: String {
         guard let createdAt = auth.createdAt else { return "Неизвестно" }
         return createdAt.formatted(date: .abbreviated, time: .shortened)
     }
-
-    private var sanitizedToken: String? {
-        guard let token = auth.profileToken?.trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty else {
-            return nil
-        }
-        return token
-    }
-
-    private var sanitizedPlan: String? {
-        guard let plan = auth.plan?.trimmingCharacters(in: .whitespacesAndNewlines), !plan.isEmpty else {
-            return nil
-        }
-        return plan
-    }
-
-    private var sanitizedReferral: String? {
-        guard let referral = auth.referral?.trimmingCharacters(in: .whitespacesAndNewlines), !referral.isEmpty else {
-            return nil
-        }
-        return referral
-    }
+    private var tokenString: String { (auth.profileToken ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var planString: String  { (auth.plan ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var refString: String   { (auth.referral ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
-        VStack(spacing: 22) {
+        // Прозрачный контейнер окна, чтобы не было «полосы»
+        ZStack {
+            Color.clear
+            cardView
+                .frame(width: ST.width)
+                .frame(minHeight: ST.minHeight)
+                .background(liquidGlassBackground)
+                .overlay(singleStroke)
+                .clipShape(RoundedRectangle(cornerRadius: ST.corner, style: .continuous))
+                .shadow(color: ST.shadow, radius: 24, x: 0, y: 18)
+                .padding(.top, 12)
+                .padding(.trailing, 20)
+                .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topTrailing)))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(SettingsWindowConfigurator()) // прозрачное окно без системной тени
+    }
+
+    // MARK: Card content
+    private var cardView: some View {
+        VStack(spacing: 24) {
             header
+            Divider().background(ST.line)
 
-            VStack(alignment: .leading, spacing: 16) {
-                statusSection
+            statusSection
+            Divider().background(ST.line)
 
-                if let message = auth.authorizationIssue {
+            accountSection
+
+            // фикс-слот под сообщение, чтобы высота не прыгала
+            Group {
+                if let message = auth.authorizationIssue, !message.isEmpty {
                     Text(message)
                         .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundStyle(Color.red.opacity(0.9))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
+                        .foregroundStyle(ST.redText)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(Color.red.opacity(colorScheme == .dark ? 0.12 : 0.08))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                        .stroke(Color.red.opacity(colorScheme == .dark ? 0.25 : 0.18), lineWidth: 1)
-                                )
-                        )
+                        .transition(.opacity)
+                } else {
+                    Color.clear
                 }
+            }
+            .frame(height: 22)
 
-                profileSection
+            actionsRow
+        }
+        .padding(.horizontal, ST.padX)
+        .padding(.vertical, ST.padY)
+    }
 
-                actionButtons
+    // MARK: Card visuals
+    private var liquidGlassBackground: some View {
+        Group {
+            if reduceTransparency {
+                RoundedRectangle(cornerRadius: ST.corner, style: .continuous)
+                    .fill(Color.black.opacity(0.78))
+            } else {
+                RoundedRectangle(cornerRadius: ST.corner, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: ST.corner, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                            .blur(radius: 18)
+                            .blendMode(.plusLighter)
+                            .clipShape(RoundedRectangle(cornerRadius: ST.corner, style: .continuous))
+                    )
             }
         }
-        .padding(26)
-        .frame(width: 400)
-        .background(backgroundDecoration)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.white.opacity(colorScheme == .dark ? 0.08 : 0.12), lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.35 : 0.18), radius: 30, y: 16)
-        .padding(.top, 12)
-        .padding(.trailing, 20)
-        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topTrailing)))
-        .accessibilityElement(children: .contain)
+        .compositingGroup()
+        .clipped()
     }
 
-    private var backgroundDecoration: some View {
-        RoundedRectangle(cornerRadius: 24, style: .continuous)
-            .fill(
-                LinearGradient(colors: [Color.cyan.opacity(0.35), Color.purple.opacity(0.25)],
-                               startPoint: .topLeading,
-                               endPoint: .bottomTrailing)
-            )
+    private var singleStroke: some View {
+        RoundedRectangle(cornerRadius: ST.corner, style: .continuous)
+            .stroke(Color.white.opacity(0.08), lineWidth: 1)
             .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(.ultraThinMaterial)
+                // мягкий edge-shadow снизу
+                RoundedRectangle(cornerRadius: ST.corner, style: .continuous)
+                    .stroke(Color.black.opacity(0.25), lineWidth: 1.2)
+                    .blur(radius: 4)
+                    .offset(y: 1)
+                    .mask(
+                        LinearGradient(colors: [.black, .clear],
+                                       startPoint: .top, endPoint: .bottom)
+                            .clipShape(RoundedRectangle(cornerRadius: ST.corner, style: .continuous))
+                    )
             )
     }
 
+    // MARK: Header
     private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 6) {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text("Панель управления")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
-
+                    .font(.system(size: 28, weight: .semibold, design: .rounded))
+                    .foregroundStyle(ST.textPri)
                 Text("Настройте аккаунт и подписку")
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 15, weight: .regular, design: .rounded))
+                    .foregroundStyle(ST.textSec)
             }
-
             Spacer(minLength: 12)
-
-            CloseCircleButton {
+            CloseButton {
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
                     isShown = false
                 }
@@ -121,60 +156,72 @@ struct SettingsSheet: View {
         }
     }
 
+    // MARK: Status
     private var statusSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Статус")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 12) {
-                statusChip(systemImage: auth.isAuthorized ? "checkmark.seal.fill" : "exclamationmark.triangle.fill",
-                           title: auth.isAuthorized ? "Авторизация активна" : "Нет активной сессии",
-                           tint: auth.isAuthorized ? .green : .orange)
-
-                statusChip(systemImage: "calendar",
-                           title: "Действует до \(expiresDescription)",
-                           tint: .blue)
-            }
-        }
-    }
-
-    private var profileSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Аккаунт")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(.secondary)
-
-            VStack(spacing: 12) {
-                infoRow(icon: "person.text.rectangle", title: "Токен", value: sanitizedToken, placeholder: "Не найден")
-                infoRow(icon: "creditcard", title: "Тариф", value: sanitizedPlan, placeholder: "Не определён")
-                infoRow(icon: "gift", title: "Реферальный код", value: sanitizedReferral, placeholder: "Нет данных")
-                infoRow(icon: "calendar.badge.clock", title: "Создан", value: auth.createdAt != nil ? createdDescription : nil, placeholder: "Неизвестно")
-            }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.white.opacity(colorScheme == .dark ? 0.05 : 0.55))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(Color.white.opacity(colorScheme == .dark ? 0.12 : 0.25), lineWidth: 1)
-                    )
-                    .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.25 : 0.12), radius: 14, y: 6)
+        HStack(spacing: 12) {
+            StatusPill(
+                systemImage: auth.isAuthorized ? "checkmark.seal.fill" : "exclamationmark.triangle.fill",
+                title: auth.isAuthorized ? "Авторизация активна" : "Нет активной сессии",
+                fg: auth.isAuthorized ? ST.greenFg : .orange,
+                bg: auth.isAuthorized ? ST.greenBg : Color.orange.opacity(0.18)
             )
+            Spacer()
+            Text("Действует до \(expiresDescription)")
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(ST.textSec)
         }
     }
 
-    private var actionButtons: some View {
-        HStack(spacing: 14) {
-            Button {
-                auth.restoreSession()
-            } label: {
-                Label("Обновить данные", systemImage: "arrow.clockwise")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .labelStyle(.titleAndIcon)
+    // MARK: Account
+    private var accountSection: some View {
+        VStack(spacing: 12) {
+            InfoRow(label: "ТОКЕН") {
+                CopyableTokenField(text: tokenString, placeholder: "Не найден")
             }
-            .buttonStyle(SecondaryGlassButtonStyle())
+            InfoRow(label: "ТАРИФ") {
+                Text(planString.isEmpty ? "Не определён" : planString)
+                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                    .foregroundStyle(planString.isEmpty ? ST.textTri : ST.textPri)
+            }
+            InfoRow(label: "РЕФЕРАЛЬНЫЙ КОД") {
+                Text(refString.isEmpty ? "Нет данных" : refString)
+                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                    .foregroundStyle(refString.isEmpty ? ST.textTri : ST.textPri)
+            }
+            InfoRow(label: "СОЗДАН") {
+                Text(createdDescription)
+                    .font(.system(size: 15, weight: .regular, design: .rounded))
+                    .foregroundStyle(ST.textSec)
+            }
+        }
+    }
+
+    // MARK: Actions
+    private var actionsRow: some View {
+        HStack(spacing: 12) {
+            Button {
+                isRefreshing = true
+                Task {
+                    auth.restoreSession()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        isRefreshing = false
+                    }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if isRefreshing {
+                        ProgressView().controlSize(.small).tint(.white)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    Text(isRefreshing ? "Обновляем…" : "Обновить данные")
+                }
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            .disabled(isRefreshing)
+
+            Spacer()
 
             Button(role: .destructive) {
                 auth.signOut()
@@ -182,168 +229,171 @@ struct SettingsSheet: View {
                     isShown = false
                 }
             } label: {
-                Label("Выйти", systemImage: "rectangle.portrait.and.arrow.forward")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .labelStyle(.titleAndIcon)
+                HStack(spacing: 8) {
+                    Image(systemName: "rectangle.portrait.and.arrow.forward")
+                    Text("Выйти")
+                }
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
             }
-            .buttonStyle(PrimaryGlassButtonStyle())
-
-            Spacer()
+            .buttonStyle(DestructiveOutlineButtonStyle())
         }
-    }
-
-    @ViewBuilder
-    private func statusChip(systemImage: String, title: String, tint: Color) -> some View {
-        HStack(spacing: 8) {
-            ZStack {
-                Circle()
-                    .fill(tint.opacity(colorScheme == .dark ? 0.22 : 0.18))
-                    .frame(width: 26, height: 26)
-
-                Image(systemName: systemImage)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(tint)
-            }
-
-            Text(title)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(tint)
-        }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 14)
-        .background(
-            Capsule(style: .continuous)
-                .fill(tint.opacity(colorScheme == .dark ? 0.14 : 0.10))
-        )
     }
 }
 
+// MARK: - Pieces
 
-// MARK: - Minimalist Close Button
+private struct StatusPill: View {
+    let systemImage: String
+    let title: String
+    let fg: Color
+    let bg: Color
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(fg)
+            Text(title)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(fg)
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .background(Capsule(style: .continuous).fill(bg))
+    }
+}
 
-private struct CloseCircleButton: View {
+private struct InfoRow<Content: View>: View {
+    let label: String
+    @ViewBuilder var content: Content
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            Text(label)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(ST.textSec)
+                .frame(width: 160, alignment: .leading)
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct CopyableTokenField: View {
+    var text: String
+    var placeholder: String
+    @State private var copied = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(display)
+                .font(.system(size: 15, weight: .medium, design: .rounded).monospaced())
+                .foregroundStyle(text.isEmpty ? ST.textTri : ST.textPri)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            Spacer(minLength: 8)
+
+            Button {
+                if !text.isEmpty {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                    copied = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
+                }
+            } label: {
+                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(copied ? ST.greenFg : ST.textSec)
+            .padding(.horizontal, 6)
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(ST.secBase))
+    }
+
+    private var display: String { text.isEmpty ? placeholder : text }
+}
+
+// MARK: - Buttons
+
+private struct SecondaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(Color.white.opacity(0.92))
+            .padding(.vertical, 10).padding(.horizontal, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(configuration.isPressed ? ST.secBaseHover : ST.secBase)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                    )
+            )
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+private struct DestructiveOutlineButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(ST.redText)
+            .padding(.vertical, 10).padding(.horizontal, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(ST.redStroke, lineWidth: 1)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(configuration.isPressed ? ST.redText.opacity(0.08) : Color.clear)
+                    )
+            )
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Close button
+private struct CloseButton: View {
     var action: () -> Void
-    @State private var isHovering = false
-
+    @State private var hover = false
     var body: some View {
         Button(action: action) {
             Image(systemName: "xmark")
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(.primary)
+                .foregroundStyle(ST.textPri)
                 .frame(width: 28, height: 28)
                 .background(
-                    Circle()
-                        .fill(
-                            LinearGradient(colors: [Color.cyan.opacity(0.32), Color.purple.opacity(0.30)],
-                                           startPoint: .topLeading,
-                                           endPoint: .bottomTrailing)
-                        )
-                        .overlay(
-                            Circle()
-                                .strokeBorder(Color.white.opacity(isHovering ? 0.55 : 0.35), lineWidth: 1)
-                        )
-                        .shadow(color: Color.purple.opacity(isHovering ? 0.32 : 0.18), radius: isHovering ? 8 : 5, y: isHovering ? 4 : 2)
+                    Circle().fill(hover ? ST.secBaseHover : ST.secBase)
+                        .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 1))
                 )
-                .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .onHover { hovering in isHovering = hovering }
+        .onHover { hover = $0 }
         .accessibilityLabel("Закрыть")
     }
 }
 
-// MARK: - Glass button styles & Info Row
+// MARK: - Transparent, no-shadow window
+struct SettingsWindowConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        DispatchQueue.main.async {
+            if let w = v.window {
+                w.isOpaque = false
+                w.backgroundColor = .clear
+                w.hasShadow = false
+                w.titleVisibility = .hidden
+                w.titlebarAppearsTransparent = true
 
-private struct PrimaryGlassButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .padding(.vertical, 10)
-            .padding(.horizontal, 18)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(
-                        LinearGradient(colors: [Color.pink.opacity(0.92), Color.purple.opacity(0.85)],
-                                       startPoint: .topLeading,
-                                       endPoint: .bottomTrailing)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.white.opacity(0.35), lineWidth: 1)
-                    )
-            )
-            .foregroundStyle(.white)
-            .shadow(color: Color.purple.opacity(configuration.isPressed ? 0.15 : 0.32), radius: configuration.isPressed ? 6 : 16, y: 8)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.spring(response: 0.25, dampingFraction: 0.75), value: configuration.isPressed)
-    }
-}
-
-private struct SecondaryGlassButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .padding(.vertical, 10)
-            .padding(.horizontal, 18)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.white.opacity(0.35))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.white.opacity(0.45), lineWidth: 1)
-                    )
-            )
-            .foregroundStyle(.primary)
-            .shadow(color: Color.black.opacity(configuration.isPressed ? 0.10 : 0.18), radius: configuration.isPressed ? 3 : 8, y: 4)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.spring(response: 0.25, dampingFraction: 0.75), value: configuration.isPressed)
-    }
-}
-
-private struct InfoIcon: View {
-    let systemName: String
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.primary.opacity(0.08))
-                .frame(width: 34, height: 34)
-
-            Image(systemName: systemName)
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                .foregroundStyle(.primary)
-        }
-    }
-}
-
-private struct InfoRow: View {
-    let icon: String
-    let title: String
-    let value: String
-    let isPlaceholder: Bool
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            InfoIcon(systemName: icon)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title.uppercased())
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
-
-                Text(value)
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(isPlaceholder ? .secondary : .primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                // фикс размера окна (убери, если не нужно)
+                w.setContentSize(NSSize(width: ST.width, height: ST.minHeight))
+                w.styleMask.remove(.resizable)
+                w.minSize = NSSize(width: ST.width, height: ST.minHeight)
+                w.maxSize = NSSize(width: ST.width, height: ST.minHeight)
             }
         }
+        return v
     }
-}
-
-private extension SettingsSheet {
-    func infoRow(icon: String, title: String, value: String?, placeholder: String) -> some View {
-        InfoRow(icon: icon,
-                title: title,
-                value: value ?? placeholder,
-                isPlaceholder: value == nil)
-    }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }

@@ -1,0 +1,32 @@
+{
+  "fill" : {
+    "solid" : "display-p3:0.25685,0.29332,0.65059,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "fill" : {
+            "solid" : "display-p3:0.15595,0.00000,0.44024,1.00000"
+          },
+          "image-name" : "fire-minimalistic-svgrepo-com.svg",
+          "name" : "fire-minimalistic-svgrepo-com"
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}
