@@ -54,6 +54,9 @@ struct OverlayRootView: View {
         Group {
             if auth.isAuthorized {
                 authorizedOverlay
+            } else if auth.isRestoring {
+                SessionRestoreView()
+                    .environmentObject(oauthCoordinator)
             } else {
                 ApiKeyGateView()
                     .environmentObject(oauthCoordinator)

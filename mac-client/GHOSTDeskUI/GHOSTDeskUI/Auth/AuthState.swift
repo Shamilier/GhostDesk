@@ -38,6 +38,7 @@ final class AuthState: ObservableObject {
 
     @Published private(set) var session: AuthSession?
     @Published private(set) var profile: UserProfile?
+    @Published private(set) var isRestoring: Bool = false
     @Published var lastError: String? = nil
 
     private var refreshTask: Task<Void, Never>? = nil
@@ -114,12 +115,19 @@ final class AuthState: ObservableObject {
             profile = nil
         }
 
+        if let session, profile == nil {
+            hydrateProfile(using: session)
+        } else {
+            isRestoring = false
+        }
+
         scheduleRefreshTask()
     }
 
     func updateSession(_ session: AuthSession, _ profile: UserProfile) {
         self.session = session
         self.profile = profile
+        isRestoring = false
         lastError = nil
         persistSession(session)
         persistProfile(profile)
@@ -129,6 +137,7 @@ final class AuthState: ObservableObject {
     func signOut(reason: String? = nil) {
         session = nil
         profile = nil
+        isRestoring = false
         lastError = reason
         persistSession(nil)
         persistProfile(nil)
@@ -165,6 +174,28 @@ final class AuthState: ObservableObject {
             defaults.set(data, forKey: Keys.profile)
         } else {
             defaults.removeObject(forKey: Keys.profile)
+        }
+    }
+
+    private func hydrateProfile(using session: AuthSession) {
+        guard !isRestoring else { return }
+        isRestoring = true
+
+        Task { [weak self] in
+            do {
+                let fetched = try await AuthAPI.shared.fetchProfile(accessToken: session.accessToken)
+                await MainActor.run {
+                    guard let self else { return }
+                    self.profile = fetched
+                    self.persistProfile(fetched)
+                    self.isRestoring = false
+                    self.lastError = nil
+                }
+            } catch {
+                await MainActor.run {
+                    self?.signOut(reason: "Не удалось восстановить профиль. Войдите снова.")
+                }
+            }
         }
     }
 
