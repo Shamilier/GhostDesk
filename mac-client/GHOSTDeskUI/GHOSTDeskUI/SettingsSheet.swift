@@ -78,14 +78,9 @@ struct SettingsSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(colors: [Color.cyan.opacity(0.85), Color.purple.opacity(0.75)],
-                                   startPoint: .topLeading,
-                                   endPoint: .bottomTrailing),
-                    lineWidth: 1.4
-                )
+                .stroke(Color.white.opacity(colorScheme == .dark ? 0.08 : 0.12), lineWidth: 1)
         )
-        .shadow(color: Color.purple.opacity(colorScheme == .dark ? 0.32 : 0.22), radius: 32, y: 18)
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.35 : 0.18), radius: 30, y: 16)
         .padding(.top, 12)
         .padding(.trailing, 20)
         .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topTrailing)))
@@ -94,15 +89,14 @@ struct SettingsSheet: View {
 
     private var backgroundDecoration: some View {
         RoundedRectangle(cornerRadius: 24, style: .continuous)
-            .fill(.ultraThinMaterial)
-            .background(
+            .fill(
+                LinearGradient(colors: [Color.cyan.opacity(0.35), Color.purple.opacity(0.25)],
+                               startPoint: .topLeading,
+                               endPoint: .bottomTrailing)
+            )
+            .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(
-                        LinearGradient(colors: [Color.cyan.opacity(colorScheme == .dark ? 0.35 : 0.28),
-                                                Color.purple.opacity(colorScheme == .dark ? 0.30 : 0.24)],
-                                       startPoint: .topLeading,
-                                       endPoint: .bottomTrailing)
-                    )
+                    .fill(.ultraThinMaterial)
             )
     }
 
@@ -161,26 +155,12 @@ struct SettingsSheet: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .background(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(
-                                LinearGradient(colors: [Color.white.opacity(colorScheme == .dark ? 0.18 : 0.52),
-                                                       Color.white.opacity(colorScheme == .dark ? 0.10 : 0.36)],
-                                               startPoint: .topLeading,
-                                               endPoint: .bottomTrailing)
-                            )
-                    )
+                    .fill(Color.white.opacity(colorScheme == .dark ? 0.05 : 0.55))
                     .overlay(
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .strokeBorder(
-                                LinearGradient(colors: [Color.cyan.opacity(0.85), Color.purple.opacity(0.6)],
-                                               startPoint: .topLeading,
-                                               endPoint: .bottomTrailing),
-                                lineWidth: 1.1
-                            )
+                            .stroke(Color.white.opacity(colorScheme == .dark ? 0.12 : 0.25), lineWidth: 1)
                     )
-                    .shadow(color: Color.purple.opacity(colorScheme == .dark ? 0.24 : 0.18), radius: 18, y: 8)
+                    .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.25 : 0.12), radius: 14, y: 6)
             )
         }
     }
@@ -233,11 +213,7 @@ struct SettingsSheet: View {
         .padding(.horizontal, 14)
         .background(
             Capsule(style: .continuous)
-                .fill(tint.opacity(colorScheme == .dark ? 0.18 : 0.12))
-                .overlay(
-                    Capsule(style: .continuous)
-                        .strokeBorder(tint.opacity(0.48), lineWidth: 1)
-                )
+                .fill(tint.opacity(colorScheme == .dark ? 0.14 : 0.10))
         )
     }
 }
@@ -286,13 +262,13 @@ private struct PrimaryGlassButtonStyle: ButtonStyle {
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(
-                        LinearGradient(colors: [Color.pink.opacity(0.95), Color.purple.opacity(0.88)],
+                        LinearGradient(colors: [Color.pink.opacity(0.92), Color.purple.opacity(0.85)],
                                        startPoint: .topLeading,
                                        endPoint: .bottomTrailing)
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.45), lineWidth: 1)
+                            .stroke(Color.white.opacity(0.35), lineWidth: 1)
                     )
             )
             .foregroundStyle(.white)
@@ -309,14 +285,10 @@ private struct SecondaryGlassButtonStyle: ButtonStyle {
             .padding(.horizontal, 18)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(
-                        LinearGradient(colors: [Color.white.opacity(0.42), Color.white.opacity(0.22)],
-                                       startPoint: .topLeading,
-                                       endPoint: .bottomTrailing)
-                    )
+                    .fill(Color.white.opacity(0.35))
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.48), lineWidth: 1)
+                            .stroke(Color.white.opacity(0.45), lineWidth: 1)
                     )
             )
             .foregroundStyle(.primary)
@@ -330,22 +302,15 @@ private struct InfoIcon: View {
     let systemName: String
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 11, style: .continuous)
-            .fill(
-                LinearGradient(colors: [Color.cyan.opacity(0.32), Color.purple.opacity(0.28)],
-                               startPoint: .topLeading,
-                               endPoint: .bottomTrailing)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.32), lineWidth: 1)
-            )
-            .frame(width: 36, height: 36)
-            .overlay(
-                Image(systemName: systemName)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-            )
+        ZStack {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.08))
+                .frame(width: 34, height: 34)
+
+            Image(systemName: systemName)
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .foregroundStyle(.primary)
+        }
     }
 }
 
@@ -356,25 +321,19 @@ private struct InfoRow: View {
     let isPlaceholder: Bool
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
+        HStack(alignment: .top, spacing: 14) {
             InfoIcon(systemName: icon)
-                .alignmentGuide(.firstTextBaseline) { dimensions in
-                    dimensions[VerticalAlignment.center]
-                }
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(title.uppercased())
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .tracking(0.8)
                     .foregroundStyle(.secondary)
 
                 Text(value)
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(isPlaceholder ? .secondary : .primary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.85)
+                    .lineLimit(1)
                     .truncationMode(.middle)
-                    .multilineTextAlignment(.leading)
             }
         }
     }
