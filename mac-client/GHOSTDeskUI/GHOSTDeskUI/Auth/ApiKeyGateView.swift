@@ -96,49 +96,25 @@ struct ApiKeyGateView: View {
             )
     }
 
-    private var backgroundLayer: some View {
-        GeometryReader { proxy in
-            let size = proxy.size
+            VStack(spacing: 16) {
+                AuthPortalButton(flow: .signUp, style: .primary, action: openPortal)
 
-            ZStack {
-                LinearGradient(
-                    colors: [Color(red: 0.04, green: 0.05, blue: 0.11), Color(red: 0.10, green: 0.04, blue: 0.22)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
-
-                Circle()
-                    .fill(primaryGlow)
-                    .opacity(0.35)
-                    .frame(width: size.width * 0.65)
-                    .blur(radius: 120)
-                    .offset(x: -size.width * 0.18, y: -size.height * 0.32)
-
-                Circle()
-                    .fill(secondaryGlow)
-                    .opacity(0.28)
-                    .frame(width: size.width * 0.58)
-                    .blur(radius: 140)
-                    .offset(x: size.width * 0.24, y: size.height * 0.3)
-
-                LinearGradient(
-                    colors: [Color.white.opacity(0.05), Color.clear],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: size.height * 0.4)
-                .offset(y: -size.height * 0.33)
+                AuthPortalButton(flow: .signIn, style: .secondary, action: openPortal)
             }
-        }
-    }
+            .padding(.top, 24)
 
     private var primaryGlow: Color {
         Color(red: 0.55, green: 0.70, blue: 1.0)
     }
 
-    private var secondaryGlow: Color {
-        Color(red: 0.94, green: 0.50, blue: 0.89)
+    private var cardBackground: some View {
+        RoundedRectangle(cornerRadius: 24, style: .continuous)
+            .fill(Color(red: 22 / 255, green: 22 / 255, blue: 26 / 255).opacity(0.72))
+            .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .blur(radius: 20)
+            )
     }
 
     private func openPortal(_ flow: OAuthFlowKind) {
@@ -228,6 +204,7 @@ private struct AuthPortalButton: View {
             return "Создать аккаунт за минуту"
         }
     }
+}
 
     private var title: String {
         switch flow {
