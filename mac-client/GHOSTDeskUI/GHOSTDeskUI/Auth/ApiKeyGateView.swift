@@ -5,60 +5,55 @@ struct ApiKeyGateView: View {
     @EnvironmentObject private var oauth: OAuthCoordinator
 
     var body: some View {
-        ZStack {
-            Color.clear
-                .background(.ultraThinMaterial)
-                .ignoresSafeArea()
-
+        AuthBackdrop {
             VStack(spacing: 32) {
-                VStack(spacing: 12) {
+                VStack(spacing: 18) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 26, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(AuthTheme.primaryGradient)
+                        .padding(14)
+                        .background(
+                            Circle()
+                                .fill(AuthTheme.primaryGlow)
+                        )
+
                     Text("Добро пожаловать в GhostDesk")
-                        .font(.system(size: 26, weight: .semibold, design: .rounded))
-
-                    Text("Для начала авторизуйтесь через портал GhostDesk. Выберите, есть ли у вас уже аккаунт.")
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
                         .multilineTextAlignment(.center)
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: 420)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.95)
+
+                    Text("Подключитесь к вашему AI-ассистенту через портал GhostDesk. Выберите сценарий входа, чтобы синхронизировать историю, подписку и настройки.")
+                        .multilineTextAlignment(.center)
+                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.78))
+                        .frame(maxWidth: 460)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
-                VStack(spacing: 16) {
-                    AuthPortalButton(flow: .signIn, action: openPortal)
-                    AuthPortalButton(flow: .signUp, action: openPortal)
+                VStack(spacing: 18) {
+                    AuthPortalButton(flow: .signIn, accent: AuthTheme.primaryGradient, action: openPortal)
+                    AuthPortalButton(flow: .signUp, accent: AuthTheme.secondaryGradient, action: openPortal)
                 }
-                .frame(maxWidth: 420)
+                .frame(maxWidth: 460)
 
                 if let error = auth.lastError {
                     Text(error)
-                        .font(.footnote)
-                        .foregroundStyle(.red.opacity(0.85))
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color(red: 0.98, green: 0.34, blue: 0.33))
                         .multilineTextAlignment(.center)
-                        .padding(.top, 4)
+                        .padding(.top, 2)
                 }
 
                 if oauth.isAuthorizing {
                     ProgressView()
                         .progressViewStyle(.circular)
-                        .tint(.accentColor)
+                        .tint(.white)
                 }
             }
-            .padding(36)
-            .frame(maxWidth: 560)
-            .background(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(Color.white.opacity(0.08))
-                    .background(
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .fill(.thinMaterial)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .stroke(Color.white.opacity(0.18), lineWidth: 1)
-                    )
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .frame(maxWidth: 600)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func openPortal(_ flow: OAuthFlowKind) {
@@ -66,46 +61,210 @@ struct ApiKeyGateView: View {
     }
 }
 
+struct SessionRestoreView: View {
+    @EnvironmentObject private var auth: AuthState
+
+    var body: some View {
+        AuthBackdrop {
+            VStack(spacing: 28) {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .tint(.white)
+                    .scaleEffect(1.2)
+
+                VStack(spacing: 10) {
+                    Text("Проверяем вашу сессию")
+                        .font(.system(size: 22, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+
+                    Text("GhostDesk восстанавливает ваш профиль и ключи доступа. Это займёт всего несколько секунд.")
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.white.opacity(0.75))
+                        .frame(maxWidth: 360)
+                }
+
+                Button {
+                    auth.signOut()
+                } label: {
+                    Label("Войти под другим аккаунтом", systemImage: "arrow.clockwise")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(Color.white.opacity(0.12))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                        )
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(maxWidth: 420)
+        }
+    }
+}
+
+private struct AuthBackdrop<Content: View>: View {
+    private let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        ZStack {
+            AuthBackground()
+
+            content
+                .padding(.vertical, 48)
+                .padding(.horizontal, 52)
+                .background(AuthGlass())
+                .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
+                .shadow(color: Color.black.opacity(0.22), radius: 32, x: 0, y: 24)
+                .padding(.horizontal, 40)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct AuthGlass: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 32, style: .continuous)
+            .fill(.ultraThinMaterial)
+            .background(
+                RoundedRectangle(cornerRadius: 32, style: .continuous)
+                    .fill(Color.white.opacity(0.04))
+            )
+    }
+}
+
+private struct AuthBackground: View {
+    var body: some View {
+        GeometryReader { proxy in
+            let size = proxy.size
+
+            ZStack {
+                LinearGradient(
+                    colors: [Color(red: 0.04, green: 0.05, blue: 0.11), Color(red: 0.10, green: 0.04, blue: 0.22)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+
+                Circle()
+                    .fill(AuthTheme.primaryGlow)
+                    .opacity(0.35)
+                    .frame(width: size.width * 0.65)
+                    .blur(radius: 120)
+                    .offset(x: -size.width * 0.18, y: -size.height * 0.32)
+
+                Circle()
+                    .fill(AuthTheme.secondaryGlow)
+                    .opacity(0.28)
+                    .frame(width: size.width * 0.58)
+                    .blur(radius: 140)
+                    .offset(x: size.width * 0.24, y: size.height * 0.3)
+
+                LinearGradient(
+                    colors: [Color.white.opacity(0.05), Color.clear],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: size.height * 0.4)
+                .offset(y: -size.height * 0.33)
+            }
+        }
+    }
+}
+
+private enum AuthTheme {
+    static let primaryGradient = LinearGradient(
+        colors: [Color(red: 0.477, green: 0.666, blue: 0.9), Color(red: 0.36, green: 0.324, blue: 0.873)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
+    static let secondaryGradient = LinearGradient(
+        colors: [Color(red: 0.891, green: 0.396, blue: 0.702), Color(red: 0.603, green: 0.306, blue: 0.891)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
+    static let primaryGlow = Color(red: 0.55, green: 0.70, blue: 1.0)
+    static let secondaryGlow = Color(red: 0.94, green: 0.50, blue: 0.89)
+}
+
 private struct AuthPortalButton: View {
     let flow: OAuthFlowKind
+    let accent: LinearGradient
     let action: (OAuthFlowKind) -> Void
 
     var body: some View {
         Button {
             action(flow)
         } label: {
-            HStack(spacing: 16) {
-                Image(systemName: symbolName)
-                    .font(.system(size: 28, weight: .semibold))
-                    .frame(width: 44, height: 44)
-                    .background(.thinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            HStack(spacing: 18) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(accent)
+                        .opacity(0.35)
+                        .blur(radius: 0.5)
 
-                VStack(alignment: .leading, spacing: 2) {
+                    Image(systemName: symbolName)
+                        .symbolRenderingMode(.hierarchical)
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundStyle(Color.white)
+                }
+                .frame(width: 54, height: 54)
+
+                VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                        .font(.system(size: 21, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.white)
+
                     Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.white.opacity(0.78))
                 }
 
-                Spacer()
+                Spacer(minLength: 12)
 
                 Image(systemName: "arrow.up.right")
                     .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.9))
+                    .padding(12)
+                    .background(
+                        Circle()
+                            .fill(Color.white.opacity(0.12))
+                    )
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 18)
+            .padding(.horizontal, 26)
+            .padding(.vertical, 22)
             .frame(maxWidth: .infinity)
-            .background(gradient)
-            .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(Color.white.opacity(0.25), lineWidth: 1)
+            .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(accent)
+                    .opacity(0.85)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .fill(Color.white.opacity(0.1))
+                            .blendMode(.plusLighter)
+                            .opacity(0.35)
+                    )
             )
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .shadow(color: Color.black.opacity(0.2), radius: 16, x: 0, y: 8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
+                    .blendMode(.screen)
+            )
+            .shadow(color: Color.black.opacity(0.28), radius: 20, x: 0, y: 16)
         }
         .buttonStyle(.plain)
+        .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     private var title: String {
@@ -124,25 +283,8 @@ private struct AuthPortalButton: View {
 
     private var symbolName: String {
         switch flow {
-        case .signIn: return "key.fill"
-        case .signUp: return "sparkles"
-        }
-    }
-
-    private var gradient: LinearGradient {
-        switch flow {
-        case .signIn:
-            return LinearGradient(
-                colors: [Color.accentColor, Color.accentColor.opacity(0.6)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        case .signUp:
-            return LinearGradient(
-                colors: [Color.purple, Color.blue.opacity(0.7)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+        case .signIn: return "rectangle.and.pencil.and.ellipsis"
+        case .signUp: return "person.badge.plus"
         }
     }
 }
