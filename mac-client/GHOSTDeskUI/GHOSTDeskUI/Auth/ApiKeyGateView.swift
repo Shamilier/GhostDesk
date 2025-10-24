@@ -9,28 +9,29 @@ struct ApiKeyGateView: View {
             backgroundLayer
 
             VStack(spacing: 32) {
-                VStack(spacing: 12) {
-                    Label {
-                        Text("Добро пожаловать в GhostDesk")
-                            .font(.system(size: 30, weight: .bold, design: .rounded))
-                    } icon: {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 24, weight: .semibold))
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(gradientPrimary)
-                            .padding(12)
-                            .background(
-                                Circle()
-                                    .fill(primaryGlow)
-                            )
-                    }
-                    .labelStyle(.titleAndIcon)
+                VStack(spacing: 18) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 26, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(gradientPrimary)
+                        .padding(14)
+                        .background(
+                            Circle()
+                                .fill(primaryGlow)
+                        )
+
+                    Text("Добро пожаловать в GhostDesk")
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.95)
 
                     Text("Подключитесь к вашему AI-ассистенту через портал GhostDesk. Выберите сценарий входа, чтобы синхронизировать историю, подписку и настройки.")
                         .multilineTextAlignment(.center)
                         .font(.system(size: 15, weight: .medium, design: .rounded))
                         .foregroundStyle(.white.opacity(0.78))
                         .frame(maxWidth: 460)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 VStack(spacing: 18) {
@@ -57,7 +58,6 @@ struct ApiKeyGateView: View {
             .padding(.horizontal, 52)
             .frame(maxWidth: 600)
             .background(glassBackground)
-            .overlay(glassBorder)
             .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
             .shadow(color: Color.black.opacity(0.22), radius: 32, x: 0, y: 24)
             .padding(.horizontal, 40)
@@ -71,23 +71,6 @@ struct ApiKeyGateView: View {
             .background(
                 RoundedRectangle(cornerRadius: 32, style: .continuous)
                     .fill(Color.white.opacity(0.04))
-            )
-    }
-
-    private var glassBorder: some View {
-        RoundedRectangle(cornerRadius: 32, style: .continuous)
-            .strokeBorder(
-                LinearGradient(
-                    colors: [Color.white.opacity(0.55), Color.white.opacity(0.08)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                lineWidth: 1.4
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 32, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.6)
-                    .blur(radius: 1)
             )
     }
 
@@ -130,7 +113,7 @@ struct ApiKeyGateView: View {
 
     private var gradientPrimary: LinearGradient {
         LinearGradient(
-            colors: [Color(red: 0.53, green: 0.74, blue: 1.0), Color(red: 0.40, green: 0.36, blue: 0.97)],
+            colors: [Color(red: 0.477, green: 0.666, blue: 0.9), Color(red: 0.36, green: 0.324, blue: 0.873)],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -138,7 +121,7 @@ struct ApiKeyGateView: View {
 
     private var gradientSecondary: LinearGradient {
         LinearGradient(
-            colors: [Color(red: 0.99, green: 0.44, blue: 0.78), Color(red: 0.67, green: 0.34, blue: 0.99)],
+            colors: [Color(red: 0.891, green: 0.396, blue: 0.702), Color(red: 0.603, green: 0.306, blue: 0.891)],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -205,18 +188,19 @@ private struct AuthPortalButton: View {
             .padding(.vertical, 22)
             .frame(maxWidth: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(accent)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .fill(Color.white.opacity(0.15))
-                            .blendMode(.plusLighter)
-                            .opacity(0.55)
-                    )
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(accent)
+                        .opacity(0.9)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .fill(Color.white.opacity(0.12))
+                                .blendMode(.plusLighter)
+                                .opacity(0.4)
+                        )
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.25), lineWidth: 1.2)
+                    .strokeBorder(Color.white.opacity(0.2), lineWidth: 1.1)
                     .blendMode(.screen)
             )
             .shadow(color: Color.black.opacity(0.35), radius: 20, x: 0, y: 16)
