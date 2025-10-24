@@ -233,12 +233,16 @@ private struct CloseCircleButton: View {
                 .frame(width: 28, height: 28)
                 .background(
                     Circle()
-                        .fill(.ultraThinMaterial)
+                        .fill(
+                            LinearGradient(colors: [Color.cyan.opacity(0.32), Color.purple.opacity(0.30)],
+                                           startPoint: .topLeading,
+                                           endPoint: .bottomTrailing)
+                        )
                         .overlay(
                             Circle()
-                                .stroke(Color.primary.opacity(isHovering ? 0.13 : 0.08), lineWidth: 1)
+                                .strokeBorder(Color.white.opacity(isHovering ? 0.55 : 0.35), lineWidth: 1)
                         )
-                        .shadow(color: Color.black.opacity(isHovering ? 0.10 : 0), radius: 4, y: 1)
+                        .shadow(color: Color.purple.opacity(isHovering ? 0.32 : 0.18), radius: isHovering ? 8 : 5, y: isHovering ? 4 : 2)
                 )
                 .contentShape(Circle())
         }
