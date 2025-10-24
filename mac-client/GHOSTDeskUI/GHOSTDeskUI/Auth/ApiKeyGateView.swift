@@ -5,17 +5,19 @@ struct ApiKeyGateView: View {
     @EnvironmentObject private var oauth: OAuthCoordinator
 
     var body: some View {
-        AuthBackdrop {
+        ZStack {
+            backgroundLayer
+
             VStack(spacing: 32) {
                 VStack(spacing: 18) {
                     Image(systemName: "sparkles")
                         .font(.system(size: 26, weight: .semibold))
                         .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(AuthTheme.primaryGradient)
+                        .foregroundStyle(gradientPrimary)
                         .padding(14)
                         .background(
                             Circle()
-                                .fill(AuthTheme.primaryGlow)
+                                .fill(primaryGlow)
                         )
 
                     Text("Добро пожаловать в GhostDesk")
@@ -33,8 +35,8 @@ struct ApiKeyGateView: View {
                 }
 
                 VStack(spacing: 18) {
-                    AuthPortalButton(flow: .signIn, accent: AuthTheme.primaryGradient, action: openPortal)
-                    AuthPortalButton(flow: .signUp, accent: AuthTheme.secondaryGradient, action: openPortal)
+                    AuthPortalButton(flow: .signIn, accent: gradientPrimary, action: openPortal)
+                    AuthPortalButton(flow: .signUp, accent: gradientSecondary, action: openPortal)
                 }
                 .frame(maxWidth: 460)
 
@@ -52,8 +54,85 @@ struct ApiKeyGateView: View {
                         .tint(.white)
                 }
             }
+            .padding(.vertical, 48)
+            .padding(.horizontal, 52)
             .frame(maxWidth: 600)
+            .background(glassBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
+            .shadow(color: Color.black.opacity(0.22), radius: 32, x: 0, y: 24)
+            .padding(.horizontal, 40)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var glassBackground: some View {
+        RoundedRectangle(cornerRadius: 32, style: .continuous)
+            .fill(.ultraThinMaterial)
+            .background(
+                RoundedRectangle(cornerRadius: 32, style: .continuous)
+                    .fill(Color.white.opacity(0.04))
+            )
+    }
+
+    private var backgroundLayer: some View {
+        GeometryReader { proxy in
+            let size = proxy.size
+
+            ZStack {
+                LinearGradient(
+                    colors: [Color(red: 0.04, green: 0.05, blue: 0.11), Color(red: 0.10, green: 0.04, blue: 0.22)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+
+                Circle()
+                    .fill(primaryGlow)
+                    .opacity(0.35)
+                    .frame(width: size.width * 0.65)
+                    .blur(radius: 120)
+                    .offset(x: -size.width * 0.18, y: -size.height * 0.32)
+
+                Circle()
+                    .fill(secondaryGlow)
+                    .opacity(0.28)
+                    .frame(width: size.width * 0.58)
+                    .blur(radius: 140)
+                    .offset(x: size.width * 0.24, y: size.height * 0.3)
+
+                LinearGradient(
+                    colors: [Color.white.opacity(0.05), Color.clear],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: size.height * 0.4)
+                .offset(y: -size.height * 0.33)
+            }
+        }
+    }
+
+    private var gradientPrimary: LinearGradient {
+        LinearGradient(
+            colors: [Color(red: 0.477, green: 0.666, blue: 0.9), Color(red: 0.36, green: 0.324, blue: 0.873)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var gradientSecondary: LinearGradient {
+        LinearGradient(
+            colors: [Color(red: 0.891, green: 0.396, blue: 0.702), Color(red: 0.603, green: 0.306, blue: 0.891)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var primaryGlow: Color {
+        Color(red: 0.55, green: 0.70, blue: 1.0)
+    }
+
+    private var secondaryGlow: Color {
+        Color(red: 0.94, green: 0.50, blue: 0.89)
     }
 
     private func openPortal(_ flow: OAuthFlowKind) {
@@ -228,7 +307,7 @@ private struct AuthPortalButton: View {
 
                     Text(subtitle)
                         .font(.system(size: 14, weight: .medium, design: .rounded))
-                        .foregroundStyle(Color.white.opacity(0.78))
+                        .foregroundStyle(Color.white.opacity(0.75))
                 }
 
                 Spacer(minLength: 12)
@@ -246,22 +325,22 @@ private struct AuthPortalButton: View {
             .padding(.vertical, 22)
             .frame(maxWidth: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(accent)
-                    .opacity(0.85)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .fill(Color.white.opacity(0.1))
-                            .blendMode(.plusLighter)
-                            .opacity(0.35)
-                    )
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(accent)
+                        .opacity(0.9)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .fill(Color.white.opacity(0.12))
+                                .blendMode(.plusLighter)
+                                .opacity(0.4)
+                        )
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
+                    .strokeBorder(Color.white.opacity(0.2), lineWidth: 1.1)
                     .blendMode(.screen)
             )
-            .shadow(color: Color.black.opacity(0.28), radius: 20, x: 0, y: 16)
+            .shadow(color: Color.black.opacity(0.35), radius: 20, x: 0, y: 16)
         }
         .buttonStyle(.plain)
         .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
