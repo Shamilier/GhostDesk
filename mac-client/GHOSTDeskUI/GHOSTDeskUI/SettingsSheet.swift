@@ -3,28 +3,33 @@ import AppKit
 
 // MARK: - Design Tokens
 private enum ST {
+    // Card metrics
     static let corner: CGFloat = 24
     static let padX: CGFloat = 56
     static let padY: CGFloat = 48
     static let width: CGFloat = 560
     static let minHeight: CGFloat = 480
+    static let windowWidth: CGFloat = 640
+    static let windowHeight: CGFloat = 520
 
+    // Typography
     static let textPri   = Color.white
     static let textSec   = Color.white.opacity(0.72)
     static let textTri   = Color.white.opacity(0.48)
 
-    static let line      = Color.white.opacity(0.06)
+    // Decor
+    static let line      = Color.white.opacity(0.08)
+    static let shadow    = Color.black.opacity(0.30)
 
+    // Secondary controls
     static let secBase        = Color.white.opacity(0.06)
     static let secBaseHover   = Color.white.opacity(0.12)
 
+    // Status colors
     static let redText   = Color(red: 1.00, green: 0.37, blue: 0.34)
     static let redStroke = Color(red: 1.00, green: 0.37, blue: 0.34).opacity(0.45)
-
     static let greenFg   = Color(red: 0.61, green: 0.95, blue: 0.79)
     static let greenBg   = Color(red: 0.18, green: 0.73, blue: 0.46).opacity(0.18)
-
-    static let shadow    = Color.black.opacity(0.28)
 }
 
 // MARK: - SettingsSheet
@@ -51,19 +56,16 @@ struct SettingsSheet: View {
         // Прозрачный контейнер окна, чтобы не было «полосы»
         ZStack {
             Color.clear
+
             cardView
-                .frame(width: ST.width)
-                .frame(minHeight: ST.minHeight)
-                .background(liquidGlassBackground)
-                .overlay(singleStroke)
-                .clipShape(RoundedRectangle(cornerRadius: ST.corner, style: .continuous))
-                .shadow(color: ST.shadow, radius: 24, x: 0, y: 18)
-                .padding(.top, 12)
-                .padding(.trailing, 20)
-                .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topTrailing)))
+                .frame(maxWidth: ST.width, minHeight: ST.minHeight)
+                .padding(.horizontal, (ST.windowWidth - ST.width) / 2)
+                .padding(.vertical, (ST.windowHeight - ST.minHeight) / 2)
+                .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(SettingsWindowConfigurator()) // прозрачное окно без системной тени
+        .background(SettingsWindowConfigurator())
+        .contentShape(Rectangle())
     }
 
     // MARK: Card content
@@ -95,14 +97,18 @@ struct SettingsSheet: View {
         }
         .padding(.horizontal, ST.padX)
         .padding(.vertical, ST.padY)
+        .background(cardBackground)
+        .overlay(cardBorder)
+        .clipShape(RoundedRectangle(cornerRadius: ST.corner, style: .continuous))
+        .shadow(color: ST.shadow, radius: 24, x: 0, y: 18)
     }
 
     // MARK: Card visuals
-    private var liquidGlassBackground: some View {
+    private var cardBackground: some View {
         Group {
             if reduceTransparency {
                 RoundedRectangle(cornerRadius: ST.corner, style: .continuous)
-                    .fill(Color.black.opacity(0.78))
+                    .fill(Color.black.opacity(0.82))
             } else {
                 RoundedRectangle(cornerRadius: ST.corner, style: .continuous)
                     .fill(.ultraThinMaterial)
@@ -119,18 +125,18 @@ struct SettingsSheet: View {
         .clipped()
     }
 
-    private var singleStroke: some View {
+    private var cardBorder: some View {
         RoundedRectangle(cornerRadius: ST.corner, style: .continuous)
             .stroke(Color.white.opacity(0.08), lineWidth: 1)
             .overlay(
-                // мягкий edge-shadow снизу
                 RoundedRectangle(cornerRadius: ST.corner, style: .continuous)
                     .stroke(Color.black.opacity(0.25), lineWidth: 1.2)
                     .blur(radius: 4)
                     .offset(y: 1)
                     .mask(
                         LinearGradient(colors: [.black, .clear],
-                                       startPoint: .top, endPoint: .bottom)
+                                       startPoint: .top,
+                                       endPoint: .bottom)
                             .clipShape(RoundedRectangle(cornerRadius: ST.corner, style: .continuous))
                     )
             )
@@ -387,10 +393,11 @@ struct SettingsWindowConfigurator: NSViewRepresentable {
                 w.titlebarAppearsTransparent = true
 
                 // фикс размера окна (убери, если не нужно)
-                w.setContentSize(NSSize(width: ST.width, height: ST.minHeight))
+                let size = NSSize(width: ST.windowWidth, height: ST.windowHeight)
+                w.setContentSize(size)
                 w.styleMask.remove(.resizable)
-                w.minSize = NSSize(width: ST.width, height: ST.minHeight)
-                w.maxSize = NSSize(width: ST.width, height: ST.minHeight)
+                w.minSize = size
+                w.maxSize = size
             }
         }
         return v
