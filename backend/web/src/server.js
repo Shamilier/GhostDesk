@@ -466,6 +466,7 @@ app.get('/oauth/authorize', async (req, res) => {
       client_id,
       redirect_uri,
       code_challenge,
+      code_challenge_method: 'S256',
     });
     if (state) {
       params.append('state', state);
