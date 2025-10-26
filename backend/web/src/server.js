@@ -117,39 +117,6 @@ const pickAuthorizePath = (candidateFromQuery, candidateFromSession) => {
   return null;
 };
 
-const buildAuthorizePathFromRequest = (request) => {
-  if (!request) {
-    return null;
-  }
-
-  const { clientId, redirectUri, state, codeChallenge, codeChallengeMethod } = request;
-
-  if (!clientId || !redirectUri || !codeChallenge) {
-    return null;
-  }
-
-  const params = new URLSearchParams({
-    response_type: 'code',
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    code_challenge: codeChallenge,
-  });
-
-  if (codeChallengeMethod && codeChallengeMethod !== 'S256') {
-    params.append('code_challenge_method', codeChallengeMethod);
-  } else {
-    params.append('code_challenge_method', 'S256');
-  }
-
-  if (state) {
-    params.append('state', state);
-  }
-
-  const authorizePath = `/oauth/authorize?${params.toString()}`;
-
-  return isSafeAuthorizePath(authorizePath) ? authorizePath : null;
-};
-
 const finalizeOAuthIfNeeded = async (req, user) => {
   const pending = req.session.oauthRequest;
   if (!pending) {
@@ -340,11 +307,9 @@ app.post('/register', async (req, res) => {
           req.session.user = { id: this.lastID, email: email.toLowerCase(), token, plan: 'free', referral: referral || null };
           req.session.flash = { type: 'success', message: 'Добро пожаловать в GhostDesk!' };
 
-          const authorizeFallback = oauthContinue || buildAuthorizePathFromRequest(req.session.oauthRequest);
-
-          if (authorizeFallback) {
+          if (oauthContinue) {
             req.session.oauthReturnTo = null;
-            return res.redirect(authorizeFallback);
+            return res.redirect(oauthContinue);
           }
 
           return finalizeOAuthIfNeeded(req, req.session.user)
@@ -438,11 +403,9 @@ app.post('/login', (req, res) => {
     };
     req.session.flash = { type: 'success', message: 'С возвращением!' };
 
-    const authorizeFallback = oauthContinue || buildAuthorizePathFromRequest(req.session.oauthRequest);
-
-    if (authorizeFallback) {
+    if (oauthContinue) {
       req.session.oauthReturnTo = null;
-      return res.redirect(authorizeFallback);
+      return res.redirect(oauthContinue);
     }
 
     return finalizeOAuthIfNeeded(req, req.session.user)
