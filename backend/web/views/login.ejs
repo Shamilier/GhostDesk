@@ -19,6 +19,10 @@
             <button type="button" class="toggle-password" data-target="password" aria-label="Показать пароль"></button>
           </div>
 
+          <% if (typeof oauthContinue !== 'undefined' && oauthContinue) { %>
+          <input type="hidden" name="continue" value="<%= oauthContinue %>" />
+          <% } %>
+
           <% if (typeof oauthRequest !== 'undefined' && oauthRequest) { %>
           <input type="hidden" name="client_id" value="<%= oauthRequest.clientId %>" />
           <input type="hidden" name="redirect_uri" value="<%= oauthRequest.redirectUri %>" />
