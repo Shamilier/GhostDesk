@@ -58,6 +58,9 @@ app.use((req, res, next) => {
   if (typeof req.session.oauthRequest === 'undefined') {
     req.session.oauthRequest = null;
   }
+  if (typeof req.session.oauthReturnTo === 'undefined') {
+    req.session.oauthReturnTo = null;
+  }
   next();
 });
 
@@ -75,6 +78,76 @@ const normalizeOAuthQuery = (query = {}) => {
     codeChallenge: query.code_challenge,
     codeChallengeMethod: query.code_challenge_method || 'S256',
   };
+};
+
+const isSafeAuthorizePath = (value) => {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('/oauth/authorize')) {
+    return false;
+  }
+
+  if (trimmed.includes('://')) {
+    return false;
+  }
+
+  return true;
+};
+
+const rememberAuthorizePath = (req, authorizePath) => {
+  if (isSafeAuthorizePath(authorizePath)) {
+    req.session.oauthReturnTo = authorizePath;
+  } else {
+    req.session.oauthReturnTo = null;
+  }
+};
+
+const pickAuthorizePath = (candidateFromQuery, candidateFromSession) => {
+  if (isSafeAuthorizePath(candidateFromQuery)) {
+    return candidateFromQuery;
+  }
+
+  if (isSafeAuthorizePath(candidateFromSession)) {
+    return candidateFromSession;
+  }
+
+  return null;
+};
+
+const buildAuthorizePathFromRequest = (request) => {
+  if (!request) {
+    return null;
+  }
+
+  const { clientId, redirectUri, state, codeChallenge, codeChallengeMethod } = request;
+
+  if (!clientId || !redirectUri || !codeChallenge) {
+    return null;
+  }
+
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    code_challenge: codeChallenge,
+  });
+
+  if (codeChallengeMethod && codeChallengeMethod !== 'S256') {
+    params.append('code_challenge_method', codeChallengeMethod);
+  } else {
+    params.append('code_challenge_method', 'S256');
+  }
+
+  if (state) {
+    params.append('state', state);
+  }
+
+  const authorizePath = `/oauth/authorize?${params.toString()}`;
+
+  return isSafeAuthorizePath(authorizePath) ? authorizePath : null;
 };
 
 const finalizeOAuthIfNeeded = async (req, user) => {
@@ -100,6 +173,7 @@ const finalizeOAuthIfNeeded = async (req, user) => {
     });
 
     req.session.oauthRequest = null;
+    req.session.oauthReturnTo = null;
 
     const separator = pending.redirectUri.includes('?') ? '&' : '?';
     const redirectUrl = `${pending.redirectUri}${separator}code=${encodeURIComponent(
@@ -110,6 +184,7 @@ const finalizeOAuthIfNeeded = async (req, user) => {
   } catch (err) {
     console.error('Error creating authorization code', err);
     req.session.oauthRequest = null;
+    req.session.oauthReturnTo = null;
     throw err;
   }
 };
@@ -191,7 +266,14 @@ app.get('/register', (req, res) => {
     req.session.oauthRequest = oauthRequest;
   }
 
-  res.render('register', { title: 'Регистрация', oauthRequest });
+  const oauthContinue = pickAuthorizePath(req.query.continue, req.session.oauthReturnTo);
+  if (oauthContinue) {
+    req.session.oauthReturnTo = oauthContinue;
+  } else {
+    req.session.oauthReturnTo = null;
+  }
+
+  res.render('register', { title: 'Регистрация', oauthRequest, oauthContinue });
 });
 
 app.post('/register', async (req, res) => {
@@ -206,6 +288,13 @@ app.post('/register', async (req, res) => {
   });
   if (oauthFromBody) {
     req.session.oauthRequest = oauthFromBody;
+  }
+
+  const oauthContinue = pickAuthorizePath(req.body.continue, req.session.oauthReturnTo);
+  if (oauthContinue) {
+    req.session.oauthReturnTo = oauthContinue;
+  } else {
+    req.session.oauthReturnTo = null;
   }
 
   if (!email || !password || !confirmPassword) {
@@ -251,6 +340,13 @@ app.post('/register', async (req, res) => {
           req.session.user = { id: this.lastID, email: email.toLowerCase(), token, plan: 'free', referral: referral || null };
           req.session.flash = { type: 'success', message: 'Добро пожаловать в GhostDesk!' };
 
+          const authorizeFallback = oauthContinue || buildAuthorizePathFromRequest(req.session.oauthRequest);
+
+          if (authorizeFallback) {
+            req.session.oauthReturnTo = null;
+            return res.redirect(authorizeFallback);
+          }
+
           return finalizeOAuthIfNeeded(req, req.session.user)
             .then((redirectUrl) => {
               if (redirectUrl) {
@@ -278,7 +374,14 @@ app.get('/login', (req, res) => {
     req.session.oauthRequest = oauthRequest;
   }
 
-  res.render('login', { title: 'Вход', oauthRequest });
+  const oauthContinue = pickAuthorizePath(req.query.continue, req.session.oauthReturnTo);
+  if (oauthContinue) {
+    req.session.oauthReturnTo = oauthContinue;
+  } else {
+    req.session.oauthReturnTo = null;
+  }
+
+  res.render('login', { title: 'Вход', oauthRequest, oauthContinue });
 });
 
 app.post('/login', (req, res) => {
@@ -293,6 +396,13 @@ app.post('/login', (req, res) => {
   });
   if (oauthFromBody) {
     req.session.oauthRequest = oauthFromBody;
+  }
+
+  const oauthContinue = pickAuthorizePath(req.body.continue, req.session.oauthReturnTo);
+  if (oauthContinue) {
+    req.session.oauthReturnTo = oauthContinue;
+  } else {
+    req.session.oauthReturnTo = null;
   }
 
   if (!email || !password) {
@@ -327,6 +437,13 @@ app.post('/login', (req, res) => {
       created_at: user.created_at,
     };
     req.session.flash = { type: 'success', message: 'С возвращением!' };
+
+    const authorizeFallback = oauthContinue || buildAuthorizePathFromRequest(req.session.oauthRequest);
+
+    if (authorizeFallback) {
+      req.session.oauthReturnTo = null;
+      return res.redirect(authorizeFallback);
+    }
 
     return finalizeOAuthIfNeeded(req, req.session.user)
       .then((redirectUrl) => {
@@ -380,13 +497,20 @@ app.get('/oauth/authorize', async (req, res) => {
       codeChallengeMethod: 'S256',
     };
 
+    rememberAuthorizePath(req, req.originalUrl || null);
+
     const params = new URLSearchParams({
       client_id,
       redirect_uri,
       code_challenge,
+      code_challenge_method: 'S256',
     });
     if (state) {
       params.append('state', state);
+    }
+
+    if (req.session.oauthReturnTo) {
+      params.append('continue', req.session.oauthReturnTo);
     }
 
     return res.redirect(`/login?${params.toString()}`);
@@ -401,6 +525,9 @@ app.get('/oauth/authorize', async (req, res) => {
       codeChallengeMethod: 'S256',
       state: state || null,
     });
+
+    req.session.oauthRequest = null;
+    req.session.oauthReturnTo = null;
 
     const separator = redirect_uri.includes('?') ? '&' : '?';
     const redirectLocation = `${redirect_uri}${separator}code=${encodeURIComponent(code)}${

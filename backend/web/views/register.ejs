@@ -35,6 +35,10 @@
           <label for="referral">Реферальный код (необязательно)</label>
           <input type="text" id="referral" name="referral" placeholder="Например, TEAM2024" />
 
+          <% if (typeof oauthContinue !== 'undefined' && oauthContinue) { %>
+          <input type="hidden" name="continue" value="<%= oauthContinue %>" />
+          <% } %>
+
           <% if (typeof oauthRequest !== 'undefined' && oauthRequest) { %>
           <input type="hidden" name="client_id" value="<%= oauthRequest.clientId %>" />
           <input type="hidden" name="redirect_uri" value="<%= oauthRequest.redirectUri %>" />
