@@ -17,18 +17,22 @@ const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklm
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, '..', 'views'));
 
-app.use(helmet({
-  contentSecurityPolicy: {
-    useDefaults: true,
-    directives: {
-      "img-src": ["'self'", 'data:', 'https://images.unsplash.com'],
-      "script-src": ["'self'"],
-      "style-src": ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-      "font-src": ["'self'", 'https://fonts.gstatic.com', 'data:'],
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        "img-src": ["'self'", 'data:', 'https://images.unsplash.com'],
+        "script-src": ["'self'"],
+        "style-src": ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        "font-src": ["'self'", 'https://fonts.gstatic.com', 'data:'],
+        "form-action": ["'self'", 'https://disciplaner.online', 'https://app.disciplaner.online'],
+        "navigate-to": ["'self'", 'ghostdesk:'],
+      },
     },
-  },
-  crossOriginEmbedderPolicy: false,
-}));
+    crossOriginEmbedderPolicy: false,
+  })
+);
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -80,38 +84,51 @@ const normalizeOAuthQuery = (query = {}) => {
   };
 };
 
-const isSafeAuthorizePath = (value) => {
+const canonicalizeAuthorizePath = (value) => {
   if (typeof value !== 'string') {
-    return false;
+    return null;
   }
 
   const trimmed = value.trim();
   if (!trimmed.startsWith('/oauth/authorize')) {
-    return false;
+    return null;
   }
 
-  if (trimmed.includes('://')) {
-    return false;
-  }
+  try {
+    const parsed = new URL(trimmed, 'http://localhost');
+    if (parsed.origin !== 'http://localhost') {
+      return null;
+    }
 
-  return true;
+    if (!parsed.pathname.startsWith('/oauth/authorize')) {
+      return null;
+    }
+
+    const normalizedSearch = parsed.search || '';
+    return `${parsed.pathname}${normalizedSearch}`;
+  } catch (err) {
+    return null;
+  }
 };
 
 const rememberAuthorizePath = (req, authorizePath) => {
-  if (isSafeAuthorizePath(authorizePath)) {
-    req.session.oauthReturnTo = authorizePath;
+  const canonical = canonicalizeAuthorizePath(authorizePath);
+  if (canonical) {
+    req.session.oauthReturnTo = canonical;
   } else {
     req.session.oauthReturnTo = null;
   }
 };
 
 const pickAuthorizePath = (candidateFromQuery, candidateFromSession) => {
-  if (isSafeAuthorizePath(candidateFromQuery)) {
-    return candidateFromQuery;
+  const canonicalFromQuery = canonicalizeAuthorizePath(candidateFromQuery);
+  if (canonicalFromQuery) {
+    return canonicalFromQuery;
   }
 
-  if (isSafeAuthorizePath(candidateFromSession)) {
-    return candidateFromSession;
+  const canonicalFromSession = canonicalizeAuthorizePath(candidateFromSession);
+  if (canonicalFromSession) {
+    return canonicalFromSession;
   }
 
   return null;
