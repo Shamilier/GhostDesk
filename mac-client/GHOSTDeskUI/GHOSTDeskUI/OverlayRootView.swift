@@ -203,26 +203,32 @@ struct OverlayRootView: View {
                 Divider().overlay(Color.white.opacity(0.10))
 
                 // BODY — единая чатовая лента
-                Group {
-                    if showTranscript {
-                        TranscriptChatView(
-                            systemState: systemChannelState,
-                            microphoneState: microphoneChannelState,
-                            autoScroll: $autoScroll
-                        )
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                    } else {
-                        InsightsPanel(
-                            hint: hint,
-                            onRequest: { intent in
-                                requestInsight(intent)
+                if showTranscript {
+                    TranscriptChatView(
+                        systemState: systemChannelState,
+                        microphoneState: microphoneChannelState,
+                        autoScroll: $autoScroll
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .frame(minHeight: 320, maxHeight: 520) // ↑ единое окно с чатом
+
+                    HintStrip()
+                        .padding(.top, 6)
+                } else {
+                    InsightsPanel(
+                        hint: hint,
+                        onRequest: { intent in
+                            requestInsight(intent)
+                        },
+                        onClose: {
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                                showTranscript = true
                             }
-                        )
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                    }
+                        }
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .frame(minHeight: 260, maxHeight: 480)
                 }
-                .frame(minHeight: 320, maxHeight: 520) // ↑ единое окно с чатом
-                HintStrip()
             }
         }
         .frame(maxWidth: 600)   // ↓ уже, чем раньше
@@ -232,6 +238,7 @@ struct OverlayRootView: View {
     private struct InsightsPanel: View {
         @ObservedObject var hint: HintAgent
         var onRequest: (HintAgent.Intent) -> Void
+        var onClose: () -> Void
 
         private var selection: HintAgent.Intent? {
             hint.activeIntent ?? hint.lastCompletedIntent
@@ -256,13 +263,29 @@ struct OverlayRootView: View {
         }
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Быстрые инсайты")
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .center, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Быстрые инсайты")
+                            .font(.headline.weight(.semibold))
+                        Text("Выберите сценарий, чтобы получить подсказку для разговора.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer(minLength: 12)
+
+                    Button(action: onClose) {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(MiniIconButton())
+                    .accessibilityLabel("Скрыть инсайты")
+                }
 
                 LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 220), spacing: 8, alignment: .leading)],
+                    columns: [
+                        GridItem(.adaptive(minimum: 180), spacing: 8, alignment: .leading)
+                    ],
                     alignment: .leading,
                     spacing: 8
                 ) {
@@ -275,10 +298,11 @@ struct OverlayRootView: View {
                                 Image(systemName: intent.symbolName)
                                 Text(intent.buttonTitle)
                                     .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                    .multilineTextAlignment(.leading)
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 6)
-                            .frame(maxWidth: .infinity)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(GlassPill(tint: isSelected ? .accentColor : .secondary))
                         .disabled(hint.isRunning && hint.activeIntent != intent)
@@ -287,120 +311,127 @@ struct OverlayRootView: View {
 
                 let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
 
-                ZStack(alignment: .topLeading) {
-                    shape
-                        .fill(Color.white.opacity(0.03))
-                        .overlay(shape.stroke(.white.opacity(0.08), lineWidth: 1))
+                VStack(spacing: 0) {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: cardIcon)
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(.accentColor)
 
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: cardIcon)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(cardTitle)
                                 .font(.title3.weight(.semibold))
-                                .foregroundStyle(.accentColor)
+                            Text(cardSubtitle)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
 
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(cardTitle)
-                                    .font(.title3.weight(.semibold))
-                                Text(cardSubtitle)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
+                        Spacer()
 
-                            Spacer()
-
-                            VStack(alignment: .trailing, spacing: 4) {
-                                if hint.isRunning {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                    if let started = hint.startedAt {
-                                        HStack(spacing: 4) {
-                                            Image(systemName: "clock")
-                                            Text(started, style: .time)
-                                        }
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                    }
-                                } else if let finished = hint.lastFinishedAt {
+                        VStack(alignment: .trailing, spacing: 6) {
+                            if hint.isRunning {
+                                ProgressView()
+                                    .controlSize(.small)
+                                if let started = hint.startedAt {
                                     HStack(spacing: 4) {
-                                        Image(systemName: "checkmark.circle")
-                                        Text(finished, style: .time)
+                                        Image(systemName: "clock")
+                                        Text(started, style: .time)
                                     }
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                                 }
-                            }
-                        }
-
-                        Divider().overlay(Color.white.opacity(0.10))
-
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: 10) {
-                                if let err = hint.error {
-                                    Label(err, systemImage: "exclamationmark.triangle")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.red)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                } else if !hint.draft.isEmpty {
-                                    Text(hint.draft)
-                                        .font(.system(size: 15, weight: .regular, design: .default))
-                                        .foregroundStyle(.primary)
-                                        .textSelection(.enabled)
-                                        .lineSpacing(4)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                } else if hint.isRunning {
-                                    Text("GhostDesk анализирует последние реплики…")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                        .italic()
-                                } else {
-                                    Text(placeholder)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
+                            } else if let finished = hint.lastFinishedAt {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "checkmark.circle")
+                                    Text(finished, style: .time)
                                 }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .frame(minHeight: 160, maxHeight: 220)
-
-                        HStack(spacing: 12) {
-                            if !hint.draft.isEmpty {
-                                Button {
-                                    #if os(macOS)
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString(hint.draft, forType: .string)
-                                    #endif
-                                } label: {
-                                    Label("Скопировать", systemImage: "doc.on.doc")
-                                }
-                                .buttonStyle(GlassPill())
-                            }
-
-                            if hint.canStop {
-                                Button {
-                                    hint.cancel()
-                                } label: {
-                                    Label("Стоп", systemImage: "stop.fill")
-                                }
-                                .buttonStyle(GlassPill(tint: .red))
-                            }
-
-                            Spacer()
-
-                            if !hint.draft.isEmpty {
-                                Button {
-                                    hint.draft = ""
-                                } label: {
-                                    Label("Очистить", systemImage: "trash")
-                                }
-                                .buttonStyle(GlassPill(tint: .secondary))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                             }
                         }
                     }
-                    .padding(18)
+                    .padding(.horizontal, 18)
+                    .padding(.top, 18)
+                    .padding(.bottom, 12)
+                    .overlay(alignment: .bottomLeading) {
+                        Divider().overlay(Color.white.opacity(0.10))
+                    }
+
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 10) {
+                            if let err = hint.error {
+                                Label(err, systemImage: "exclamationmark.triangle")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.red)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            } else if !hint.draft.isEmpty {
+                                Text(hint.draft)
+                                    .font(.system(size: 15, weight: .regular, design: .default))
+                                    .foregroundStyle(.primary)
+                                    .textSelection(.enabled)
+                                    .lineSpacing(4)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            } else if hint.isRunning {
+                                Text("GhostDesk анализирует последние реплики…")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .italic()
+                            } else {
+                                Text(placeholder)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 16)
+                    }
+                    .frame(minHeight: 140, maxHeight: 220)
+
+                    Divider().overlay(Color.white.opacity(0.08))
+
+                    HStack(spacing: 12) {
+                        if !hint.draft.isEmpty {
+                            Button {
+                                #if os(macOS)
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(hint.draft, forType: .string)
+                                #endif
+                            } label: {
+                                Label("Скопировать", systemImage: "doc.on.doc")
+                            }
+                            .buttonStyle(GlassPill())
+                        }
+
+                        if hint.canStop {
+                            Button(action: hint.cancel) {
+                                Label("Стоп", systemImage: "stop.fill")
+                            }
+                            .buttonStyle(GlassPill(tint: .red))
+                        }
+
+                        Spacer()
+
+                        Button {
+                            hint.draft = ""
+                            hint.error = nil
+                            hint.activeIntent = nil
+                        } label: {
+                            Label("Сбросить", systemImage: "arrow.counterclockwise")
+                        }
+                        .buttonStyle(GlassPill(tint: .secondary))
+                        .disabled(hint.isRunning)
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 14)
                 }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .background(
+                    shape
+                        .fill(Color.white.opacity(0.03))
+                        .overlay(shape.stroke(.white.opacity(0.08), lineWidth: 1))
+                )
+                .clipShape(shape)
             }
-            .frame(maxWidth: .infinity, minHeight: 260, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
     }
 
