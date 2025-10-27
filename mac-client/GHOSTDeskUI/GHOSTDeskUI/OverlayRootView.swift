@@ -105,6 +105,17 @@ struct OverlayRootView: View {
             .animation(.spring(response: 0.35, dampingFraction: 0.86), value: isExpanded)
 
         }
+        .onChange(of: overlay.askSolveTrigger) { _ in
+            isExpanded = true
+            selectedTab = .ask
+            question = ""
+            askFocused = true
+
+            let transcriptTail = makeTranscriptTail(seconds: 40, maxChars: 900)
+            Task {
+                await askVM.submitWithoutQuery(transcript: transcriptTail)
+            }
+        }
         .background(Color.clear)
         .sheet(isPresented: Binding(
             get: { overlay.showSettings },
@@ -1157,6 +1168,32 @@ final class AskVM: ObservableObject {
             return
         }
 
+        await performSubmission(
+            endpoint: "/ask",
+            question: q,
+            smart: smart,
+            transcript: transcript
+        )
+    }
+
+    func submitWithoutQuery(
+        transcript: String,
+        smart: Bool = true
+    ) async {
+        await performSubmission(
+            endpoint: "/ask_without_query",
+            question: nil,
+            smart: smart,
+            transcript: transcript
+        )
+    }
+
+    private func performSubmission(
+        endpoint: String,
+        question: String?,
+        smart: Bool,
+        transcript: String
+    ) async {
         guard let token = auth.currentKey, !token.isEmpty else {
             answerError = "Добавьте API-ключ, чтобы отправить вопрос."
             return
@@ -1168,7 +1205,11 @@ final class AskVM: ObservableObject {
         isSubmitting = true
         canStop = true
         NSLog("AskVM isSubmitting = true")
-        defer { NSLog("AskVM isSubmitting = false") }
+        defer {
+            NSLog("AskVM isSubmitting = false")
+            isSubmitting = false
+            canStop = false
+        }
 
         do {
             // 1) делаем PNG снимок
@@ -1176,7 +1217,8 @@ final class AskVM: ObservableObject {
 
             // 2) шлём на сервер и читаем SSE стрим
             try await sendToGPT(
-                question: q,
+                endpoint: endpoint,
+                question: question,
                 screenshotPNG: png,
                 smart: smart,
                 transcript: transcript,
@@ -1186,20 +1228,18 @@ final class AskVM: ObservableObject {
             answerError = error.localizedDescription
             NSLog("AskVM submit failed: \(error.localizedDescription)")
         }
-
-        isSubmitting = false
-        canStop = false
     }
 
     // MARK: - сетевой вызов со streaming SSE
     private func sendToGPT(
-        question: String,
+        endpoint: String,
+        question: String?,
         screenshotPNG: Data,
         smart: Bool,
         transcript: String,
         token: String
     ) async throws {
-        var req = URLRequest(url: baseURL.appendingPathComponent("/ask"))
+        var req = URLRequest(url: baseURL.appendingPathComponent(endpoint))
         req.httpMethod = "POST"
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept") // ожидаем SSE
         serverClient.authorize(&req, token: token)
@@ -1223,7 +1263,9 @@ final class AskVM: ObservableObject {
         }
 
         // обязательные поля
-        appendField("question", question)
+        if let question {
+            appendField("question", question)
+        }
         appendField("smart", smart ? "true" : "false")
         appendField("sessionId", sessionId)
 

@@ -68,6 +68,7 @@ final class OverlayModel: ObservableObject {
 
     // Настройки
     @Published var showSettings: Bool = false
+    @Published var askSolveTrigger: Int = 0
 
 
     // Константы
@@ -203,7 +204,7 @@ final class OverlayModel: ObservableObject {
                 return
             }
 
-            ServerClient.shared.log("[STUB] solve: сделать скрин и отправить на бэк (пока нет)")
+            askSolveTrigger &+= 1
         }
     }
 }
