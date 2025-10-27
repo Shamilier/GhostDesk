@@ -11,36 +11,174 @@ final class HintAgent: ObservableObject {
         self.serverClient = serverClient
     }
 
+    enum Intent: String, CaseIterable, Identifiable {
+        case general
+        case nextUtterance
+        case topicSummary
+        case followUpQuestion
+
+        var id: String { rawValue }
+
+        var buttonTitle: String {
+            switch self {
+            case .general: return "Подсказка"
+            case .nextUtterance: return "Что сказать дальше?"
+            case .topicSummary: return "О чём речь?"
+            case .followUpQuestion: return "Какой вопрос задать?"
+            }
+        }
+
+        var displayTitle: String {
+            switch self {
+            case .general: return "Живой совет"
+            case .nextUtterance: return "Что сказать дальше"
+            case .topicSummary: return "О чём речь"
+            case .followUpQuestion: return "Какой вопрос задать"
+            }
+        }
+
+        var strapline: String {
+            switch self {
+            case .general:
+                return "Короткая подсказка для продолжения разговора"
+            case .nextUtterance:
+                return "Подсказывает точную реплику, которую можно произнести"
+            case .topicSummary:
+                return "Выделяет тему и ключевые акценты текущего диалога"
+            case .followUpQuestion:
+                return "Формулирует уточняющие вопросы, чтобы продвинуть беседу"
+            }
+        }
+
+        var placeholder: String {
+            switch self {
+            case .general:
+                return "Нажмите, чтобы получить быстрый совет по живой речи."
+            case .nextUtterance:
+                return "GhostDesk подготовит точную реплику, которую можно произнести прямо сейчас."
+            case .topicSummary:
+                return "Получите короткое резюме того, что сейчас обсуждают."
+            case .followUpQuestion:
+                return "Попросите GhostDesk предложить сильный уточняющий вопрос."
+            }
+        }
+
+        var symbolName: String {
+            switch self {
+            case .general: return "sparkles"
+            case .nextUtterance: return "quote.bubble"
+            case .topicSummary: return "list.bullet.rectangle"
+            case .followUpQuestion: return "questionmark.bubble"
+            }
+        }
+
+        var stripTitle: String {
+            switch self {
+            case .general: return "Подсказка"
+            case .nextUtterance: return "Что сказать дальше"
+            case .topicSummary: return "О чём речь"
+            case .followUpQuestion: return "Какой вопрос задать"
+            }
+        }
+
+        var windowSeconds: Int {
+            switch self {
+            case .general: return 40
+            case .nextUtterance: return 45
+            case .topicSummary: return 75
+            case .followUpQuestion: return 60
+            }
+        }
+
+        var maxChars: Int {
+            switch self {
+            case .general: return 900
+            case .nextUtterance: return 900
+            case .topicSummary: return 1300
+            case .followUpQuestion: return 1000
+            }
+        }
+
+        var instruction: String {
+            switch self {
+            case .general:
+                return """
+                Ты ассистент для живого разговора.
+                Если в самом конце контекста есть явный вопрос собеседника — дай краткий уверенный ответ (2–3 предложения).
+                Если явного вопроса нет — предложи одну тактичную реплику (1–2 предложения), которую удобно произнести.
+                Никаких дисклеймеров. Пиши естественно и по делу.
+                """.trimmingCharacters(in: .whitespacesAndNewlines)
+            case .nextUtterance:
+                return """
+                Ты коуч по переговорам. Нужно придумать следующую реплику пользователя на основе последних реплик беседы.
+                Соблюдай формат:
+                **Суть собеседника** — одно короткое предложение с пониманием намерения собеседника.
+                **Что сказать** — прямая речь пользователя, 1–2 предложения без кавычек, как будто он произносит их сейчас.
+                Если уместно, добавь строку «Альтернатива: …» с вторым вариантом, только если он ощутимо отличается.
+                Всегда отвечай на русском. Без дисклеймеров и слов от лица ассистента.
+                """.trimmingCharacters(in: .whitespacesAndNewlines)
+            case .topicSummary:
+                return """
+                Ты аналитик встречи. Сформулируй краткое резюме текущей темы разговора по последним репликам.
+                Формат ответа:
+                **Тема** — заголовок ≤6 слов.
+                **Ключевые моменты** — 2–3 bullets по 10–15 слов.
+                **Что важно дальше** — одно предложение о следующем шаге или риске.
+                Всегда отвечай на русском. Без дисклеймеров.
+                """.trimmingCharacters(in: .whitespacesAndNewlines)
+            case .followUpQuestion:
+                return """
+                Ты ассистент-интервьюер. Подготовь точные уточняющие вопросы, чтобы продвинуть разговор вперёд.
+                Формат:
+                **Цель** — одно предложение с намерением пользователя.
+                **Вопросы** — 1–2 bullets в формате прямой речи пользователя.
+                При необходимости добавь строку «Поддержка: …» с короткой подсказкой, как реагировать на ответ.
+                Ответ на русском, без дисклеймеров.
+                """.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+    }
+
+    static let insightIntents: [Intent] = [.nextUtterance, .topicSummary, .followUpQuestion]
+
     @Published var isRunning = false
     @Published var draft = ""          // сюда льётся поток
     @Published var error: String? = nil
     @Published var canStop = false
+    @Published var activeIntent: Intent? = nil
+    @Published var lastCompletedIntent: Intent? = nil
+    @Published var startedAt: Date? = nil
+    @Published var lastFinishedAt: Date? = nil
 
     private var task: Task<Void, Never>?
     private let baseURL = URL(string: "https://api.disciplaner.online")!
-    private let sessionId = UUID().uuidString
+    private var sessionIds: [Intent: String] = [:]
 
-    // Инструкция для режима подсказки (только речь)
-    private let systemInstruction = """
-    Ты ассистент для живого разговора.
-    Если в самом конце контекста есть явный вопрос собеседника — дай краткий уверенный ответ (2–3 предложения).
-    Если явного вопроса нет — предложи одну тактичную реплику (1–2 предложения), которую удобно произнести.
-    Никаких дисклеймеров. Пиши естественно и по делу.
-    """
+    private func sessionId(for intent: Intent) -> String {
+        if let cached = sessionIds[intent] {
+            return cached
+        }
+        let new = UUID().uuidString
+        sessionIds[intent] = new
+        return new
+    }
 
     func cancel() {
         task?.cancel()
         task = nil
         isRunning = false
         canStop = false
+        activeIntent = nil
+        startedAt = nil
     }
 
-    func requestHint(windowSeconds: Int = 40, maxChars: Int = 900) async {
+    func requestHint(for intent: Intent = .general) async {
         // 1) Собираем хвост речи
-        let ctx = TranscriptBuffer.shared.tail(lastSeconds: windowSeconds, maxChars: maxChars)
+        let ctx = TranscriptBuffer.shared.tail(lastSeconds: intent.windowSeconds, maxChars: intent.maxChars)
         draft = ""; error = nil
+
         guard !ctx.isEmpty else {
-            error = "Нет свежего контекста за последние \(windowSeconds) секунд."
+            error = "Нет свежего контекста за последние \(intent.windowSeconds) секунд."
             return
         }
 
@@ -51,16 +189,23 @@ final class HintAgent: ObservableObject {
 
         isRunning = true
         canStop = true
+        activeIntent = intent
+        lastCompletedIntent = intent
+        startedAt = Date()
+        lastFinishedAt = nil
 
         task?.cancel()
         task = Task { [weak self] in
             guard let self else { return }
             do {
+                self.serverClient.log("HintAgent: requesting \(intent.rawValue) — ctx=\(ctx.count) chars")
+                let sessionId = self.sessionId(for: intent)
+                let instruction = intent.instruction
                 // 2) Сначала пытаемся /hint (JSON + SSE)
                 let hintPaths = ["/hint", "/api/hint", "/v1/hint", "/hints/stream"]
                 var success = false
                 for p in hintPaths {
-                    if try await self.tryHintJSON(path: p, context: ctx, token: token) {
+                    if try await self.tryHintJSON(path: p, context: ctx, token: token, instruction: instruction, intent: intent, sessionId: sessionId) {
                         success = true
                         break
                     }
@@ -68,13 +213,16 @@ final class HintAgent: ObservableObject {
 
                 // 3) Если /hint отсутствует → фолбэк на /ask (multipart + SSE)
                 if !success {
-                    try await self.fallbackAskWithMultipart(context: ctx, token: token)
+                    try await self.fallbackAskWithMultipart(context: ctx, token: token, instruction: instruction, intent: intent, sessionId: sessionId)
                 }
             } catch {
                 if !Task.isCancelled { self.error = error.localizedDescription }
             }
             self.isRunning = false
             self.canStop = false
+            self.activeIntent = nil
+            self.startedAt = nil
+            self.lastFinishedAt = Date()
         }
 
         await task?.value
@@ -82,15 +230,15 @@ final class HintAgent: ObservableObject {
     }
 
     // MARK: - /hint (JSON) → true если 2xx и стрим прочитан
-    private func tryHintJSON(path: String, context: String, token: String) async throws -> Bool {
+    private func tryHintJSON(path: String, context: String, token: String, instruction: String, intent: Intent, sessionId: String) async throws -> Bool {
         var req = URLRequest(url: baseURL.appendingPathComponent(path))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         serverClient.authorize(&req, token: token)
 
-        struct Payload: Codable { let sessionId: String; let instruction: String; let context: String }
-        let payload = Payload(sessionId: sessionId, instruction: systemInstruction, context: context)
+        struct Payload: Codable { let sessionId: String; let instruction: String; let context: String; let intent: String }
+        let payload = Payload(sessionId: sessionId, instruction: instruction, context: context, intent: intent.rawValue)
         req.httpBody = try JSONEncoder().encode(payload)
 
         let (bytes, response) = try await URLSession.shared.bytes(for: req)
@@ -121,7 +269,7 @@ final class HintAgent: ObservableObject {
     }
 
     // MARK: - Фолбэк: /ask (multipart) — без реального скрина (1×1 PNG)
-    private func fallbackAskWithMultipart(context: String, token: String) async throws {
+    private func fallbackAskWithMultipart(context: String, token: String, instruction: String, intent: Intent, sessionId: String) async throws {
         let path = "/ask"
         var req = URLRequest(url: baseURL.appendingPathComponent(path))
         req.httpMethod = "POST"
@@ -148,14 +296,19 @@ final class HintAgent: ObservableObject {
         // «Вопрос» для подсказки — даём явную постановку, что нужен короткий ответ по последнему вопросу
         let pseudoQuestion =
         """
-        Нужна подсказка для живого ответа: если в конце контекста есть вопрос собеседника — дай краткий уверенный ответ (2–3 предложения). Если нет — предложи одну естественную реплику. Пиши без дисклеймеров.
-        Контекст (речь): \(context)
+        [insight: \(intent.rawValue)]
+        Инструкция:
+        \(instruction)
+
+        Контекст (речь):
+        \(context)
         """
 
         // обязательные поля /ask
         appendField("question", pseudoQuestion)
         appendField("smart", "false")
         appendField("sessionId", sessionId)
+        appendField("intent", intent.rawValue)
 
         // прокинем транскрипт как отдельное поле — многие бэки его читают
         appendField("transcript", context)
