@@ -1182,11 +1182,18 @@ final class AskVM: ObservableObject {
         transcript: String,
         smart: Bool = true
     ) async {
+        let trimmedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackQuestion = trimmedTranscript.isEmpty ? Self.fallbackAutoAskPrompt : nil
+
+        if fallbackQuestion != nil {
+            NSLog("AskVM: no transcript tail, using fallback auto-ask prompt")
+        }
+
         await performSubmission(
             endpoint: "/ask_without_query",
-            question: nil,
+            question: fallbackQuestion,
             smart: smart,
-            transcript: transcript
+            transcript: trimmedTranscript
         )
     }
 
@@ -1351,6 +1358,13 @@ final class AskVM: ObservableObject {
             answerDraft += buffer
         }
     }
+}
+
+private extension AskVM {
+    /// Используется, когда авто-запрос вызван без распознанного текста.
+    static let fallbackAutoAskPrompt = """
+    Ты — GhostDesk AI-помощник. Пользователь нажал горячую клавишу без голосового контекста. Проанализируй приложенный скриншот, опиши, что на нём происходит, какие проблемы заметны и какие шаги стоит предпринять, чтобы их решить. Отвечай кратко и по делу.
+    """
 }
 
 
