@@ -1211,40 +1211,29 @@ final class AskVM: ObservableObject {
         isSubmitting = true
         canStop = true
         NSLog("AskVM isSubmitting = true")
-
-        let task = Task { [weak self] in
-            guard let self else { return }
-            defer {
-                if self.streamRunID == runID {
-                    NSLog("AskVM isSubmitting = false")
-                    self.isSubmitting = false
-                    self.canStop = false
-                    self.streamTask = nil
-                }
-            }
-
-            do {
-                // 1) делаем PNG снимок
-                let png = try await Snapshot.captureAllDisplaysPNG(maxSide: 1280)
-
-                // 2) шлём на сервер и читаем SSE стрим
-                try await self.sendToGPT(
-                    endpoint: endpoint,
-                    question: question,
-                    screenshotPNG: png,
-                    smart: smart,
-                    transcript: transcript,
-                    token: token
-                )
-            } catch {
-                if Task.isCancelled { return }
-                self.answerError = error.localizedDescription
-                NSLog("AskVM submit failed: \(error.localizedDescription)")
-            }
+        defer {
+            NSLog("AskVM isSubmitting = false")
+            isSubmitting = false
+            canStop = false
         }
 
-        streamTask = task
-        await task.value
+        do {
+            // 1) делаем PNG снимок
+            let png = try await Snapshot.captureAllDisplaysPNG(maxSide: 1280)
+
+            // 2) шлём на сервер и читаем SSE стрим
+            try await sendToGPT(
+                endpoint: endpoint,
+                question: question,
+                screenshotPNG: png,
+                smart: smart,
+                transcript: transcript,
+                token: token
+            )
+        } catch {
+            answerError = error.localizedDescription
+            NSLog("AskVM submit failed: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - сетевой вызов со streaming SSE
