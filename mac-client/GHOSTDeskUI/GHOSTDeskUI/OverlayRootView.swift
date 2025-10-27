@@ -1139,6 +1139,7 @@ final class AskVM: ObservableObject {
     @Published var canStop: Bool = false             // показать кнопку «Стоп»
 
     private var streamTask: Task<Void, Never>?       // чтобы уметь отменять
+    private var streamRunID = UUID()
     private let baseURL = URL(string: "https://api.disciplaner.online")!
     private let sessionId = UUID().uuidString        // одна сессия на жизненный цикл VM
     private let auth: AuthState
@@ -1151,6 +1152,7 @@ final class AskVM: ObservableObject {
 
     func cancelStream() {
         streamTask?.cancel()
+        streamRunID = UUID()
         streamTask = nil
         canStop = false
         isSubmitting = false
@@ -1198,6 +1200,10 @@ final class AskVM: ObservableObject {
             answerError = "Добавьте API-ключ, чтобы отправить вопрос."
             return
         }
+
+        streamTask?.cancel()
+        let runID = UUID()
+        streamRunID = runID
 
         // сброс состояния ответа
         answerDraft = ""
@@ -1269,8 +1275,11 @@ final class AskVM: ObservableObject {
         appendField("smart", smart ? "true" : "false")
         appendField("sessionId", sessionId)
 
-        // контекст речи — ВСЕГДА (пусть даже пустая строка)
-        appendField("transcript", transcript)
+        // контекст речи добавляем только если он не пустой
+        let transcriptPayload = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !transcriptPayload.isEmpty {
+            appendField("transcript", transcriptPayload)
+        }
 
         // скрин — ВСЕГДА для Submit
         appendFile("image", filename: "screen.png", mime: "image/png", data: screenshotPNG)
@@ -1278,79 +1287,69 @@ final class AskVM: ObservableObject {
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
         req.httpBody = body
 
-        // 3) читаем SSE построчно. Важно: используем Task, чтобы уметь отменять
-        streamTask?.cancel()
-        streamTask = Task { [weak self] in
-            guard let self else { return }
+        // 3) читаем SSE построчно.
+        let (bytes, response) = try await URLSession.shared.bytes(for: req)
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+
+        if serverClient.handleUnauthorizedStatus(http.statusCode, auth: auth) {
+            throw NSError(domain: "auth", code: http.statusCode,
+                          userInfo: [NSLocalizedDescriptionKey: serverClient.unauthorizedMessage])
+        }
+
+        if !(200..<300).contains(http.statusCode) {
+            var errText = "HTTP \(http.statusCode) \(HTTPURLResponse.localizedString(forStatusCode: http.statusCode))"
+            var data = Data()
             do {
-                let (bytes, response) = try await URLSession.shared.bytes(for: req)
-                guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+                for try await b in bytes { data.append(b) } // вычитаем тело ошибки
+                if let s = String(data: data, encoding: .utf8), !s.isEmpty { errText += "\n\(s)" }
+            } catch {}
+            throw NSError(domain: "net", code: http.statusCode,
+                          userInfo: [NSLocalizedDescriptionKey: errText])
+        }
 
-                if serverClient.handleUnauthorizedStatus(http.statusCode, auth: auth) {
-                    throw NSError(domain: "auth", code: http.statusCode,
-                                  userInfo: [NSLocalizedDescriptionKey: serverClient.unauthorizedMessage])
+        // читаем строки SSE
+        var buffer = "" // микро-батчинг на клиенте, чтобы не дёргать UI по 1 символу
+        var lastFlush = Date()
+
+        for try await line in bytes.lines {
+            try Task.checkCancellation()
+            guard line.hasPrefix("data: ") else { continue }
+
+            let jsonStr = String(line.dropFirst(6))
+            guard
+                let data = jsonStr.data(using: .utf8),
+                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let type = obj["type"] as? String
+            else { continue }
+
+            if type == "delta", let text = obj["text"] as? String {
+                buffer += text
+                // флашим если буфер вырос или пришёл знак конца фразы, или прошло 60 мс
+                let shouldFlushByLen = buffer.count >= 64
+                let shouldFlushByPunct = buffer.last.map { ".,!?;:\n ".contains($0) } ?? false
+                let shouldFlushByTime = Date().timeIntervalSince(lastFlush) > 0.06
+                if shouldFlushByLen || shouldFlushByPunct || shouldFlushByTime {
+                    answerDraft += buffer
+                    buffer.removeAll(keepingCapacity: true)
+                    lastFlush = Date()
                 }
-
-                if !(200..<300).contains(http.statusCode) {
-                    var errText = "HTTP \(http.statusCode) \(HTTPURLResponse.localizedString(forStatusCode: http.statusCode))"
-                    var data = Data()
-                    do {
-                        for try await b in bytes { data.append(b) } // вычитаем тело ошибки
-                        if let s = String(data: data, encoding: .utf8), !s.isEmpty { errText += "\n\(s)" }
-                    } catch {}
-                    throw NSError(domain: "net", code: http.statusCode,
-                                  userInfo: [NSLocalizedDescriptionKey: errText])
+            } else if type == "done" {
+                // добросим хвост
+                if !buffer.isEmpty {
+                    answerDraft += buffer
+                    buffer.removeAll()
                 }
-
-                // читаем строки SSE
-                var buffer = "" // микро-батчинг на клиенте, чтобы не дёргать UI по 1 символу
-                var lastFlush = Date()
-
-                for try await line in bytes.lines {
-                    if Task.isCancelled { break }
-                    guard line.hasPrefix("data: ") else { continue }
-
-                    let jsonStr = String(line.dropFirst(6))
-                    guard
-                        let data = jsonStr.data(using: .utf8),
-                        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                        let type = obj["type"] as? String
-                    else { continue }
-
-                    if type == "delta", let text = obj["text"] as? String {
-                        buffer += text
-                        // флашим если буфер вырос или пришёл знак конца фразы, или прошло 60 мс
-                        let shouldFlushByLen = buffer.count >= 64
-                        let shouldFlushByPunct = buffer.last.map { ".,!?;:\n ".contains($0) } ?? false
-                        let shouldFlushByTime = Date().timeIntervalSince(lastFlush) > 0.06
-                        if shouldFlushByLen || shouldFlushByPunct || shouldFlushByTime {
-                            self.answerDraft += buffer
-                            buffer.removeAll(keepingCapacity: true)
-                            lastFlush = Date()
-                        }
-                    } else if type == "done" {
-                        // добросим хвост
-                        if !buffer.isEmpty {
-                            self.answerDraft += buffer
-                            buffer.removeAll()
-                        }
-                        break
-                    } else if type == "error" {
-                        let msg = (obj["message"] as? String) ?? "Unknown error"
-                        throw NSError(domain: "sse", code: -1,
-                                      userInfo: [NSLocalizedDescriptionKey: msg])
-                    }
-                }
-            } catch {
-                if !Task.isCancelled {
-                    self.answerError = error.localizedDescription
-                }
+                break
+            } else if type == "error" {
+                let msg = (obj["message"] as? String) ?? "Unknown error"
+                throw NSError(domain: "sse", code: -1,
+                              userInfo: [NSLocalizedDescriptionKey: msg])
             }
         }
 
-        // ждём завершения Task (или отмены)
-        await streamTask?.value
-        streamTask = nil
+        if !buffer.isEmpty {
+            answerDraft += buffer
+        }
     }
 }
 
