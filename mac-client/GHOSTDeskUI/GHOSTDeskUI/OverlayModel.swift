@@ -185,7 +185,7 @@ final class OverlayModel: ObservableObject {
                 return
             }
 
-            await HintAgent.shared.requestHint(windowSeconds: 40, maxChars: 900)
+            await HintAgent.shared.requestHint(for: .general)
         }
     }
 

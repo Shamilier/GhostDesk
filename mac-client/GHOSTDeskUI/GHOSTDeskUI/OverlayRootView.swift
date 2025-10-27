@@ -213,9 +213,10 @@ struct OverlayRootView: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                     } else {
                         InsightsPanel(
-                            onNext: { /* TODO */ },
-                            onTopic: { /* TODO */ },
-                            onQuestion: { /* TODO */ }
+                            hint: hint,
+                            onRequest: { intent in
+                                requestInsight(intent)
+                            }
                         )
                         .transition(.opacity.combined(with: .move(edge: .top)))
                     }
@@ -229,36 +230,177 @@ struct OverlayRootView: View {
     }
 
     private struct InsightsPanel: View {
-        var onNext: () -> Void = {}
-        var onTopic: () -> Void = {}
-        var onQuestion: () -> Void = {}
+        @ObservedObject var hint: HintAgent
+        var onRequest: (HintAgent.Intent) -> Void
+
+        private var selection: HintAgent.Intent? {
+            hint.activeIntent ?? hint.lastCompletedIntent
+        }
+
+        private var cardTitle: String {
+            selection?.displayTitle ?? "Инсайты разговора"
+        }
+
+        private var cardSubtitle: String {
+            selection?.strapline ?? "Выберите подсказку, чтобы GhostDesk проанализировал беседу."
+        }
+
+        private var cardIcon: String {
+            selection?.symbolName ?? "sparkles"
+        }
+
+        private var placeholder: String {
+            if let active = hint.activeIntent { return active.placeholder }
+            if let last = hint.lastCompletedIntent { return last.placeholder }
+            return "GhostDesk соберёт контекст и предложит идеи, как только вы нажмёте одну из кнопок."
+        }
 
         var body: some View {
-            ZStack {
-                let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
-                shape
-                    .fill(Color.white.opacity(0.03))
-                    .overlay(shape.stroke(.white.opacity(0.08), lineWidth: 1))
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Быстрые инсайты")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
 
-                // КНОПКИ ВНУТРИ ПОЛЯ (по центру)
-                VStack(spacing: 12) {
-                    LazyVGrid(
-                        columns: [GridItem(.flexible())],
-                        alignment: .center,
-                        spacing: 8
-                    ) {
-                        Button("Что сказать дальше?", action: onNext)
-                            .buttonStyle(GlassPill())
-                        Button("О чём речь?", action: onTopic)
-                            .buttonStyle(GlassPill())
-                        Button("Какой вопрос задать?", action: onQuestion)
-                            .buttonStyle(GlassPill())
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 220), spacing: 8, alignment: .leading)],
+                    alignment: .leading,
+                    spacing: 8
+                ) {
+                    ForEach(HintAgent.insightIntents) { intent in
+                        let isSelected = selection == intent
+                        Button {
+                            onRequest(intent)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: intent.symbolName)
+                                Text(intent.buttonTitle)
+                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(GlassPill(tint: isSelected ? .accentColor : .secondary))
+                        .disabled(hint.isRunning && hint.activeIntent != intent)
                     }
                 }
-                .padding(16)
-                .frame(maxWidth: 420) // чтобы сетка держала красивую ширину
+
+                let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+
+                ZStack(alignment: .topLeading) {
+                    shape
+                        .fill(Color.white.opacity(0.03))
+                        .overlay(shape.stroke(.white.opacity(0.08), lineWidth: 1))
+
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: cardIcon)
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(.accentColor)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(cardTitle)
+                                    .font(.title3.weight(.semibold))
+                                Text(cardSubtitle)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
+                            VStack(alignment: .trailing, spacing: 4) {
+                                if hint.isRunning {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    if let started = hint.startedAt {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "clock")
+                                            Text(started, style: .time)
+                                        }
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                    }
+                                } else if let finished = hint.lastFinishedAt {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "checkmark.circle")
+                                        Text(finished, style: .time)
+                                    }
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+
+                        Divider().overlay(Color.white.opacity(0.10))
+
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 10) {
+                                if let err = hint.error {
+                                    Label(err, systemImage: "exclamationmark.triangle")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.red)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                } else if !hint.draft.isEmpty {
+                                    Text(hint.draft)
+                                        .font(.system(size: 15, weight: .regular, design: .default))
+                                        .foregroundStyle(.primary)
+                                        .textSelection(.enabled)
+                                        .lineSpacing(4)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                } else if hint.isRunning {
+                                    Text("GhostDesk анализирует последние реплики…")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .italic()
+                                } else {
+                                    Text(placeholder)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(minHeight: 160, maxHeight: 220)
+
+                        HStack(spacing: 12) {
+                            if !hint.draft.isEmpty {
+                                Button {
+                                    #if os(macOS)
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(hint.draft, forType: .string)
+                                    #endif
+                                } label: {
+                                    Label("Скопировать", systemImage: "doc.on.doc")
+                                }
+                                .buttonStyle(GlassPill())
+                            }
+
+                            if hint.canStop {
+                                Button {
+                                    hint.cancel()
+                                } label: {
+                                    Label("Стоп", systemImage: "stop.fill")
+                                }
+                                .buttonStyle(GlassPill(tint: .red))
+                            }
+
+                            Spacer()
+
+                            if !hint.draft.isEmpty {
+                                Button {
+                                    hint.draft = ""
+                                } label: {
+                                    Label("Очистить", systemImage: "trash")
+                                }
+                                .buttonStyle(GlassPill(tint: .secondary))
+                            }
+                        }
+                    }
+                    .padding(18)
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .frame(maxWidth: .infinity, minHeight: 240, alignment: .center)
+            .frame(maxWidth: .infinity, minHeight: 260, alignment: .topLeading)
         }
     }
 
@@ -710,6 +852,12 @@ struct OverlayRootView: View {
         ServerClient.shared.log("question submitted: \(question), smart=\(smartMode), speechTail=\(tr.count) chars")
     }
 
+    private func requestInsight(_ intent: HintAgent.Intent) {
+        Task {
+            await hint.requestHint(for: intent)
+        }
+    }
+
     // Хвост транскрибации из текущего транскрайбера (если не подключён TranscriptBuffer)
     private func makeTranscriptTail(seconds _: Int = 40, maxChars: Int = 900) -> String {
         transcriptionCoordinator.transcriptTail(for: .system, maxChars: maxChars)
@@ -751,14 +899,56 @@ private struct GlassCard<Content: View>: View {
 private struct HintStrip: View {
     @ObservedObject var hint: HintAgent = .shared
 
+    private var iconName: String {
+        (hint.activeIntent ?? hint.lastCompletedIntent)?.symbolName ?? "sparkles"
+    }
+
+    private var title: String {
+        (hint.activeIntent ?? hint.lastCompletedIntent)?.stripTitle ?? "Подсказка"
+    }
+
+    private var placeholder: String? {
+        if let active = hint.activeIntent { return active.placeholder }
+        if let last = hint.lastCompletedIntent { return last.placeholder }
+        return nil
+    }
+
     var body: some View {
         if hint.isRunning || !hint.draft.isEmpty || hint.error != nil {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Подсказка")
-                        .font(.headline)
+                    HStack(spacing: 6) {
+                        Image(systemName: iconName)
+                            .font(.callout.weight(.semibold))
+                        Text(title)
+                            .font(.headline)
+                    }
+                    .foregroundStyle(.primary)
+
                     if hint.isRunning { ProgressView().controlSize(.small) }
                     Spacer()
+                    if hint.isRunning {
+                        if let started = hint.startedAt {
+                            HStack(spacing: 4) {
+                                Text("Старт")
+                                Text(started, style: .time)
+                            }
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        } else {
+                            Text("Генерация…")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else if let finished = hint.lastFinishedAt {
+                        HStack(spacing: 4) {
+                            Text("Обновлено")
+                            Text(finished, style: .time)
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
+
                     if hint.canStop {
                         Button("Стоп") { hint.cancel() }
                             .buttonStyle(GlassPill(tint: .red))
@@ -767,9 +957,7 @@ private struct HintStrip: View {
 
                 if let err = hint.error {
                     Text(err).foregroundStyle(.red).font(.subheadline)
-                }
-
-                if !hint.draft.isEmpty {
+                } else if !hint.draft.isEmpty {
                     Text(hint.draft)
                         .textSelection(.enabled)
                         .font(.body)
@@ -787,6 +975,15 @@ private struct HintStrip: View {
                         Button("Очистить") { hint.draft = "" }
                             .buttonStyle(GlassPill(tint: .secondary))
                     }
+                } else if hint.isRunning {
+                    Text("GhostDesk готовит подсказку…")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .italic()
+                } else if let placeholder {
+                    Text(placeholder)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
             }
             .padding(12)

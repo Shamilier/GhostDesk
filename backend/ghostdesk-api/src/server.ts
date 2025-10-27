@@ -246,6 +246,12 @@ app.post("/hint", async (req, res) => {
     const sessionId = String(req.body?.sessionId ?? "default");
     const instruction = String(req.body?.instruction ?? "").trim();
     const context = String(req.body?.context ?? "").trim();
+    const intent =
+      typeof req.body?.intent === "string" && req.body.intent.trim().length > 0
+        ? req.body.intent.trim()
+        : "default";
+
+    console.log(`[hint] session=${sessionId} intent=${intent}`);
 
     if (!context) return res.status(400).json({ error: "Empty context" });
 
