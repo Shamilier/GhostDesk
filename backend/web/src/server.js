@@ -134,6 +134,15 @@ const pickAuthorizePath = (candidateFromQuery, candidateFromSession) => {
   return null;
 };
 
+const buildOAuthSuccessPayload = ({ redirectUri, code, state }) => {
+  const separator = redirectUri.includes('?') ? '&' : '?';
+  const redirectUrl = `${redirectUri}${separator}code=${encodeURIComponent(code)}${
+    state ? `&state=${encodeURIComponent(state)}` : ''
+  }`;
+
+  return { redirectUrl };
+};
+
 const finalizeOAuthIfNeeded = async (req, user) => {
   const pending = req.session.oauthRequest;
   if (!pending) {
@@ -159,12 +168,11 @@ const finalizeOAuthIfNeeded = async (req, user) => {
     req.session.oauthRequest = null;
     req.session.oauthReturnTo = null;
 
-    const separator = pending.redirectUri.includes('?') ? '&' : '?';
-    const redirectUrl = `${pending.redirectUri}${separator}code=${encodeURIComponent(
-      code
-    )}${pending.state ? `&state=${encodeURIComponent(pending.state)}` : ''}`;
-
-    return redirectUrl;
+    return buildOAuthSuccessPayload({
+      redirectUri: pending.redirectUri,
+      code,
+      state: pending.state,
+    });
   } catch (err) {
     console.error('Error creating authorization code', err);
     req.session.oauthRequest = null;
@@ -330,9 +338,19 @@ app.post('/register', async (req, res) => {
           }
 
           return finalizeOAuthIfNeeded(req, req.session.user)
-            .then((redirectUrl) => {
-              if (redirectUrl) {
-                return res.redirect(redirectUrl);
+            .then((oauthSuccess) => {
+              if (oauthSuccess && oauthSuccess.redirectUrl) {
+                const statusMessage = req.session.flash ? req.session.flash.message : null;
+                if (req.session.flash) {
+                  req.session.flash = null;
+                }
+
+                return res.render('oauth-success', {
+                  title: 'Авторизация завершена',
+                  redirectUrl: oauthSuccess.redirectUrl,
+                  statusMessage: statusMessage || 'Ваш аккаунт создан. Переключаемся в приложение GhostDesk.',
+                  fallbackUrl: '/dashboard',
+                });
               }
               return res.redirect('/dashboard');
             })
@@ -426,9 +444,19 @@ app.post('/login', (req, res) => {
     }
 
     return finalizeOAuthIfNeeded(req, req.session.user)
-      .then((redirectUrl) => {
-        if (redirectUrl) {
-          return res.redirect(redirectUrl);
+      .then((oauthSuccess) => {
+        if (oauthSuccess && oauthSuccess.redirectUrl) {
+          const statusMessage = req.session.flash ? req.session.flash.message : null;
+          if (req.session.flash) {
+            req.session.flash = null;
+          }
+
+          return res.render('oauth-success', {
+            title: 'Авторизация завершена',
+            redirectUrl: oauthSuccess.redirectUrl,
+            statusMessage: statusMessage || 'С возвращением! Переключаемся в приложение GhostDesk.',
+            fallbackUrl: '/dashboard',
+          });
         }
         return res.redirect('/dashboard');
       })
@@ -509,11 +537,18 @@ app.get('/oauth/authorize', async (req, res) => {
     req.session.oauthRequest = null;
     req.session.oauthReturnTo = null;
 
-    const separator = redirect_uri.includes('?') ? '&' : '?';
-    const redirectLocation = `${redirect_uri}${separator}code=${encodeURIComponent(code)}${
-      state ? `&state=${encodeURIComponent(state)}` : ''
-    }`;
-    return res.redirect(redirectLocation);
+    const oauthSuccess = buildOAuthSuccessPayload({
+      redirectUri: redirect_uri,
+      code,
+      state: state || null,
+    });
+
+    return res.render('oauth-success', {
+      title: 'Авторизация завершена',
+      redirectUrl: oauthSuccess.redirectUrl,
+      statusMessage: 'Авторизация подтверждена. Переключаемся в приложение GhostDesk.',
+      fallbackUrl: '/dashboard',
+    });
   } catch (err) {
     console.error('Error issuing authorization code', err);
     return res.status(500).json({ error: 'server_error' });

@@ -1,6 +1,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <% if (typeof metaRefresh !== 'undefined' && metaRefresh) { %>
+  <meta http-equiv="refresh" content="<%= metaRefresh %>" />
+  <% } %>
   <title><%= title %> · GhostDesk</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
