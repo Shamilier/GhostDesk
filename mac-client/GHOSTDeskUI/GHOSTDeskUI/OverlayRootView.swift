@@ -347,7 +347,7 @@ struct OverlayRootView: View {
 
                         Image(systemName: cardIcon)
                             .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(.accentColor)
+                            .foregroundStyle(Color.accentColor)
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -512,7 +512,7 @@ struct OverlayRootView: View {
 
                         if isSelected {
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.accentColor)
+                                .foregroundStyle(Color.accentColor)
                                 .font(.system(size: 16, weight: .semibold))
                         }
                     }

@@ -105,6 +105,14 @@ final class SpeechTranscriber: NSObject, ObservableObject {
     }
 
     // MARK: - Provider wiring
+    private func mapLocalPhase(_ p: WhisperLocalProvider.Phase) -> Phase {
+        switch p {
+        case .idle:     return .idle
+        case .starting: return .starting
+        case .running:  return .running
+        case .stopping: return .stopping
+        }
+    }
 
     private func startLocalProvider() {
         let localMode: WhisperLocalProvider.CaptureMode = captureMode == .systemAudio ? .systemAudio : .microphone
@@ -122,8 +130,11 @@ final class SpeechTranscriber: NSObject, ObservableObject {
 
         provider.$phase
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] phase in self?.phase = phase }
+            .sink { [weak self] localPhase in
+                self?.phase = self?.mapLocalPhase(localPhase) ?? .idle
+            }
             .store(in: &providerSubscriptions)
+
 
         provider.$transcriptLog
             .receive(on: DispatchQueue.main)
@@ -365,17 +376,25 @@ extension SpeechTranscriber: SCStreamOutput {
 fileprivate extension CMSampleBuffer {
     func toPCMBuffer() -> AVAudioPCMBuffer? {
         guard let fdesc = CMSampleBufferGetFormatDescription(self) else { return nil }
-        guard let format = AVAudioFormat(cmAudioFormatDescription: fdesc) else { return nil }
+
+        // На твоём SDK это non-optional
+        let format = AVAudioFormat(cmAudioFormatDescription: fdesc)
+
         let frames = AVAudioFrameCount(CMSampleBufferGetNumSamples(self))
         guard let buf = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return nil }
         buf.frameLength = frames
-        let status = CMSampleBufferCopyPCMDataIntoAudioBufferList(self,
-                                                                 at: 0,
-                                                                 frameCount: Int32(frames),
-                                                                 into: buf.mutableAudioBufferList)
+
+        let status = CMSampleBufferCopyPCMDataIntoAudioBufferList(
+            self,
+            at: 0,
+            frameCount: Int32(frames),
+            into: buf.mutableAudioBufferList
+        )
+
         return status == noErr ? buf : nil
     }
 }
+
 
 private func ensureScreenRecordingAuthorizedForStreaming() -> Bool {
     if CGPreflightScreenCaptureAccess() { return true }

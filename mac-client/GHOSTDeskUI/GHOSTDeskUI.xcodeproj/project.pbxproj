@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		276FB30C2E8D1AE000F148B3 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 276FB30B2E8D1AE000F148B3 /* WhisperKit */; };
 		276FB30E2E8D1AE000F148B3 /* whisperkit-cli in Frameworks */ = {isa = PBXBuildFile; productRef = 276FB30D2E8D1AE000F148B3 /* whisperkit-cli */; };
+		27973F362EB1280B000D1177 /* Starscream in Frameworks */ = {isa = PBXBuildFile; productRef = 27973F352EB1280B000D1177 /* Starscream */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -43,6 +44,7 @@
 			files = (
 				276FB30C2E8D1AE000F148B3 /* WhisperKit in Frameworks */,
 				276FB30E2E8D1AE000F148B3 /* whisperkit-cli in Frameworks */,
+				27973F362EB1280B000D1177 /* Starscream in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -79,6 +81,7 @@
 			packageProductDependencies = (
 				276FB30B2E8D1AE000F148B3 /* WhisperKit */,
 				276FB30D2E8D1AE000F148B3 /* whisperkit-cli */,
+				27973F352EB1280B000D1177 /* Starscream */,
 			);
 			productName = GHOSTDeskUI;
 			productReference = 27E6B37D2E8AC61A00C77686 /* GHOSTDeskUI.app */;
@@ -110,6 +113,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				276FB30A2E8D1AE000F148B3 /* XCRemoteSwiftPackageReference "WhisperKit" */,
+				27973F342EB1280B000D1177 /* XCRemoteSwiftPackageReference "Starscream" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 557EDE062E7ED168002ABA48;
@@ -378,6 +382,14 @@
 				kind = branch;
 			};
 		};
+		27973F342EB1280B000D1177 /* XCRemoteSwiftPackageReference "Starscream" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/daltoniam/Starscream.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 4.0.8;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -390,6 +402,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 276FB30A2E8D1AE000F148B3 /* XCRemoteSwiftPackageReference "WhisperKit" */;
 			productName = "whisperkit-cli";
+		};
+		27973F352EB1280B000D1177 /* Starscream */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 27973F342EB1280B000D1177 /* XCRemoteSwiftPackageReference "Starscream" */;
+			productName = Starscream;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
