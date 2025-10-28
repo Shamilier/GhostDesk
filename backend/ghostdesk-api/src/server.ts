@@ -386,6 +386,10 @@ app.post("/ask", upload.single("image"), async (req, res) => {
     const question = String(req.body.question ?? "").trim();
     const smart = String(req.body.smart ?? "false") === "true";
     const sessionId = String(req.body.sessionId ?? "default");
+    const transcript =
+      typeof req.body?.transcript === "string"
+        ? req.body.transcript.trim()
+        : "";
 
     if (!question) return res.status(400).json({ error: "Empty question" });
     if (!req.file) return res.status(400).json({ error: "No image" });
@@ -393,12 +397,22 @@ app.post("/ask", upload.single("image"), async (req, res) => {
     const b64 = req.file.buffer.toString("base64");
     const dataUrl = `data:image/png;base64,${b64}`;
 
+    const content: ChatMsg["content"] = [
+      { type: "text", text: formatSmartText(question, smart) },
+    ];
+
+    if (transcript) {
+      const block = buildTranscriptBlock(transcript);
+      if (block) {
+        content.push({ type: "text", text: block });
+      }
+    }
+
+    content.push({ type: "image_url", image_url: { url: dataUrl } });
+
     const user: ChatMsg = {
       role: "user",
-      content: [
-        { type: "text", text: formatSmartText(question, smart) },
-        { type: "image_url", image_url: { url: dataUrl } },
-      ],
+      content,
     };
 
     await streamAskLikeResponse({
