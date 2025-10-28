@@ -1022,8 +1022,13 @@ struct OverlayRootView: View {
     }
 
     // Хвост транскрибации из текущего транскрайбера (если не подключён TranscriptBuffer)
-    private func makeTranscriptTail(seconds _: Int = 40, maxChars: Int = 900) -> String {
-        transcriptionCoordinator.transcriptTail(for: .system, maxChars: maxChars)
+    private func makeTranscriptTail(seconds: Int = 40, maxChars: Int = 900) -> String {
+        let bufferTail = TranscriptBuffer.shared.tail(lastSeconds: seconds, maxChars: maxChars)
+        if !bufferTail.isEmpty {
+            return bufferTail
+        }
+
+        return transcriptionCoordinator.transcriptTail(for: .system, maxChars: maxChars)
     }
 
 }
@@ -1642,11 +1647,9 @@ final class AskVM: ObservableObject {
         appendField("smart", smart ? "true" : "false")
         appendField("sessionId", sessionId)
 
-        // контекст речи добавляем только если он не пустой
+        // контекст речи — trimmed хвост транскрибации (может быть пустым)
         let transcriptPayload = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !transcriptPayload.isEmpty {
-            appendField("transcript", transcriptPayload)
-        }
+        appendField("transcript", transcriptPayload)
 
         // скрин — ВСЕГДА для Submit
         appendFile("image", filename: "screen.png", mime: "image/png", data: screenshotPNG)
