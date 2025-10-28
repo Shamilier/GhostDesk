@@ -121,7 +121,8 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
     private var lastPartialChangeAt = Date()
 
     // Confirmed bookkeeping
-    private var lastConfirmed = ""
+    private var engineConfirmed = ""
+    private var awaitingEngineConfirmation = ""
     private var lastPartial = ""
 
     // Pending confirmed (анти-обрыв слова)
@@ -297,24 +298,21 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         let clean = delta.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
 
-        appendToConfirmedBuffer(clean, at: time, force: force)
+        if let addition = appendToConfirmedBuffer(clean, at: time, force: force) {
+            registerAddition(addition, forced: force)
+        }
         partialText = ""
         lastPartial = ""
     }
 
     @MainActor
-    private func appendToConfirmedBuffer(_ text: String, at time: Date, force: Bool) {
-        guard !text.isEmpty else { return }
+    private func appendToConfirmedBuffer(_ text: String, at time: Date, force: Bool) -> String? {
+        guard !text.isEmpty else { return nil }
 
-        if !confirmedAccumulator.isEmpty,
-           let lastChar = confirmedAccumulator.last,
-           let firstChar = text.first,
-           shouldInsertSpace(between: lastChar, and: firstChar) {
-            confirmedAccumulator.append(" ")
-        }
-
-        confirmedAccumulator.append(text)
+        let addition = normalizedAddition(text, relativeTo: confirmedAccumulator)
+        confirmedAccumulator.append(addition)
         flushConfirmedBuffer(force: force, at: time)
+        return addition
     }
 
     @MainActor
@@ -367,6 +365,30 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
             }
             confirmedAccumulator = ""
         }
+    }
+
+    private func normalizedAddition(_ text: String, relativeTo base: String) -> String {
+        guard !text.isEmpty else { return "" }
+
+        if base.isEmpty { return text }
+
+        var addition = text
+        if let lastChar = base.last,
+           let firstChar = text.first,
+           shouldInsertSpace(between: lastChar, and: firstChar) {
+            addition.insert(" ", at: addition.startIndex)
+        }
+        return addition
+    }
+
+    private func dropPrefix(_ length: Int, from string: inout String) {
+        guard length > 0 else { return }
+        if length >= string.count {
+            string.removeAll(keepingCapacity: false)
+            return
+        }
+        let idx = string.index(string.startIndex, offsetBy: length)
+        string.removeSubrange(string.startIndex..<idx)
     }
 
     private func shouldInsertSpace(between lhs: Character, and rhs: Character) -> Bool {
@@ -428,6 +450,97 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         t.resume()
     }
 
+    private func registerAddition(_ addition: String, forced: Bool) {
+        guard !addition.isEmpty else { return }
+        outputQueue.sync {
+            if forced {
+                self.awaitingEngineConfirmation.append(addition)
+            } else if !self.awaitingEngineConfirmation.isEmpty {
+                if self.awaitingEngineConfirmation.hasPrefix(addition) {
+                    dropPrefix(addition.count, from: &self.awaitingEngineConfirmation)
+                } else if addition.hasPrefix(self.awaitingEngineConfirmation) {
+                    self.awaitingEngineConfirmation = ""
+                } else {
+                    let overlap = self.awaitingEngineConfirmation.commonPrefix(with: addition, options: .literal)
+                    if !overlap.isEmpty {
+                        dropPrefix(overlap.count, from: &self.awaitingEngineConfirmation)
+                    } else {
+                        self.awaitingEngineConfirmation = ""
+                    }
+                }
+            }
+        }
+    }
+
+    private func deltaFromEngine(_ confirmed: String) -> String? {
+        guard !confirmed.isEmpty else { return nil }
+
+        if !awaitingEngineConfirmation.isEmpty {
+            let baseline = engineConfirmed
+            let expected = baseline + awaitingEngineConfirmation
+
+            if confirmed.hasPrefix(expected) {
+                let idx = confirmed.index(confirmed.startIndex, offsetBy: expected.count)
+                let remainder = String(confirmed[idx...])
+                engineConfirmed = confirmed
+                awaitingEngineConfirmation = ""
+                return remainder.isEmpty ? nil : remainder
+            }
+
+            if confirmed.hasPrefix(baseline) {
+                let producedIndex = confirmed.index(confirmed.startIndex, offsetBy: baseline.count)
+                let produced = String(confirmed[producedIndex...])
+
+                if produced.isEmpty {
+                    engineConfirmed = confirmed
+                    return nil
+                }
+
+                if awaitingEngineConfirmation.hasPrefix(produced) {
+                    dropPrefix(produced.count, from: &awaitingEngineConfirmation)
+                    engineConfirmed = confirmed
+                    return nil
+                }
+
+                if produced.hasPrefix(awaitingEngineConfirmation) {
+                    let remainderIndex = produced.index(produced.startIndex, offsetBy: awaitingEngineConfirmation.count)
+                    let remainder = String(produced[remainderIndex...])
+                    awaitingEngineConfirmation = ""
+                    engineConfirmed = confirmed
+                    return remainder.isEmpty ? nil : remainder
+                }
+
+                let overlap = awaitingEngineConfirmation.commonPrefix(with: produced, options: .literal)
+                if !overlap.isEmpty {
+                    dropPrefix(overlap.count, from: &awaitingEngineConfirmation)
+                }
+                let remainder = String(produced.dropFirst(overlap.count))
+                awaitingEngineConfirmation = ""
+                engineConfirmed = confirmed
+                return remainder.isEmpty ? nil : remainder
+            } else {
+                let common = confirmed.commonPrefix(with: engineConfirmed, options: .literal)
+                engineConfirmed = String(common)
+                awaitingEngineConfirmation = ""
+            }
+        }
+
+        if !confirmed.hasPrefix(engineConfirmed) {
+            let common = confirmed.commonPrefix(with: engineConfirmed, options: .literal)
+            engineConfirmed = String(common)
+        }
+
+        guard confirmed.count > engineConfirmed.count else {
+            engineConfirmed = confirmed
+            return nil
+        }
+
+        let idx = confirmed.index(confirmed.startIndex, offsetBy: engineConfirmed.count)
+        let remainder = String(confirmed[idx...])
+        engineConfirmed = confirmed
+        return remainder.isEmpty ? nil : remainder
+    }
+
     private func processIncomingSamples(_ floats: [Float]) {
         let gated = vad.process(floats)
         guard !gated.isEmpty else { return }
@@ -462,7 +575,8 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         samples.removeAll(keepingCapacity: true)
         energy.removeAll(keepingCapacity: true)
         acc.removeAll(keepingCapacity: true)
-        lastConfirmed = ""
+        engineConfirmed = ""
+        awaitingEngineConfirmation = ""
         lastPartial = ""
         lastShownPartial = ""
         lastNonEmptyPartialAt = Date()
@@ -534,12 +648,9 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
                     // CONFIRMED -> в лог (с «анти-обрыв» логикой)
                     let confirmedRaw = state.confirmedSegments.map(\.text).joined()
                     let confirmed = self.sanitizeTranscription(confirmedRaw)
-                    if !confirmed.isEmpty, confirmed != self.lastConfirmed {
-                        var delta = String(confirmed.dropFirst(self.lastConfirmed.count))
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let newChunk = self.deltaFromEngine(confirmed) {
+                        var delta = newChunk.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !delta.isEmpty, !self.isKnownHallucination(delta) else { return }
-
-                        self.lastConfirmed = confirmed
 
                         // если на конце нет явной границы и похоже на середину слова — ждём 220мс
                         if !self.endsWithBoundary(delta) && self.isLikelyMidWord(delta) {
