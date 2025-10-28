@@ -335,10 +335,28 @@ final class SpeechTranscriber: NSObject, ObservableObject {
     private func appendFinal(_ text: String) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
-        let message = OverlayModel.TranscriptMessage(source: sourceKind, text: clean, timestamp: Date())
-        transcriptLog.append(message)
-        TranscriptBuffer.shared.appendFinal(clean, at: Date())
+
+        let now = Date()
+
+        if let lastIndex = transcriptLog.indices.last,
+           transcriptLog[lastIndex].source == sourceKind {
+            let lastMessage = transcriptLog[lastIndex]
+            let mergedText = TranscriptBuffer.mergeSegments(base: lastMessage.text, addition: clean)
+            let updated = OverlayModel.TranscriptMessage(
+                id: lastMessage.id,
+                source: lastMessage.source,
+                text: mergedText,
+                timestamp: now
+            )
+            transcriptLog[lastIndex] = updated
+            TranscriptBuffer.shared.replaceLastFinal(with: mergedText, at: now)
+        } else {
+            let message = OverlayModel.TranscriptMessage(source: sourceKind, text: clean, timestamp: now)
+            transcriptLog.append(message)
+            TranscriptBuffer.shared.appendFinal(clean, at: now)
+        }
     }
+
 }
 
 extension SpeechTranscriber: TranscriptionProviderDelegate {
@@ -394,6 +412,7 @@ fileprivate extension CMSampleBuffer {
         return status == noErr ? buf : nil
     }
 }
+
 
 
 private func ensureScreenRecordingAuthorizedForStreaming() -> Bool {

@@ -129,6 +129,7 @@ struct OverlayRootView: View {
             )
                 .environmentObject(auth)
         }
+
     }
 
     // MARK: - Listen Panel
@@ -703,10 +704,12 @@ struct OverlayRootView: View {
                     Spacer(minLength: 0)
                 }
 
-                Text(message.text)
+                Text(formattedBody)
                     .font(.system(size: 14))
                     .foregroundStyle(.primary)
                     .textSelection(.enabled)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Text(message.timestamp, style: .time)
                     .font(.caption2)
@@ -725,6 +728,36 @@ struct OverlayRootView: View {
             )
             .frame(maxWidth: .infinity, alignment: style.bubbleAlignment)
             .transition(.move(edge: .trailing).combined(with: .opacity))
+        }
+
+        private var formattedBody: String {
+            formatIntoSentences(message.text)
+        }
+
+        private func formatIntoSentences(_ text: String) -> String {
+            let terminators: Set<Character> = [".", "?", "!"]
+            var result = ""
+            var index = text.startIndex
+
+            while index < text.endIndex {
+                let ch = text[index]
+                result.append(ch)
+
+                if terminators.contains(ch) {
+                    index = text.index(after: index)
+                    while index < text.endIndex, text[index].isWhitespace {
+                        index = text.index(after: index)
+                    }
+                    if index < text.endIndex {
+                        result.append("\n")
+                    }
+                    continue
+                }
+
+                index = text.index(after: index)
+            }
+
+            return result.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 
@@ -1938,6 +1971,8 @@ final class TranscriptBuffer {
     private var items: [Item] = []
     private var partial: Item? = nil
 
+    private static let noSpaceCharacters: Set<Character> = [".", "?", "!", ",", ";", ":", "…"]
+
     /// Добавить подтверждённый (final) текст
     func appendFinal(_ text: String, at time: Date = .init()) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1956,8 +1991,25 @@ final class TranscriptBuffer {
         guard !clean.isEmpty else { return }
         q.async {
             guard let last = self.items.popLast() else { return }
-            let merged = (last.text + clean).trimmingCharacters(in: .whitespacesAndNewlines)
-            self.items.append(.init(t: last.t, text: merged))
+            let merged = TranscriptBuffer.mergeSegments(base: last.text, addition: clean)
+            self.items.append(.init(t: Date(), text: merged))
+            self.partial = nil
+        }
+    }
+
+    /// Заменить последний final-текст новым значением
+    func replaceLastFinal(with text: String, at time: Date = .init()) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        q.async {
+            let item = Item(t: time, text: clean)
+            if self.items.isEmpty {
+                self.items.append(item)
+            } else {
+                _ = self.items.popLast()
+                self.items.append(item)
+            }
+            if self.items.count > 500 { self.items.removeFirst(self.items.count - 500) }
             self.partial = nil
         }
     }
@@ -1968,6 +2020,27 @@ final class TranscriptBuffer {
         q.async {
             self.partial = clean.isEmpty ? nil : .init(t: time, text: clean)
         }
+    }
+
+    static func mergeSegments(base: String, addition: String) -> String {
+        let trimmedAddition = addition.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedAddition.isEmpty else { return base }
+
+        var result = base
+        if result.isEmpty {
+            return trimmedAddition
+        }
+
+        if let first = trimmedAddition.first, noSpaceCharacters.contains(first) {
+            while let last = result.last, last.isWhitespace {
+                result.removeLast()
+            }
+        } else if let last = result.last, !last.isWhitespace {
+            result.append(" ")
+        }
+
+        result.append(trimmedAddition)
+        return result
     }
 
     /// Хвост за N секунд, с жёстной усечкой по символам.

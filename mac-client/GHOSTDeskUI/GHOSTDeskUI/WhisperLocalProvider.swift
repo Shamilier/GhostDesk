@@ -366,10 +366,10 @@ final class WhisperLocalProvider: NSObject, ObservableObject, AudioProcessing, T
 
         if isStandaloneSymbolChunk(clean) {
             guard var last = transcriptLog.popLast() else { return }
-            let mergedText = (last.text + clean).trimmingCharacters(in: .whitespacesAndNewlines)
-            last = OverlayModel.TranscriptMessage(id: last.id, source: last.source, text: mergedText, timestamp: last.timestamp)
+            let mergedText = TranscriptBuffer.mergeSegments(base: last.text, addition: clean)
+            last = OverlayModel.TranscriptMessage(id: last.id, source: last.source, text: mergedText, timestamp: time)
             transcriptLog.append(last)
-            TranscriptBuffer.shared.mergeIntoLastFinal(clean)
+            TranscriptBuffer.shared.replaceLastFinal(with: mergedText, at: time)
             return
         }
 
