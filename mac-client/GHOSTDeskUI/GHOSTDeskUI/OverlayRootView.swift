@@ -1950,6 +1950,18 @@ final class TranscriptBuffer {
         }
     }
 
+    /// Слить кусок в конец последнего final-сообщения (если оно есть)
+    func mergeIntoLastFinal(_ text: String) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        q.async {
+            guard let last = self.items.popLast() else { return }
+            let merged = (last.text + clean).trimmingCharacters(in: .whitespacesAndNewlines)
+            self.items.append(.init(t: last.t, text: merged))
+            self.partial = nil
+        }
+    }
+
     /// Обновить текущий partial (неподтверждённый) текст
     func setPartial(_ text: String, at time: Date = .init()) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
