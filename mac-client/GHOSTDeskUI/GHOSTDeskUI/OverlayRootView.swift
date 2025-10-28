@@ -135,69 +135,12 @@ struct OverlayRootView: View {
 
     private var listenPanel: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 18) {
 
                 // HEADER
-                HStack(spacing: 12) {
-                    LogoOrb()
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(showTranscript ? "Транскрипт" : "Инсайты в реальном времени")
-                            .font(.headline.weight(.semibold))
-                        HStack(spacing: 8) {
-                            LiveDot(active: overlay.anyChannelIsTranscribing)
-                            Text(overlay.anyChannelIsTranscribing ? "Идёт запись…" : "Готов к запуску")
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(overlay.anyChannelIsTranscribing ? .green.opacity(0.9) : .secondary)
-                        }
-                    }
-
-                    Spacer()
-
-                    let microphonePhase = microphoneChannelState.phase
-                    let microphoneBusy = microphonePhase == .starting || microphonePhase == .stopping
-
-                    Button(showTranscript ? "Показать инсайты" : "Показать транскрипт") {
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
-                            showTranscript.toggle()
-                        }
-                    }
-                    .buttonStyle(GlassPill())
-
-                    Button(action: {
-                        transcriptionCoordinator.setMicrophoneArmed(!transcriptionCoordinator.isMicrophoneArmed)
-                    }) {
-                        Label("Микрофон", systemImage: transcriptionCoordinator.isMicrophoneArmed ? "mic.fill" : "mic")
-                    }
-                    .buttonStyle(GlassPill(tint: transcriptionCoordinator.isMicrophoneArmed ? .pink : .secondary))
-                    .disabled(microphoneBusy)
-
-                    Button(action: {
-                        switch transcriptionCoordinator.overallPhase {
-                        case .idle:
-                            transcriptionCoordinator.startRecording()
-                        case .starting, .running, .stopping:
-                            transcriptionCoordinator.stopAll()
-                        }
-                    }) {
-                        let phase = transcriptionCoordinator.overallPhase
-                        let running  = phase == .running
-                        let starting = phase == .starting
-                        let stopping = phase == .stopping
-                        Label(
-                            starting ? "Запуск…" : (stopping ? "Остановка…" : (running ? "Стоп" : "Старт")),
-                            systemImage: (running || stopping) ? "stop.fill" : "play.fill"
-                        )
-                    }
-                    .buttonStyle(
-                        GlassPill(
-                            tint: {
-                                let phase = transcriptionCoordinator.overallPhase
-                                return (phase == .running || phase == .stopping) ? .red : .accentColor
-                            }()
-                        )
-                    )
-                    .disabled(transcriptionCoordinator.overallPhase == .starting)
+                ViewThatFits(in: .horizontal) {
+                    listenHeaderHorizontal
+                    listenHeaderVertical
                 }
 
                 Divider().overlay(Color.white.opacity(0.10))
@@ -231,8 +174,106 @@ struct OverlayRootView: View {
                 }
             }
         }
-        .frame(maxWidth: 600)   // ↓ уже, чем раньше
-        .padding(.horizontal, 8)
+        .frame(maxWidth: 640)
+        .padding(.horizontal, 12)
+    }
+
+    private var listenHeaderHorizontal: some View {
+        HStack(spacing: 16) {
+            LogoOrb()
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(showTranscript ? "Транскрипт" : "Инсайты в реальном времени")
+                    .font(.headline.weight(.semibold))
+                HStack(spacing: 8) {
+                    LiveDot(active: overlay.anyChannelIsTranscribing)
+                    Text(overlay.anyChannelIsTranscribing ? "Идёт запись…" : "Готов к запуску")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(overlay.anyChannelIsTranscribing ? .green.opacity(0.9) : .secondary)
+                }
+            }
+
+            Spacer(minLength: 12)
+
+            headerControls
+        }
+        .alignmentGuide(.leading) { $0[.leading] }
+    }
+
+    private var listenHeaderVertical: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 14) {
+                LogoOrb()
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(showTranscript ? "Транскрипт" : "Инсайты в реальном времени")
+                        .font(.headline.weight(.semibold))
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 8) {
+                        LiveDot(active: overlay.anyChannelIsTranscribing)
+                        Text(overlay.anyChannelIsTranscribing ? "Идёт запись…" : "Готов к запуску")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(overlay.anyChannelIsTranscribing ? .green.opacity(0.9) : .secondary)
+                    }
+                }
+            }
+
+            headerControls
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var headerControls: some View {
+        let microphonePhase = microphoneChannelState.phase
+        let microphoneBusy = microphonePhase == .starting || microphonePhase == .stopping
+
+        return HStack(spacing: 12) {
+            Button(showTranscript ? "Показать инсайты" : "Показать транскрипт") {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                    showTranscript.toggle()
+                }
+            }
+            .buttonStyle(GlassPill())
+            .fixedSize()
+
+            Button(action: {
+                transcriptionCoordinator.setMicrophoneArmed(!transcriptionCoordinator.isMicrophoneArmed)
+            }) {
+                Label("Микрофон", systemImage: transcriptionCoordinator.isMicrophoneArmed ? "mic.fill" : "mic")
+            }
+            .buttonStyle(GlassPill(tint: transcriptionCoordinator.isMicrophoneArmed ? .pink : .secondary))
+            .disabled(microphoneBusy)
+            .fixedSize()
+
+            Button(action: {
+                switch transcriptionCoordinator.overallPhase {
+                case .idle:
+                    transcriptionCoordinator.startRecording()
+                case .starting, .running, .stopping:
+                    transcriptionCoordinator.stopAll()
+                }
+            }) {
+                let phase = transcriptionCoordinator.overallPhase
+                let running  = phase == .running
+                let starting = phase == .starting
+                let stopping = phase == .stopping
+                Label(
+                    starting ? "Запуск…" : (stopping ? "Остановка…" : (running ? "Стоп" : "Старт")),
+                    systemImage: (running || stopping) ? "stop.fill" : "play.fill"
+                )
+            }
+            .buttonStyle(
+                GlassPill(
+                    tint: {
+                        let phase = transcriptionCoordinator.overallPhase
+                        return (phase == .running || phase == .stopping) ? .red : .accentColor
+                    }()
+                )
+            )
+            .disabled(transcriptionCoordinator.overallPhase == .starting)
+            .fixedSize()
+        }
     }
 
     private struct InsightsPanel: View {
@@ -297,6 +338,32 @@ struct OverlayRootView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(.vertical, 6)
+            }
+            .scrollIndicators(.hidden)
+        }
+
+        private var header: some View {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Быстрые инсайты")
+                        .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    Text("Выберите сценарий, чтобы получить подсказку для разговора.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 12)
+
+                Button(action: onClose) {
+                    Label("Скрыть", systemImage: "xmark")
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(MiniIconButton())
+                .accessibilityLabel("Скрыть инсайты")
+            }
+        }
 
                 Spacer(minLength: 12)
 
