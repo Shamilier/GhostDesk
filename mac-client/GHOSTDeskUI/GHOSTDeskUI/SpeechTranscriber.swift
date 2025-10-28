@@ -28,9 +28,9 @@ fileprivate struct EnergyVAD {
 
     // ===== Настройки VAD =====
     // как быстро считаем, что "он начал говорить"
-    private let attackMs: Double   = 60    // мс подряд громко, чтобы войти в речь
+    private let attackMs: Double   = 25    // мс подряд громко, чтобы войти в речь быстрее
     // как долго удерживаем "он ещё говорит" после падения
-    private let hangoverMs: Double = 300   // мс молчания, прежде чем сказать что он замолчил
+    private let hangoverMs: Double = 160   // мс молчания, прежде чем сказать что он замолчил
 
     // пороги относительно шумового пола
     private let enterMarginDb: Float = 6   // шум +6 дБ -> вход в речь
@@ -157,6 +157,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
     private let captureMode: CaptureMode
     private let sourceKind: OverlayModel.AudioSourceKind
     private let outputQueue: DispatchQueue
+    private let outputQueueKey = DispatchSpecificKey<UInt8>()
 
     // MARK: - Audio converter (-> 16 kHz mono Float32)
     private var converter: AVAudioConverter?
@@ -226,6 +227,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
             self.sourceKind = .microphone
             self.outputQueue = DispatchQueue(label: "MicrophoneAudio.StreamOutput")
         }
+        self.outputQueue.setSpecific(key: outputQueueKey, value: 1)
         super.init()
 
         if captureMode == .microphone {
@@ -325,11 +327,8 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
 
         if let lastScalar = t.unicodeScalars.last,
            CharacterSet.alphanumerics.contains(lastScalar) {
-            if let cut = t.lastIndex(where: { $0 == " " || ",.!?:;—-".contains($0) }) {
-                return String(t[..<cut]).trimmingCharacters(in: .whitespacesAndNewlines)
-            } else {
-                return ""
-            }
+            // середина слова — оставляем черновик, но помечаем как незавершённый
+            return t + "…"
         }
         return t
     }
@@ -490,7 +489,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         return CharacterSet.alphanumerics.contains(u) // буква/цифра в конце → слово не закончено
     }
 
-    private func scheduleCommit(delay: TimeInterval = 0.18) {
+    private func scheduleCommit(delay: TimeInterval = 0.11) {
         commitTimer?.cancel()
         let t = DispatchSource.makeTimerSource(queue: outputQueue)
         t.schedule(deadline: .now() + delay)
@@ -510,7 +509,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
 
     private func registerAddition(_ addition: String, forced: Bool) {
         guard !addition.isEmpty else { return }
-        outputQueue.sync {
+        let work = {
             if forced {
                 self.awaitingEngineConfirmation.append(addition)
             } else if !self.awaitingEngineConfirmation.isEmpty {
@@ -527,6 +526,12 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
                     }
                 }
             }
+        }
+
+        if DispatchQueue.getSpecific(key: outputQueueKey) != nil {
+            work()
+        } else {
+            outputQueue.sync(execute: work)
         }
     }
 
@@ -732,7 +737,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
                         guard !delta.isEmpty, !self.isKnownHallucination(delta) else { return }
 
                         if !self.endsWithBoundary(delta) && self.isLikelyMidWord(delta) {
-                            // середина слова -> накапливаем и чуть ждём (таймер ~180мс)
+                            // середина слова -> накапливаем и чуть ждём (таймер ~110мс)
                             self.pendingConfirmed += delta
                             self.scheduleCommit()
                         } else {
@@ -868,11 +873,11 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
     // NEW VERSION
     private func softConfirmTick(triggeredByVAD: Bool = false, now: Date = Date()) {
         // 1. оценка тишины через энергию + VAD
-        let energyMean = recentEnergyMean(seconds: 0.45)
+        let energyMean = recentEnergyMean(seconds: 0.30)
 
         // адаптивный "пол" энергии: шумовая база + небольшая надбавка
         let baseline = vad.noiseFloorEnergy
-        let dynamicFloor = max(0.05, baseline + 0.02)
+        let dynamicFloor = max(0.05, baseline + 0.015)
         let energyIsLow = energyMean < dynamicFloor
 
         // считаем "тишина" только если
@@ -901,12 +906,12 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         // 3. насколько стабилен хвост (partial не менялся)
         let textStableFor = now.timeIntervalSince(lastPartialChangeAt)
 
-        // если реально тишина, можно фиксировать быстрее (~0.25с)
+        // если реально тишина, можно фиксировать быстрее (~0.18с)
         // если не суперчистая тишина, но текст давно не меняется,
-        // мы всё равно не будем держать оператора дольше 0.45с
-        let stabilityThreshold: TimeInterval = isSilentNow ? 0.25 : 0.35
+        // мы всё равно не будем держать оператора дольше ~0.36с
+        let stabilityThreshold: TimeInterval = isSilentNow ? 0.18 : 0.30
         let stableEnough = textStableFor >= stabilityThreshold
-        let hardEnough = textStableFor >= 0.45
+        let hardEnough = textStableFor >= 0.36
 
         // 4. хвост, который бы мы хотели зафиксировать
         let tail = mergeChunksForCommit([pendingConfirmed, lastPartial])
@@ -918,7 +923,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
 
         // если обрыв слова → подожди чуть дольше тишины (~0.45с),
         // кроме случая triggeredByVAD == true (мы только что детектнули реальный стоп речи)
-        let minSilenceForMidWord: TimeInterval = 0.45
+        let minSilenceForMidWord: TimeInterval = 0.34
         if !looksComplete && silentFor < minSilenceForMidWord && !triggeredByVAD {
             // но если мы уже держим текст очень долго (hardEnough),
             // то всё равно пойдём дальше (оператору нужно что-то увидеть)
@@ -926,7 +931,19 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         }
 
         // 5. финально решаем, коммитить ли
-        if (stableEnough && isSilentNow) || hardEnough {
+        if looksComplete {
+            if triggeredByVAD || silentFor >= 0.20 || stableEnough {
+                finalizeTailCommit(tail, at: now)
+                return
+            }
+        }
+
+        if stableEnough && (isSilentNow || triggeredByVAD) {
+            finalizeTailCommit(tail, at: now)
+            return
+        }
+
+        if hardEnough {
             finalizeTailCommit(tail, at: now)
         }
     }
