@@ -8,7 +8,7 @@ final class OverlayWindowManager {
     private init() {}
 
     private var window: OverlayPanel?
-    private var hostingView: NSHostingView<OverlayRootView>?
+    private var hostingView: NSHostingView<AnyView>? // <--- CHANGED
     private var lastContentSize: CGSize = .zero
     private let minimumContentSize = CGSize(width: 320, height: 60)
     private var authState: AuthState?
@@ -21,10 +21,12 @@ final class OverlayWindowManager {
         model.attachAuth(auth)
         if window == nil {
             let panel = OverlayPanel(contentRect: NSRect(x: 0, y: 0, width: 920, height: 160))
-            let root = OverlayRootView(auth: auth)
-                .environmentObject(model)
-                .environmentObject(auth)
-                .background(WindowDragHandle()) // << drag только по «пустому» месту
+            let root = AnyView(
+                OverlayRootView(auth: auth)
+                    .environmentObject(model)
+                    .environmentObject(auth)
+                    .background(WindowDragHandle()) // << drag только по «пустому» месту
+            )
             let hosting = NSHostingView(rootView: root)
             panel.contentView = hosting
             hostingView = hosting
@@ -43,7 +45,7 @@ final class OverlayWindowManager {
             NSApp.activate(ignoringOtherApps: true)
             window?.makeKeyAndOrderFront(nil)
             window?.setIsVisible(true)
-            if hostingView == nil, let existing = window?.contentView as? NSHostingView<OverlayRootView> {
+            if hostingView == nil, let existing = window?.contentView as? NSHostingView<AnyView> {
                 hostingView = existing
             }
         }

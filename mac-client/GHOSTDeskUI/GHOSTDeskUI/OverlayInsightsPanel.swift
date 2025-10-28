@@ -89,7 +89,6 @@ struct InsightsPanel: View {
                     Label("Скрыть", systemImage: "xmark")
                         .labelStyle(.iconOnly)
                 }
-                .buttonStyle(MiniIconButton())
                 .accessibilityLabel("Скрыть инсайты")
             }
         }
