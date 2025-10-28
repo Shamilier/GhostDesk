@@ -135,69 +135,12 @@ struct OverlayRootView: View {
 
     private var listenPanel: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 18) {
 
                 // HEADER
-                HStack(spacing: 12) {
-                    LogoOrb()
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(showTranscript ? "Транскрипт" : "Инсайты в реальном времени")
-                            .font(.headline.weight(.semibold))
-                        HStack(spacing: 8) {
-                            LiveDot(active: overlay.anyChannelIsTranscribing)
-                            Text(overlay.anyChannelIsTranscribing ? "Идёт запись…" : "Готов к запуску")
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(overlay.anyChannelIsTranscribing ? .green.opacity(0.9) : .secondary)
-                        }
-                    }
-
-                    Spacer()
-
-                    let microphonePhase = microphoneChannelState.phase
-                    let microphoneBusy = microphonePhase == .starting || microphonePhase == .stopping
-
-                    Button(showTranscript ? "Показать инсайты" : "Показать транскрипт") {
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
-                            showTranscript.toggle()
-                        }
-                    }
-                    .buttonStyle(GlassPill())
-
-                    Button(action: {
-                        transcriptionCoordinator.setMicrophoneArmed(!transcriptionCoordinator.isMicrophoneArmed)
-                    }) {
-                        Label("Микрофон", systemImage: transcriptionCoordinator.isMicrophoneArmed ? "mic.fill" : "mic")
-                    }
-                    .buttonStyle(GlassPill(tint: transcriptionCoordinator.isMicrophoneArmed ? .pink : .secondary))
-                    .disabled(microphoneBusy)
-
-                    Button(action: {
-                        switch transcriptionCoordinator.overallPhase {
-                        case .idle:
-                            transcriptionCoordinator.startRecording()
-                        case .starting, .running, .stopping:
-                            transcriptionCoordinator.stopAll()
-                        }
-                    }) {
-                        let phase = transcriptionCoordinator.overallPhase
-                        let running  = phase == .running
-                        let starting = phase == .starting
-                        let stopping = phase == .stopping
-                        Label(
-                            starting ? "Запуск…" : (stopping ? "Остановка…" : (running ? "Стоп" : "Старт")),
-                            systemImage: (running || stopping) ? "stop.fill" : "play.fill"
-                        )
-                    }
-                    .buttonStyle(
-                        GlassPill(
-                            tint: {
-                                let phase = transcriptionCoordinator.overallPhase
-                                return (phase == .running || phase == .stopping) ? .red : .accentColor
-                            }()
-                        )
-                    )
-                    .disabled(transcriptionCoordinator.overallPhase == .starting)
+                ViewThatFits(in: .horizontal) {
+                    listenHeaderHorizontal
+                    listenHeaderVertical
                 }
 
                 Divider().overlay(Color.white.opacity(0.10))
@@ -231,8 +174,106 @@ struct OverlayRootView: View {
                 }
             }
         }
-        .frame(maxWidth: 600)   // ↓ уже, чем раньше
-        .padding(.horizontal, 8)
+        .frame(maxWidth: 640)
+        .padding(.horizontal, 12)
+    }
+
+    private var listenHeaderHorizontal: some View {
+        HStack(spacing: 16) {
+            LogoOrb()
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(showTranscript ? "Транскрипт" : "Инсайты в реальном времени")
+                    .font(.headline.weight(.semibold))
+                HStack(spacing: 8) {
+                    LiveDot(active: overlay.anyChannelIsTranscribing)
+                    Text(overlay.anyChannelIsTranscribing ? "Идёт запись…" : "Готов к запуску")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(overlay.anyChannelIsTranscribing ? .green.opacity(0.9) : .secondary)
+                }
+            }
+
+            Spacer(minLength: 12)
+
+            headerControls
+        }
+        .alignmentGuide(.leading) { $0[.leading] }
+    }
+
+    private var listenHeaderVertical: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 14) {
+                LogoOrb()
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(showTranscript ? "Транскрипт" : "Инсайты в реальном времени")
+                        .font(.headline.weight(.semibold))
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 8) {
+                        LiveDot(active: overlay.anyChannelIsTranscribing)
+                        Text(overlay.anyChannelIsTranscribing ? "Идёт запись…" : "Готов к запуску")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(overlay.anyChannelIsTranscribing ? .green.opacity(0.9) : .secondary)
+                    }
+                }
+            }
+
+            headerControls
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var headerControls: some View {
+        let microphonePhase = microphoneChannelState.phase
+        let microphoneBusy = microphonePhase == .starting || microphonePhase == .stopping
+
+        return HStack(spacing: 12) {
+            Button(showTranscript ? "Показать инсайты" : "Показать транскрипт") {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                    showTranscript.toggle()
+                }
+            }
+            .buttonStyle(GlassPill())
+            .fixedSize()
+
+            Button(action: {
+                transcriptionCoordinator.setMicrophoneArmed(!transcriptionCoordinator.isMicrophoneArmed)
+            }) {
+                Label("Микрофон", systemImage: transcriptionCoordinator.isMicrophoneArmed ? "mic.fill" : "mic")
+            }
+            .buttonStyle(GlassPill(tint: transcriptionCoordinator.isMicrophoneArmed ? .pink : .secondary))
+            .disabled(microphoneBusy)
+            .fixedSize()
+
+            Button(action: {
+                switch transcriptionCoordinator.overallPhase {
+                case .idle:
+                    transcriptionCoordinator.startRecording()
+                case .starting, .running, .stopping:
+                    transcriptionCoordinator.stopAll()
+                }
+            }) {
+                let phase = transcriptionCoordinator.overallPhase
+                let running  = phase == .running
+                let starting = phase == .starting
+                let stopping = phase == .stopping
+                Label(
+                    starting ? "Запуск…" : (stopping ? "Остановка…" : (running ? "Стоп" : "Старт")),
+                    systemImage: (running || stopping) ? "stop.fill" : "play.fill"
+                )
+            }
+            .buttonStyle(
+                GlassPill(
+                    tint: {
+                        let phase = transcriptionCoordinator.overallPhase
+                        return (phase == .running || phase == .stopping) ? .red : .accentColor
+                    }()
+                )
+            )
+            .disabled(transcriptionCoordinator.overallPhase == .starting)
+            .fixedSize()
+        }
     }
 
     private struct InsightsPanel: View {
@@ -263,175 +304,307 @@ struct OverlayRootView: View {
         }
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .center, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Быстрые инсайты")
-                            .font(.headline.weight(.semibold))
-                        Text("Выберите сценарий, чтобы получить подсказку для разговора.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    header
 
-                    Spacer(minLength: 12)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .top, spacing: 20) {
+                            intentColumn
+                                .frame(maxWidth: 240)
 
-                    Button(action: onClose) {
-                        Image(systemName: "xmark")
+                            Divider()
+                                .frame(height: 240)
+                                .overlay(Color.white.opacity(0.08))
+
+                            detailCard
+                                .frame(maxWidth: .infinity)
+                        }
+
+                        VStack(alignment: .leading, spacing: 18) {
+                            intentColumn
+                            detailCard
+                        }
                     }
-                    .buttonStyle(MiniIconButton())
-                    .accessibilityLabel("Скрыть инсайты")
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(.vertical, 6)
+            }
+            .scrollIndicators(.hidden)
+        }
+
+        private var header: some View {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Быстрые инсайты")
+                        .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    Text("Выберите сценарий, чтобы получить подсказку для разговора.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
-                LazyVGrid(
-                    columns: [
-                        GridItem(.adaptive(minimum: 180), spacing: 8, alignment: .leading)
-                    ],
-                    alignment: .leading,
-                    spacing: 8
-                ) {
+                Spacer(minLength: 12)
+
+                Button(action: onClose) {
+                    Label("Скрыть", systemImage: "xmark")
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(MiniIconButton())
+                .accessibilityLabel("Скрыть инсайты")
+            }
+        }
+
+        private var intentColumn: some View {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Сценарии")
+                    .font(.caption.weight(.medium))
+                    .textCase(.uppercase)
+                    .foregroundStyle(.secondary)
+
+                VStack(spacing: 12) {
                     ForEach(HintAgent.insightIntents) { intent in
                         let isSelected = selection == intent
-                        Button {
-                            onRequest(intent)
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: intent.symbolName)
-                                Text(intent.buttonTitle)
-                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                    .multilineTextAlignment(.leading)
-                            }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 6)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(GlassPill(tint: isSelected ? .accentColor : .secondary))
-                        .disabled(hint.isRunning && hint.activeIntent != intent)
+                        InsightIntentCard(
+                            intent: intent,
+                            isSelected: isSelected,
+                            isDimmed: hint.isRunning && hint.activeIntent != intent,
+                            action: { onRequest(intent) }
+                        )
+                        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: isSelected)
                     }
                 }
+            }
+        }
 
-                let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        private var detailCard: some View {
+            let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
 
-                VStack(spacing: 0) {
-                    HStack(alignment: .top, spacing: 12) {
+            return VStack(spacing: 0) {
+                HStack(alignment: .top, spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.accentColor.opacity(0.16))
+                            .frame(width: 36, height: 36)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
+                            )
+
                         Image(systemName: cardIcon)
-                            .font(.title3.weight(.semibold))
+                            .font(.system(size: 18, weight: .semibold))
                             .foregroundStyle(.accentColor)
+                    }
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(cardTitle)
-                                .font(.title3.weight(.semibold))
-                            Text(cardSubtitle)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(cardTitle)
+                            .font(.system(size: 18, weight: .semibold, design: .rounded))
+                        Text(cardSubtitle)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
-                        Spacer()
+                    Spacer()
 
-                        VStack(alignment: .trailing, spacing: 6) {
-                            if hint.isRunning {
+                    VStack(alignment: .trailing, spacing: 6) {
+                        if hint.isRunning {
+                            HStack(spacing: 6) {
                                 ProgressView()
                                     .controlSize(.small)
-                                if let started = hint.startedAt {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "clock")
-                                        Text(started, style: .time)
-                                    }
-                                    .font(.caption2)
+                                Text("Готовим подсказку…")
+                                    .font(.caption)
                                     .foregroundStyle(.secondary)
-                                }
-                            } else if let finished = hint.lastFinishedAt {
+                            }
+
+                            if let started = hint.startedAt {
                                 HStack(spacing: 4) {
-                                    Image(systemName: "checkmark.circle")
-                                    Text(finished, style: .time)
+                                    Image(systemName: "clock")
+                                    Text(started, style: .time)
                                 }
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                             }
-                        }
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 18)
-                    .padding(.bottom, 12)
-                    .overlay(alignment: .bottomLeading) {
-                        Divider().overlay(Color.white.opacity(0.10))
-                    }
-
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 10) {
-                            if let err = hint.error {
-                                Label(err, systemImage: "exclamationmark.triangle")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.red)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            } else if !hint.draft.isEmpty {
-                                Text(hint.draft)
-                                    .font(.system(size: 15, weight: .regular, design: .default))
-                                    .foregroundStyle(.primary)
-                                    .textSelection(.enabled)
-                                    .lineSpacing(4)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            } else if hint.isRunning {
-                                Text("GhostDesk анализирует последние реплики…")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .italic()
-                            } else {
-                                Text(placeholder)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+                        } else if let finished = hint.lastFinishedAt {
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                Text(finished, style: .time)
                             }
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 16)
                     }
-                    .frame(minHeight: 140, maxHeight: 220)
-
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 18)
+                .padding(.bottom, 14)
+                .overlay(alignment: .bottomLeading) {
                     Divider().overlay(Color.white.opacity(0.08))
+                }
 
-                    HStack(spacing: 12) {
-                        if !hint.draft.isEmpty {
-                            Button {
-                                #if os(macOS)
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(hint.draft, forType: .string)
-                                #endif
-                            } label: {
-                                Label("Скопировать", systemImage: "doc.on.doc")
-                            }
-                            .buttonStyle(GlassPill())
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if let err = hint.error {
+                            Label(err, systemImage: "exclamationmark.triangle.fill")
+                                .font(.subheadline)
+                                .foregroundStyle(.red)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else if !hint.draft.isEmpty {
+                            Text(hint.draft)
+                                .font(.system(size: 15, weight: .regular, design: .default))
+                                .foregroundStyle(.primary)
+                                .textSelection(.enabled)
+                                .lineSpacing(4)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else if hint.isRunning {
+                            Text("GhostDesk анализирует последние реплики…")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .italic()
+                        } else {
+                            Text(placeholder)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
                         }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 18)
+                }
+                .frame(minHeight: 160, maxHeight: 240)
 
-                        if hint.canStop {
-                            Button(action: hint.cancel) {
-                                Label("Стоп", systemImage: "stop.fill")
-                            }
-                            .buttonStyle(GlassPill(tint: .red))
+                Divider().overlay(Color.white.opacity(0.08))
+
+                HStack(spacing: 12) {
+                    if !hint.draft.isEmpty {
+                        Button {
+                            #if os(macOS)
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(hint.draft, forType: .string)
+                            #endif
+                        } label: {
+                            Label("Скопировать", systemImage: "doc.on.doc")
                         }
+                        .buttonStyle(GlassPill())
+                    }
+
+                    if hint.canStop {
+                        Button(action: hint.cancel) {
+                            Label("Стоп", systemImage: "stop.fill")
+                        }
+                        .buttonStyle(GlassPill(tint: .red))
+                    }
+
+                    Spacer()
+
+                    Button {
+                        hint.draft = ""
+                        hint.error = nil
+                        hint.activeIntent = nil
+                    } label: {
+                        Label("Сбросить", systemImage: "arrow.counterclockwise")
+                    }
+                    .buttonStyle(GlassPill(tint: .secondary))
+                    .disabled(hint.isRunning)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+            }
+            .background(
+                shape
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.05), Color.white.opacity(0.02)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .overlay(shape.stroke(Color.white.opacity(0.09), lineWidth: 1))
+            )
+            .clipShape(shape)
+            .shadow(color: Color.black.opacity(0.15), radius: 18, x: 0, y: 12)
+        }
+    }
+
+    private struct InsightIntentCard: View {
+        let intent: HintAgent.Intent
+        let isSelected: Bool
+        let isDimmed: Bool
+        var action: () -> Void
+
+        private var titleFont: Font {
+            .system(size: 15, weight: .semibold, design: .rounded)
+        }
+
+        private var descriptionFont: Font {
+            .system(size: 12, weight: .medium, design: .default)
+        }
+
+        var body: some View {
+            Button(action: action) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .center) {
+                        Circle()
+                            .fill(Color.white.opacity(0.08))
+                            .frame(width: 30, height: 30)
+                            .overlay(
+                                Image(systemName: intent.symbolName)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(.primary)
+                            )
 
                         Spacer()
 
-                        Button {
-                            hint.draft = ""
-                            hint.error = nil
-                            hint.activeIntent = nil
-                        } label: {
-                            Label("Сбросить", systemImage: "arrow.counterclockwise")
+                        if isSelected {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.accentColor)
+                                .font(.system(size: 16, weight: .semibold))
                         }
-                        .buttonStyle(GlassPill(tint: .secondary))
-                        .disabled(hint.isRunning)
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 14)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(intent.buttonTitle)
+                            .font(titleFont)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(intent.strapline)
+                            .font(descriptionFont)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                .background(
-                    shape
-                        .fill(Color.white.opacity(0.03))
-                        .overlay(shape.stroke(.white.opacity(0.08), lineWidth: 1))
-                )
-                .clipShape(shape)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(background)
             }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .buttonStyle(.plain)
+            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .opacity(isDimmed ? 0.55 : 1)
+        }
+
+        private var background: some View {
+            let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+
+            return shape
+                .fill(
+                    LinearGradient(
+                        colors: gradientColors,
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    shape.stroke(Color.white.opacity(isSelected ? 0.32 : 0.12), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(isSelected ? 0.18 : 0.08), radius: isSelected ? 16 : 10, x: 0, y: isSelected ? 12 : 6)
+        }
+
+        private var gradientColors: [Color] {
+            if isSelected {
+                return [Color.accentColor.opacity(0.32), Color.accentColor.opacity(0.12)]
+            } else {
+                return [Color.white.opacity(0.06), Color.white.opacity(0.02)]
+            }
         }
     }
 
