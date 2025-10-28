@@ -319,6 +319,12 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         return false
     }
 
+    private func isStandaloneSymbolChunk(_ s: String) -> Bool {
+        guard s.count == 1 else { return false }
+        guard let scalar = s.unicodeScalars.first else { return false }
+        return !CharacterSet.alphanumerics.contains(scalar)
+    }
+
     private func streamFriendlyPartial(_ s: String) -> String {
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return "" }
@@ -349,6 +355,24 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         guard !clean.isEmpty else { return }
         let message = OverlayModel.TranscriptMessage(source: sourceKind, text: clean, timestamp: time)
         transcriptLog.append(message)
+    }
+
+    @MainActor
+    private func emitConfirmedChunk(_ chunk: String, at time: Date) {
+        let clean = chunk.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+
+        if isStandaloneSymbolChunk(clean) {
+            guard var last = transcriptLog.popLast() else { return }
+            let mergedText = (last.text + clean).trimmingCharacters(in: .whitespacesAndNewlines)
+            last = OverlayModel.TranscriptMessage(id: last.id, source: last.source, text: mergedText, timestamp: last.timestamp)
+            transcriptLog.append(last)
+            TranscriptBuffer.shared.mergeIntoLastFinal(clean)
+            return
+        }
+
+        appendMessage(clean, at: time)
+        TranscriptBuffer.shared.appendFinal(clean, at: time)
     }
 
     @MainActor
@@ -399,8 +423,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
                 let sentence = confirmedAccumulator[start..<end]
                 let trimmed = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty {
-                    appendMessage(trimmed, at: time)
-                    TranscriptBuffer.shared.appendFinal(trimmed, at: time)
+                    emitConfirmedChunk(trimmed, at: time)
                 }
                 start = end
                 idx = end
@@ -418,8 +441,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         if force {
             let remainder = confirmedAccumulator.trimmingCharacters(in: .whitespacesAndNewlines)
             if !remainder.isEmpty {
-                appendMessage(remainder, at: time)
-                TranscriptBuffer.shared.appendFinal(remainder, at: time)
+                emitConfirmedChunk(remainder, at: time)
             }
             confirmedAccumulator = ""
         }
