@@ -8,6 +8,9 @@ final class OverlayWindowManager {
     private init() {}
 
     private var window: OverlayPanel?
+    private var hostingView: NSHostingView<OverlayRootView>?
+    private var lastContentSize: CGSize = .zero
+    private let minimumContentSize = CGSize(width: 320, height: 60)
     private var authState: AuthState?
     private let snapDistance: CGFloat = 12
 
@@ -22,7 +25,10 @@ final class OverlayWindowManager {
                 .environmentObject(model)
                 .environmentObject(auth)
                 .background(WindowDragHandle()) // << drag только по «пустому» месту
-            panel.contentView = NSHostingView(rootView: root)
+            let hosting = NSHostingView(rootView: root)
+            panel.contentView = hosting
+            hostingView = hosting
+            lastContentSize = .zero
             panel.alphaValue = model.alpha
 
             NSApp.activate(ignoringOtherApps: true)
@@ -37,7 +43,39 @@ final class OverlayWindowManager {
             NSApp.activate(ignoringOtherApps: true)
             window?.makeKeyAndOrderFront(nil)
             window?.setIsVisible(true)
+            if hostingView == nil, let existing = window?.contentView as? NSHostingView<OverlayRootView> {
+                hostingView = existing
+            }
         }
+    }
+
+    func updateSize(to measuredSize: CGSize) {
+        guard measuredSize.width.isFinite,
+              measuredSize.height.isFinite,
+              measuredSize.width > 0,
+              measuredSize.height > 0,
+              let panel = window else { return }
+
+        let width = max(measuredSize.width, minimumContentSize.width)
+        let height = max(measuredSize.height, minimumContentSize.height)
+        let desiredSize = CGSize(width: width, height: height)
+
+        guard lastContentSize != desiredSize else { return }
+        lastContentSize = desiredSize
+
+        var frame = panel.frame
+        let heightDelta = frame.size.height - desiredSize.height
+        frame.origin.y += heightDelta
+        frame.size = NSSize(width: desiredSize.width, height: desiredSize.height)
+
+        if let screen = panel.screen ?? NSScreen.main {
+            frame = clamped(frame, to: screen.visibleFrame)
+        }
+
+        panel.setFrame(frame, display: true, animate: false)
+        panel.contentView?.setFrameSize(frame.size)
+        hostingView?.setFrameSize(frame.size)
+        hostingView?.layoutSubtreeIfNeeded()
     }
 
     func hide() {

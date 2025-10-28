@@ -25,6 +25,7 @@ struct OverlayRootView: View {
     @ObservedObject private var hint = HintAgent.shared
     @State private var showTranscript = true
     @State private var showResponse: Bool = false
+    @State private var islandSize: CGSize = .zero
 
 
 
@@ -60,6 +61,11 @@ struct OverlayRootView: View {
                     .environmentObject(oauthCoordinator)
             }
         }
+        .onPreferenceChange(OverlayIslandSizePreferenceKey.self) { newSize in
+            guard newSize != .zero, newSize != islandSize else { return }
+            islandSize = newSize
+            OverlayWindowManager.shared.updateSize(to: newSize)
+        }
 
 
         // Если когда-нибудь захочешь дать AskVM доступ к активному SCStream,
@@ -67,43 +73,9 @@ struct OverlayRootView: View {
     }
 
     private var authorizedOverlay: some View {
-        ZStack {
-            VStack(spacing: 14) {
-                FloatingToolbar(
-                    isRecording: overlay.anyChannelIsTranscribing,
-                    selected: $selectedTab,
-                    onPrimaryTap: { isExpanded = true },
-                    onEyeTap: { isExpanded.toggle() },
-                    onMenuTap: { overlay.showSettings = true }
-                )
-                .padding(.top, 8)
-
-                if isExpanded {
-                    Group {
-                        if selectedTab == .listen {
-                            listenPanel
-                        } else {
-                            askPanel
-                        }
-                    }
-                    .padding(.horizontal, 8)
-                    .matchedGeometryEffect(id: "island", in: islandNS)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(1)
-                }
-
-                Spacer(minLength: 0)
-
-                    .onChange(of: isExpanded) { v in
-                        if v && selectedTab == .ask { askFocused = true }
-                    }
-                    .onChange(of: selectedTab) { tab in
-                        if isExpanded && tab == .ask { askFocused = true }
-                    }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .animation(.spring(response: 0.35, dampingFraction: 0.86), value: isExpanded)
-
+        VStack(spacing: 0) {
+            overlayIsland
+            Spacer(minLength: 0)
         }
         .onChange(of: overlay.askSolveTrigger) { _ in
             isExpanded = true
@@ -130,6 +102,53 @@ struct OverlayRootView: View {
                 .environmentObject(auth)
         }
 
+    }
+
+    private var overlayIsland: some View {
+        VStack(spacing: 14) {
+            FloatingToolbar(
+                isRecording: overlay.anyChannelIsTranscribing,
+                selected: $selectedTab,
+                onPrimaryTap: { isExpanded = true },
+                onEyeTap: { isExpanded.toggle() },
+                onMenuTap: { overlay.showSettings = true }
+            )
+            .padding(.top, 8)
+
+            if isExpanded {
+                Group {
+                    if selectedTab == .listen {
+                        listenPanel
+                    } else {
+                        askPanel
+                    }
+                }
+                .padding(.horizontal, 8)
+                .matchedGeometryEffect(id: "island", in: islandNS)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(1)
+            }
+        }
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(key: OverlayIslandSizePreferenceKey.self, value: proxy.size)
+            }
+        )
+        .fixedSize(horizontal: false, vertical: true)
+        .animation(.spring(response: 0.35, dampingFraction: 0.86), value: isExpanded)
+        .onChange(of: isExpanded) { v in
+            if v && selectedTab == .ask { askFocused = true }
+        }
+        .onChange(of: selectedTab) { tab in
+            if isExpanded && tab == .ask { askFocused = true }
+        }
+    }
+
+    private struct OverlayIslandSizePreferenceKey: PreferenceKey {
+        static var defaultValue: CGSize = .zero
+        static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+            value = nextValue()
+        }
     }
 
     // MARK: - Listen Panel
