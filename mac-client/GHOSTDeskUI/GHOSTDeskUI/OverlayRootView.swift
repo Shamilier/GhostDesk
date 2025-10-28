@@ -304,28 +304,39 @@ struct OverlayRootView: View {
         }
 
         var body: some View {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    header
+            VStack(alignment: .leading, spacing: 22) {
+                header
 
-                    ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .top, spacing: 20) {
-                            intentColumn
-                                .frame(maxWidth: 240)
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 20) {
+                        intentColumn
+                            .frame(maxWidth: 220)
 
-                            Divider()
-                                .frame(height: 240)
-                                .overlay(Color.white.opacity(0.08))
+                        Divider()
+                            .frame(height: 220)
+                            .overlay(Color.white.opacity(0.08))
 
-                            detailCard
-                                .frame(maxWidth: .infinity)
-                        }
-
-                        VStack(alignment: .leading, spacing: 18) {
-                            intentColumn
-                            detailCard
-                        }
+                        detailCard
                     }
+
+                    VStack(alignment: .leading, spacing: 18) {
+                        intentColumn
+                        detailCard
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .padding(.vertical, 6)
+        }
+
+        private var header: some View {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Быстрые инсайты")
+                        .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    Text("Выберите сценарий, чтобы получить подсказку для разговора.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .padding(.vertical, 6)
@@ -342,6 +353,17 @@ struct OverlayRootView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+
+                Spacer(minLength: 12)
+
+                Button(action: onClose) {
+                    Label("Скрыть", systemImage: "xmark")
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(MiniIconButton())
+                .accessibilityLabel("Скрыть инсайты")
+            }
+        }
 
                 Spacer(minLength: 12)
 
