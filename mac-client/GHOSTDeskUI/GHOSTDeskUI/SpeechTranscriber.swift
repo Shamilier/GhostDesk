@@ -147,6 +147,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
 
     // Soft-confirm timer (дожим хвоста по тишине)
     private var softConfirmTimer: DispatchSourceTimer?
+    private var silenceStartedAt: Date?
 
     // Акумулятор до ровных чанков ~20мс
     private var acc: [Float] = []
@@ -409,7 +410,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         return CharacterSet.alphanumerics.contains(u) // буква/цифра в конце → слово не закончено
     }
 
-    private func scheduleCommit(delay: TimeInterval = 0.22) {
+    private func scheduleCommit(delay: TimeInterval = 0.18) {
         commitTimer?.cancel()
         let t = DispatchSource.makeTimerSource(queue: outputQueue)
         t.schedule(deadline: .now() + delay)
@@ -469,6 +470,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         pendingConfirmed = ""
         confirmedAccumulator = ""
         commitTimer?.cancel(); commitTimer = nil
+        silenceStartedAt = nil
 
         Task {
             do {
@@ -620,6 +622,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
 
         stopSoftConfirmTimer()
         commitTimer?.cancel(); commitTimer = nil
+        silenceStartedAt = nil
 
         Task { await transcriber?.stopStreamTranscription() }
         transcriber = nil
@@ -661,27 +664,39 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
     }
 
     private func softConfirmTick() {
-        // Тихо уже ~0.8 c и partial не менялся ~0.6 c — коммитим хвост
-        let silent = recentEnergyMean(seconds: 0.8) < 0.08
-        let stable = Date().timeIntervalSince(lastPartialChangeAt) > 0.6
+        let now = Date()
+        let silent = recentEnergyMean(seconds: 0.6) < 0.07
+
+        if silent {
+            if silenceStartedAt == nil { silenceStartedAt = now }
+        } else {
+            silenceStartedAt = nil
+            return
+        }
+
+        guard let silenceStart = silenceStartedAt else { return }
+
+        let silentFor = now.timeIntervalSince(silenceStart)
+        let stable = now.timeIntervalSince(lastPartialChangeAt) > 0.45
         let tail = mergeChunksForCommit([pendingConfirmed, lastPartial])
 
-        guard silent, stable, !tail.isEmpty else { return }
+        guard !tail.isEmpty, stable else { return }
 
-        // Не коммитим совсем короткие/обрывочные куски
-        let tailBoundaryChars: Set<Character> = [".","!","?","…",":",";"]
-        let tailHasBoundary = tail.last.map { tailBoundaryChars.contains($0) } ?? false
-        if tail.count > 20 || tailHasBoundary {
-            let timestamp = Date()
-            pendingConfirmed = ""
-            commitTimer?.cancel()
-            commitTimer = nil
-            DispatchQueue.main.async {
-                self.applyConfirmedDelta(tail, at: timestamp, force: true)
-            }
-            lastPartial = ""
-            lastShownPartial = ""
+        let hasBoundary = endsWithBoundary(tail)
+        let looksComplete = hasBoundary || !isLikelyMidWord(tail)
+
+        guard looksComplete || silentFor > 1.0 else { return }
+
+        let timestamp = now
+        pendingConfirmed = ""
+        commitTimer?.cancel()
+        commitTimer = nil
+        DispatchQueue.main.async {
+            self.applyConfirmedDelta(tail, at: timestamp, force: true)
         }
+        lastPartial = ""
+        lastShownPartial = ""
+        lastPartialChangeAt = now
     }
 
     // MARK: - ScreenCaptureKit (audio-only)
