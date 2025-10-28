@@ -542,8 +542,25 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
     }
 
     private func processIncomingSamples(_ floats: [Float]) {
+        let wasInSpeech = vad.inSpeech
         let gated = vad.process(floats)
-        guard !gated.isEmpty else { return }
+        let nowInSpeech = vad.inSpeech
+        var vadTransitionTime: Date?
+
+        if nowInSpeech {
+            silenceStartedAt = nil
+        } else if wasInSpeech && !nowInSpeech {
+            let transition = Date()
+            silenceStartedAt = transition
+            vadTransitionTime = transition
+        }
+
+        guard !gated.isEmpty else {
+            if wasInSpeech && !nowInSpeech {
+                softConfirmTick(triggeredByVAD: true, now: vadTransitionTime ?? Date())
+            }
+            return
+        }
 
         acc.append(contentsOf: gated)
         while acc.count >= minChunk {
@@ -553,6 +570,10 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
             totalFedSamples += frame.count
             append(samples: frame)
             bufferCallback?(frame)
+        }
+
+        if wasInSpeech && !nowInSpeech {
+            softConfirmTick(triggeredByVAD: true, now: vadTransitionTime ?? Date())
         }
     }
 
@@ -774,9 +795,28 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         softConfirmTimer = nil
     }
 
-    private func softConfirmTick() {
-        let now = Date()
-        let silent = recentEnergyMean(seconds: 0.6) < 0.07
+    private func finalizeTailCommit(_ tail: String, at timestamp: Date) {
+        pendingConfirmed = ""
+        commitTimer?.cancel()
+        commitTimer = nil
+        DispatchQueue.main.async {
+            self.applyConfirmedDelta(tail, at: timestamp, force: true)
+        }
+        lastPartial = ""
+        lastShownPartial = ""
+        lastPartialChangeAt = timestamp
+    }
+
+    private func softConfirmTick(triggeredByVAD: Bool = false, now: Date = Date()) {
+        let energySilent = recentEnergyMean(seconds: 0.45) < 0.07
+        let silent: Bool
+
+        if triggeredByVAD {
+            silent = true
+        } else {
+            let vadSilent = !vad.inSpeech
+            silent = vadSilent || energySilent
+        }
 
         if silent {
             if silenceStartedAt == nil { silenceStartedAt = now }
@@ -788,26 +828,21 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         guard let silenceStart = silenceStartedAt else { return }
 
         let silentFor = now.timeIntervalSince(silenceStart)
-        let stable = now.timeIntervalSince(lastPartialChangeAt) > 0.45
+        let stableThreshold: TimeInterval = triggeredByVAD ? 0.25 : 0.35
+        let stable = now.timeIntervalSince(lastPartialChangeAt) > stableThreshold
         let tail = mergeChunksForCommit([pendingConfirmed, lastPartial])
 
         guard !tail.isEmpty, stable else { return }
 
         let hasBoundary = endsWithBoundary(tail)
         let looksComplete = hasBoundary || !isLikelyMidWord(tail)
+        let minSilenceForMidWord: TimeInterval = 0.45
 
-        guard looksComplete || silentFor > 1.0 else { return }
-
-        let timestamp = now
-        pendingConfirmed = ""
-        commitTimer?.cancel()
-        commitTimer = nil
-        DispatchQueue.main.async {
-            self.applyConfirmedDelta(tail, at: timestamp, force: true)
+        if !looksComplete && silentFor < minSilenceForMidWord && !triggeredByVAD {
+            return
         }
-        lastPartial = ""
-        lastShownPartial = ""
-        lastPartialChangeAt = now
+
+        finalizeTailCommit(tail, at: now)
     }
 
     // MARK: - ScreenCaptureKit (audio-only)
