@@ -704,7 +704,7 @@ struct OverlayRootView: View {
                     Spacer(minLength: 0)
                 }
 
-                Text(formattedBody)
+                Text(message.text)
                     .font(.system(size: 14))
                     .foregroundStyle(.primary)
                     .textSelection(.enabled)
@@ -730,35 +730,6 @@ struct OverlayRootView: View {
             .transition(.move(edge: .trailing).combined(with: .opacity))
         }
 
-        private var formattedBody: String {
-            formatIntoSentences(message.text)
-        }
-
-        private func formatIntoSentences(_ text: String) -> String {
-            let terminators: Set<Character> = [".", "?", "!"]
-            var result = ""
-            var index = text.startIndex
-
-            while index < text.endIndex {
-                let ch = text[index]
-                result.append(ch)
-
-                if terminators.contains(ch) {
-                    index = text.index(after: index)
-                    while index < text.endIndex, text[index].isWhitespace {
-                        index = text.index(after: index)
-                    }
-                    if index < text.endIndex {
-                        result.append("\n")
-                    }
-                    continue
-                }
-
-                index = text.index(after: index)
-            }
-
-            return result.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
     }
 
     private struct PartialTranscriptBubble: View {
