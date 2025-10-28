@@ -32,6 +32,7 @@ final class SpeechTranscriber: NSObject, ObservableObject {
     private var provider: TranscriptionProvider?
     private var localProvider: WhisperLocalProvider?
     private var providerSubscriptions: Set<AnyCancellable> = []
+    private var pendingMessageId: UUID?
 
     private let outputQueue: DispatchQueue
     private var stream: SCStream?
@@ -80,6 +81,7 @@ final class SpeechTranscriber: NSObject, ObservableObject {
             TranscriptBuffer.shared.clear()
             TranscriptBuffer.shared.setPartial("", at: Date())
         }
+        pendingMessageId = nil
     }
 
     func start() {
@@ -337,24 +339,104 @@ final class SpeechTranscriber: NSObject, ObservableObject {
         guard !clean.isEmpty else { return }
 
         let now = Date()
+        let hasPendingMessage: Bool
+        var combinedText = clean
 
-        if let lastIndex = transcriptLog.indices.last,
+        if let pendingId = pendingMessageId,
+           let lastIndex = transcriptLog.indices.last,
+           transcriptLog[lastIndex].id == pendingId,
            transcriptLog[lastIndex].source == sourceKind {
+            hasPendingMessage = true
+            combinedText = TranscriptBuffer.mergeSegments(base: transcriptLog[lastIndex].text, addition: clean)
+        } else {
+            if pendingMessageId != nil {
+                pendingMessageId = nil
+            }
+            hasPendingMessage = false
+        }
+
+        var chunks = splitIntoMessageChunks(combinedText)
+        guard !chunks.isEmpty else { return }
+
+        if hasPendingMessage,
+           let lastIndex = transcriptLog.indices.last,
+           transcriptLog[lastIndex].id == pendingMessageId,
+           transcriptLog[lastIndex].source == sourceKind {
+            let current = chunks.removeFirst()
             let lastMessage = transcriptLog[lastIndex]
-            let mergedText = TranscriptBuffer.mergeSegments(base: lastMessage.text, addition: clean)
             let updated = OverlayModel.TranscriptMessage(
                 id: lastMessage.id,
                 source: lastMessage.source,
-                text: mergedText,
+                text: current.text,
                 timestamp: now
             )
             transcriptLog[lastIndex] = updated
-            TranscriptBuffer.shared.replaceLastFinal(with: mergedText, at: now)
+            TranscriptBuffer.shared.replaceLastFinal(with: current.text, at: now)
+            pendingMessageId = current.isTerminal ? nil : lastMessage.id
         } else {
-            let message = OverlayModel.TranscriptMessage(source: sourceKind, text: clean, timestamp: now)
+            let first = chunks.removeFirst()
+            let message = OverlayModel.TranscriptMessage(source: sourceKind, text: first.text, timestamp: now)
             transcriptLog.append(message)
-            TranscriptBuffer.shared.appendFinal(clean, at: now)
+            TranscriptBuffer.shared.appendFinal(first.text, at: now)
+            pendingMessageId = first.isTerminal ? nil : message.id
         }
+
+        for chunk in chunks {
+            let message = OverlayModel.TranscriptMessage(source: sourceKind, text: chunk.text, timestamp: now)
+            transcriptLog.append(message)
+            TranscriptBuffer.shared.appendFinal(chunk.text, at: now)
+            pendingMessageId = chunk.isTerminal ? nil : message.id
+        }
+    }
+
+    private struct MessageChunk {
+        let text: String
+        let isTerminal: Bool
+    }
+
+    private func splitIntoMessageChunks(_ text: String) -> [MessageChunk] {
+        guard !text.isEmpty else { return [] }
+
+        let terminators: Set<Character> = [".", "?", "!"]
+        let trailingClosers = "»\"')]}”’"
+
+        var result: [MessageChunk] = []
+        var start = text.startIndex
+        var index = start
+
+        while index < text.endIndex {
+            let char = text[index]
+            if terminators.contains(char) {
+                var end = text.index(after: index)
+                while end < text.endIndex,
+                      trailingClosers.contains(text[end]) {
+                    end = text.index(after: end)
+                }
+                while end < text.endIndex, text[end].isWhitespace {
+                    end = text.index(after: end)
+                }
+
+                let segment = text[start..<end]
+                let trimmed = segment.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    result.append(MessageChunk(text: trimmed, isTerminal: true))
+                }
+                start = end
+                index = end
+                continue
+            }
+            index = text.index(after: index)
+        }
+
+        if start < text.endIndex {
+            let remainder = text[start..<text.endIndex]
+            let trimmed = remainder.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                result.append(MessageChunk(text: trimmed, isTerminal: false))
+            }
+        }
+
+        return result
     }
 
 }
