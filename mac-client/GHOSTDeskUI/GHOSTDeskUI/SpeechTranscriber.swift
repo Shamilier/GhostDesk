@@ -14,19 +14,36 @@ import CoreGraphics
 fileprivate struct EnergyVAD {
     enum Mode { case passThrough, zeroFill }
 
+    // ===== Публично полезные поля =====
     let sr: Int
     var mode: Mode = .zeroFill
-    var noiseDb: Float = -50
-    let enterMarginDb: Float = 6      // было 8 — чуть легче входить в речь
-    let exitMarginDb: Float = 3       // было 4 — легче удерживать "речь"
-    let hardSpeechFloorDb: Float = -45
-    let emaAlpha: Float = 0.95
-    let hangoverFrames: Int = 18      // было 10 — дольше держим после микропауз
-    let attackFrames: Int = 2         // быстрый старт
 
+    // уровень "шума" в дБ, адаптивный
+    private(set) var noiseDb: Float = -50
+    // оценка фоновой энергии (0...1 условно), пригодится для softConfirmTick()
+    private(set) var noiseFloorEnergy: Float = 0.02
+
+    // текущее состояние "мы считаем, что человек говорит"
     private(set) var inSpeech = false
-    private var hangover = 0
-    private var attack = 0
+
+    // ===== Настройки VAD =====
+    // как быстро считаем, что "он начал говорить"
+    private let attackMs: Double   = 60    // мс подряд громко, чтобы войти в речь
+    // как долго удерживаем "он ещё говорит" после падения
+    private let hangoverMs: Double = 300   // мс молчания, прежде чем сказать что он замолчил
+
+    // пороги относительно шумового пола
+    private let enterMarginDb: Float = 6   // шум +6 дБ -> вход в речь
+    private let exitMarginDb:  Float = 3   // шум +3 дБ -> ещё считаем как речь
+    private let hardSpeechFloorDb: Float = -45
+
+    // сглаживание шума
+    private let emaAlphaDb: Float = 0.95   // чем ближе к 1, тем медленнее движется noiseDb
+    private let emaAlphaEnergy: Float = 0.95
+
+    // накопленные длительности (мс)
+    private var loudMsAccum: Double = 0    // подряд громко
+    private var quietMsAccum: Double = 0   // подряд тихо
 
     fileprivate init(sr: Int, mode: Mode = .zeroFill) {
         self.sr = sr
@@ -36,44 +53,84 @@ fileprivate struct EnergyVAD {
     mutating func process(_ x: [Float]) -> [Float] {
         guard !x.isEmpty else { return x }
 
+        // длительность чанка в мс
+        let chunkDurationMs = (Double(x.count) / Double(sr)) * 1000.0
+
+        // rms
         var rms: Float = 0
         x.withUnsafeBufferPointer { ptr in
             vDSP_rmsqv(ptr.baseAddress!, 1, &rms, vDSP_Length(x.count))
         }
+
+        // dB-подобная оценка
         let db = 20 * log10(max(rms, 1e-7))
 
+        // адаптация шумового пола
+        updateNoiseFloor(db: db, rms: rms)
+
+        // пороги на вход/выход из речи, завязанные на текущий шум
         let thrEnter = max(noiseDb + enterMarginDb, hardSpeechFloorDb)
         let thrExit  = noiseDb + exitMarginDb
 
-        if inSpeech {
-            if db > thrExit {
-                hangover = hangoverFrames
-            } else {
-                hangover = max(0, hangover - 1)
-                if hangover == 0 { inSpeech = false }
-                noiseDb = emaAlpha * noiseDb + (1 - emaAlpha) * db
-            }
+        // "сейчас явно громко относительно шума?"
+        let isClearlyLoud = db > thrEnter
+        // "можно ещё считать речью, даже если упало?"
+        let isMaybeStillSpeech = db > thrExit
+
+        if isClearlyLoud {
+            // уверенная речь
+            loudMsAccum  += chunkDurationMs
+            quietMsAccum  = 0
         } else {
-            noiseDb = emaAlpha * noiseDb + (1 - emaAlpha) * db
-            if db > thrEnter {
-                attack = min(attackFrames, attack + 1)
-                if attack >= attackFrames {
-                    inSpeech = true
-                    hangover = hangoverFrames
-                }
+            // не громко
+            loudMsAccum = 0
+            if isMaybeStillSpeech {
+                // держим статус "он ещё говорит"
+                quietMsAccum = 0
             } else {
-                attack = 0
+                // реально тише порога выхода
+                quietMsAccum += chunkDurationMs
             }
         }
 
+        // переключения состояния
+        if !inSpeech && loudMsAccum >= attackMs {
+            inSpeech = true
+            // вошли в речь → сбрасываем накопленную "тишину"
+            quietMsAccum = 0
+        } else if inSpeech && quietMsAccum >= hangoverMs {
+            inSpeech = false
+            // вышли из речи → сбрасываем накопленную "громкость"
+            loudMsAccum = 0
+        }
+
+        // отдаём чанк в зависимости от состояния
         if inSpeech {
             return x
         } else {
             switch mode {
-            case .passThrough: return []
-            case .zeroFill:    return [Float](repeating: 0, count: x.count)
+            case .passThrough:
+                return []
+            case .zeroFill:
+                return .init(repeating: 0, count: x.count)
             }
         }
+    }
+
+    // аккуратно тянем оценку шума вниз/вверх
+    private mutating func updateNoiseFloor(db: Float, rms: Float) {
+        // noiseDb движем к текущему db, но не даём ему подпрыгнуть резко вверх:
+        // шум растёт медленно.
+        let targetDb = min(db, noiseDb + 1.0)
+        noiseDb = lerp(noiseDb, targetDb, 1 - emaAlphaDb)
+
+        // параллельно считаем базовую энергию шума (линейная шкала ~0...1)
+        let targetEnergy = min(rms, noiseFloorEnergy + 0.02)
+        noiseFloorEnergy = lerp(noiseFloorEnergy, targetEnergy, 1 - emaAlphaEnergy)
+    }
+
+    private func lerp(_ a: Float, _ b: Float, _ t: Float) -> Float {
+        a + (b - a) * t
     }
 }
 
@@ -172,8 +229,10 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         super.init()
 
         if captureMode == .microphone {
-            self.microphoneService = MicrophoneCaptureService(targetSampleRate: Double(sampleRate),
-                                                             queueLabel: "MicrophoneCaptureService.Stream")
+            self.microphoneService = MicrophoneCaptureService(
+                targetSampleRate: Double(sampleRate),
+                queueLabel: "MicrophoneCaptureService.Stream"
+            )
         }
     }
 
@@ -259,7 +318,6 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         }
         return false
     }
-
 
     private func streamFriendlyPartial(_ s: String) -> String {
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -612,9 +670,12 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
                 switch captureMode {
                 case .systemAudio:
                     guard ensureScreenRecordingAuthorized() else {
-                        throw NSError(domain: "SystemAudio", code: 1,
-                                      userInfo: [NSLocalizedDescriptionKey:
-                                                 "Доступ к записи экрана не выдан. Включи и перезапусти приложение."])
+                        throw NSError(
+                            domain: "SystemAudio",
+                            code: 1,
+                            userInfo: [NSLocalizedDescriptionKey:
+                                        "Доступ к записи экрана не выдан. Включи и перезапусти приложение."]
+                        )
                     }
                     try await startSystemAudioStream()
                 case .microphone:
@@ -628,9 +689,6 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
                     download: false   // ничего не качаем
                 )
 
-                // WhisperKit по умолчанию ищет модели прямо в Resources,
-                // поэтому cfg.modelFolder можно не трогать
-                // Если хочешь явно:
                 cfg.modelFolder = Bundle.main.resourcePath
                 let wk = try await WhisperKit(cfg)
                 self.whisper = wk
@@ -646,7 +704,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
                     windowClipTime: 1.0 // подлиннее окно — проще закрывать сегмент
                 )
                 options.maxWindowSeek = sampleRate * 3
-                options.suppressBlank = false            // важно: не душим blank-токены
+                options.suppressBlank = false            // не душим blank-токены
                 options.temperature = 0.0
 
                 let tokenizer = wk.textDecoder.tokenizer!
@@ -673,12 +731,12 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
                         var delta = newChunk.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !delta.isEmpty, !self.isKnownHallucination(delta) else { return }
 
-                        // если на конце нет явной границы и похоже на середину слова — ждём 220мс
                         if !self.endsWithBoundary(delta) && self.isLikelyMidWord(delta) {
-                            self.pendingConfirmed += delta // без вставки пробелов — это может быть продолжение слова
-                            self.scheduleCommit()           // чуть ждём возможное продолжение
+                            // середина слова -> накапливаем и чуть ждём (таймер ~180мс)
+                            self.pendingConfirmed += delta
+                            self.scheduleCommit()
                         } else {
-                            // есть граница — коммитим сразу + добавляем то, что накопили ранее
+                            // кусок выглядит завершённым -> пушим немедленно
                             if !self.pendingConfirmed.isEmpty {
                                 delta = self.pendingConfirmed + delta
                                 self.pendingConfirmed = ""
@@ -692,7 +750,7 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
                         }
                     }
 
-                    // PARTIAL -> живой хвост с «липкостью»
+                    // PARTIAL -> живой хвост с "липкостью"
                     let unconf = state.unconfirmedSegments.map(\.text).joined()
                     let liveRaw = state.currentText.isEmpty ? unconf : state.currentText
                     let live = self.sanitizeTranscription(liveRaw)
@@ -807,18 +865,28 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         lastPartialChangeAt = timestamp
     }
 
+    // NEW VERSION
     private func softConfirmTick(triggeredByVAD: Bool = false, now: Date = Date()) {
-        let energySilent = recentEnergyMean(seconds: 0.45) < 0.07
-        let silent: Bool
+        // 1. оценка тишины через энергию + VAD
+        let energyMean = recentEnergyMean(seconds: 0.45)
 
+        // адаптивный "пол" энергии: шумовая база + небольшая надбавка
+        let baseline = vad.noiseFloorEnergy
+        let dynamicFloor = max(0.05, baseline + 0.02)
+        let energyIsLow = energyMean < dynamicFloor
+
+        // считаем "тишина" только если
+        //   - VAD говорит что уже молчит И
+        //   - энергия реально упала до фона
+        // исключение: triggeredByVAD (только что перешли из речи в тишину) -> сразу верим
+        let isSilentNow: Bool
         if triggeredByVAD {
-            silent = true
+            isSilentNow = true
         } else {
-            let vadSilent = !vad.inSpeech
-            silent = vadSilent || energySilent
+            isSilentNow = (!vad.inSpeech) && energyIsLow
         }
 
-        if silent {
+        if isSilentNow {
             if silenceStartedAt == nil { silenceStartedAt = now }
         } else {
             silenceStartedAt = nil
@@ -827,22 +895,40 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
 
         guard let silenceStart = silenceStartedAt else { return }
 
+        // 2. сколько уже тишины
         let silentFor = now.timeIntervalSince(silenceStart)
-        let stableThreshold: TimeInterval = triggeredByVAD ? 0.25 : 0.35
-        let stable = now.timeIntervalSince(lastPartialChangeAt) > stableThreshold
+
+        // 3. насколько стабилен хвост (partial не менялся)
+        let textStableFor = now.timeIntervalSince(lastPartialChangeAt)
+
+        // если реально тишина, можно фиксировать быстрее (~0.25с)
+        // если не суперчистая тишина, но текст давно не меняется,
+        // мы всё равно не будем держать оператора дольше 0.45с
+        let stabilityThreshold: TimeInterval = isSilentNow ? 0.25 : 0.35
+        let stableEnough = textStableFor >= stabilityThreshold
+        let hardEnough = textStableFor >= 0.45
+
+        // 4. хвост, который бы мы хотели зафиксировать
         let tail = mergeChunksForCommit([pendingConfirmed, lastPartial])
+        guard !tail.isEmpty else { return }
 
-        guard !tail.isEmpty, stable else { return }
-
+        // выглядит ли хвост "законченным"?
         let hasBoundary = endsWithBoundary(tail)
         let looksComplete = hasBoundary || !isLikelyMidWord(tail)
-        let minSilenceForMidWord: TimeInterval = 0.45
 
+        // если обрыв слова → подожди чуть дольше тишины (~0.45с),
+        // кроме случая triggeredByVAD == true (мы только что детектнули реальный стоп речи)
+        let minSilenceForMidWord: TimeInterval = 0.45
         if !looksComplete && silentFor < minSilenceForMidWord && !triggeredByVAD {
-            return
+            // но если мы уже держим текст очень долго (hardEnough),
+            // то всё равно пойдём дальше (оператору нужно что-то увидеть)
+            if !hardEnough { return }
         }
 
-        finalizeTailCommit(tail, at: now)
+        // 5. финально решаем, коммитить ли
+        if (stableEnough && isSilentNow) || hardEnough {
+            finalizeTailCommit(tail, at: now)
+        }
     }
 
     // MARK: - ScreenCaptureKit (audio-only)
@@ -851,8 +937,10 @@ final class SpeechTranscriber: NSObject, ObservableObject, AudioProcessing {
         if let existing = microphoneService {
             service = existing
         } else {
-            let created = MicrophoneCaptureService(targetSampleRate: Double(sampleRate),
-                                                   queueLabel: "MicrophoneCaptureService.Stream")
+            let created = MicrophoneCaptureService(
+                targetSampleRate: Double(sampleRate),
+                queueLabel: "MicrophoneCaptureService.Stream"
+            )
             microphoneService = created
             service = created
         }
@@ -1053,6 +1141,7 @@ extension SpeechTranscriber {
                 var rms: Float = 0
                 vDSP_rmsqv(ptr.baseAddress! + i, 1, &rms, vDSP_Length(hop))
                 let db = 20 * log10(max(rms, 1e-6))
+                // нормализуем энергию примерно в [0,1] относительно ~[-60 дБ .. 0 дБ]
                 let norm = max(0, min(1, (db + 60) / 60))
                 energy.append(norm)
                 i += hop
