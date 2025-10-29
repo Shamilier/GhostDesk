@@ -1,15 +1,64 @@
 "use client";
 
 import { motion, useMotionValue, useReducedMotion, useSpring } from "framer-motion";
-import { ArrowRight, Play, Sparkles } from "lucide-react";
+import { ArrowRight, Play, Radar, Sparkles } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
 const HERO_BENEFITS = [
-  "Реал-тайм: транскрибация и подсказки без задержек",
-  "Невидимый слой: поверх любых приложений и вкладок",
-  "Пост-аналитика: итоги, тезисы, задачи, инсайты",
-  "Архив: поиск по встречам, темам, людям",
-  "Конфиденциальность: локальные фильтры, контроль источников"
+  {
+    label: "Невидимая панель",
+    copy: "Подсказки рядом с курсором, не перекрывают интерфейсы"
+  },
+  {
+    label: "Реал-тайм",
+    copy: "AI реагирует через ~120 мс и подстраивает сценарий разговора"
+  },
+  {
+    label: "Память",
+    copy: "Итоги, тайм-коды и задачи автоматически попадают в архив"
+  }
+];
+
+const HERO_METRICS = [
+  {
+    value: "120 мс",
+    label: "Задержка ответа Ghost AI"
+  },
+  {
+    value: "∞",
+    label: "История встреч и поиск"
+  },
+  {
+    value: "14 дн.",
+    label: "Полноценный trial"
+  }
+];
+
+const PREVIEW_CARDS = [
+  {
+    title: "Live transcript",
+    tag: "00:14",
+    description:
+      "Ghost AI распознаёт собеседника и подсвечивает цитаты, пока разговор продолжается.",
+    position: "-left-2 top-0",
+    gradient: "rgba(91,140,255,0.7), rgba(91,229,255,0.35), rgba(11,11,15,0.0)"
+  },
+  {
+    title: "AI подсказка",
+    tag: "Следующий шаг",
+    description:
+      "Предложите demo-кейс и зафиксируйте дедлайн. Фраза появляется там, где ваш курсор.",
+    position: "right-0 top-32",
+    gradient: "rgba(160,106,255,0.7), rgba(91,140,255,0.35), rgba(11,11,15,0.0)"
+  },
+  {
+    title: "Insight",
+    tag: "UX interview",
+    description:
+      "Ghost AI выделил боль: «сложно передавать контекст между командами». В архив уходит пометка и цитата.",
+    position: "left-6 bottom-2",
+    gradient: "rgba(91,229,255,0.6), rgba(160,106,255,0.3), rgba(11,11,15,0.0)"
+  }
 ];
 
 const heroVariants = {
@@ -82,62 +131,51 @@ export function Hero() {
 
   return (
     <section id="hero" className="relative isolate overflow-hidden pt-32 sm:pt-40">
-      <div className="absolute inset-x-0 top-0 -z-10 flex justify-center">
-        <motion.svg
-          viewBox="0 0 800 600"
-          className="h-[540px] w-[720px] max-w-[95vw]"
-          initial={{ opacity: 0, scale: 0.92 }}
+      <div className="pointer-events-none absolute inset-x-0 top-[-240px] -z-10 flex justify-center">
+        <motion.div
+          className="h-[640px] w-[780px] max-w-[95vw] rounded-[50%] bg-hero-radial opacity-70 blur-[30px]"
+          initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.8, ease: [0.4, 0, 0.2, 1] }}
-          aria-hidden="true"
-        >
-          <defs>
-            <filter id="hero-goo" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="28" result="blur" />
-              <feColorMatrix
-                in="blur"
-                mode="matrix"
-                values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 32 -14"
-                result="goo"
-              />
-              <feBlend in="SourceGraphic" in2="goo" />
-            </filter>
-            <linearGradient id="blobGradient" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#5B8CFF" />
-              <stop offset="100%" stopColor="#A06AFF" />
-            </linearGradient>
-          </defs>
-          <g filter="url(#hero-goo)">
-            <motion.circle
-              cx="240"
-              cy="210"
-              r="130"
-              fill="url(#blobGradient)"
-              animate={shouldReduceMotion ? undefined : { cx: [240, 260, 240], cy: [210, 180, 210] }}
-              transition={{ duration: 14, repeat: shouldReduceMotion ? 0 : Infinity, ease: "easeInOut" }}
-            />
-            <motion.circle
-              cx="520"
-              cy="220"
-              r="160"
-              fill="#A06AFF"
-              fillOpacity={0.85}
-              animate={shouldReduceMotion ? undefined : { cx: [520, 500, 520], cy: [220, 260, 220] }}
-              transition={{ duration: 18, repeat: shouldReduceMotion ? 0 : Infinity, ease: "easeInOut" }}
-            />
-            <motion.circle
-              cx="380"
-              cy="380"
-              r="150"
-              fill="#5BE5FF"
-              fillOpacity={0.45}
-              animate={shouldReduceMotion ? undefined : { cx: [380, 360, 380], cy: [380, 410, 380] }}
-              transition={{ duration: 16, repeat: shouldReduceMotion ? 0 : Infinity, ease: "easeInOut" }}
-            />
-          </g>
-        </motion.svg>
+          transition={{ duration: 0.9, ease: [0.45, 0, 0.2, 1] }}
+        />
       </div>
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-14 px-4 sm:px-6">
+      <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 flex justify-center">
+        <motion.div
+          className="relative h-[620px] w-full max-w-6xl"
+          initial={{ opacity: 0.4 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 1.2, ease: "easeOut" }}
+        >
+          <motion.div
+            className="absolute left-[15%] top-16 h-36 w-36 rounded-full bg-[#5b8cff]/30 blur-3xl"
+            animate={
+              shouldReduceMotion
+                ? { opacity: 0.45 }
+                : { opacity: [0.35, 0.6, 0.35], scale: [1, 1.1, 1] }
+            }
+            transition={{ duration: 12, repeat: shouldReduceMotion ? 0 : Infinity, ease: "easeInOut" }}
+          />
+          <motion.div
+            className="absolute right-[18%] top-24 h-40 w-40 rounded-full bg-[#a06aff]/35 blur-3xl"
+            animate={
+              shouldReduceMotion
+                ? { opacity: 0.45 }
+                : { opacity: [0.35, 0.7, 0.35], scale: [1, 1.08, 1] }
+            }
+            transition={{ duration: 14, repeat: shouldReduceMotion ? 0 : Infinity, ease: "easeInOut" }}
+          />
+          <motion.div
+            className="absolute left-1/2 top-40 h-48 w-48 -translate-x-1/2 rounded-full bg-[#5be5ff]/25 blur-3xl"
+            animate={
+              shouldReduceMotion
+                ? { opacity: 0.4 }
+                : { opacity: [0.3, 0.65, 0.3], scale: [1, 1.12, 1] }
+            }
+            transition={{ duration: 16, repeat: shouldReduceMotion ? 0 : Infinity, ease: "easeInOut" }}
+          />
+        </motion.div>
+      </div>
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-16 px-4 sm:px-6">
         <motion.div
           className="inline-flex items-center gap-3 self-center rounded-full border border-white/10 bg-white/5 px-5 py-2 text-xs font-medium uppercase tracking-[0.32em] text-white/70 sm:self-start"
           variants={heroVariants}
@@ -147,8 +185,8 @@ export function Hero() {
         >
           Невидимый слой для разговоров
         </motion.div>
-        <div className="grid gap-12 lg:grid-cols-[1.05fr,0.95fr] lg:items-center">
-          <div className="space-y-8 text-left">
+        <div className="grid gap-16 lg:grid-cols-[1.04fr,0.96fr] lg:items-center">
+          <div className="space-y-10 text-left">
             <motion.h1
               className="text-4xl font-semibold leading-tight text-white sm:text-5xl md:text-6xl"
               variants={heroVariants}
@@ -156,17 +194,36 @@ export function Hero() {
               animate="visible"
               transition={{ delay: 0.2, duration: 0.7, ease: [0.4, 0, 0.2, 1] }}
             >
-              Говорите свободно. <span className="text-white/70">Остальное — сделает AI</span>
+              Ghost AI — ваш <span className="text-white/70">соведущий</span> на каждой встрече
             </motion.h1>
             <motion.p
-              className="text-base text-white/70 sm:text-lg"
+              className="text-base text-white/75 sm:text-lg"
               variants={heroVariants}
               initial="hidden"
               animate="visible"
               transition={{ delay: 0.35, duration: 0.7, ease: [0.4, 0, 0.2, 1] }}
             >
-              Ghost AI в реальном времени слышит звук и вас, понимает контекст, шепчет подсказки и сохраняет встречу в умный архив. Структура страницы разделяет информацию на блоки, чтобы ничто не отвлекало от разговора.
+              Мы слушаем системный звук, ваш голос и то, что происходит на экране, чтобы мягко подсказывать, фиксировать инсайты и собирать отчёт, пока вы сосредоточены на собеседнике.
             </motion.p>
+            <motion.ul
+              className="grid gap-3 sm:grid-cols-3"
+              initial="hidden"
+              animate="visible"
+              variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.08 } } }}
+            >
+              {HERO_BENEFITS.map(benefit => (
+                <motion.li
+                  key={benefit.label}
+                  variants={{ hidden: { opacity: 0, y: 18 }, visible: { opacity: 1, y: 0 } }}
+                  className="group rounded-2xl border border-white/10 bg-white/5 p-4 transition hover:border-white/25"
+                >
+                  <div className="text-xs font-semibold uppercase tracking-[0.28em] text-white/40">
+                    {benefit.label}
+                  </div>
+                  <p className="mt-2 text-sm text-white/75">{benefit.copy}</p>
+                </motion.li>
+              ))}
+            </motion.ul>
             <motion.div
               className="flex flex-col items-start gap-4 sm:flex-row"
               variants={heroVariants}
@@ -191,45 +248,103 @@ export function Hero() {
               </MagneticButton>
             </motion.div>
             <motion.div
-              className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/10 px-5 py-2 text-xs font-semibold uppercase tracking-[0.28em] text-white"
+              className="flex flex-wrap items-center gap-3"
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.55, duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
             >
-              <Sparkles className="h-4 w-4" />
-              14 дней бесплатно + -18% при годовой подписке
+              <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-5 py-2 text-xs font-semibold uppercase tracking-[0.28em] text-white">
+                <Sparkles className="h-4 w-4" /> 14 дней бесплатно
+              </span>
+              <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-[0.65rem] uppercase tracking-[0.32em] text-white/60">
+                -18% при годовой подписке
+              </span>
             </motion.div>
-          </div>
-          <motion.div
-            className="glass space-y-6 rounded-3xl border border-white/10 bg-white/5 p-6 text-left"
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3, duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
-          >
-            <div className="space-y-2">
-              <h2 className="text-lg font-semibold text-white">Что получите с первого запуска</h2>
-              <p className="text-sm text-white/70">
-                Блоки ниже разбивают возможности на короткие карточки, чтобы не перегружать экран. Выбирайте только то, что нужно.
-              </p>
-            </div>
-            <motion.ul
-              className="grid gap-3 text-left text-sm text-white/70 sm:grid-cols-1"
-              initial="hidden"
-              animate="visible"
-              variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.06 } } }}
+            <motion.dl
+              className="grid gap-3 sm:grid-cols-3"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.65, duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
             >
-              {HERO_BENEFITS.map(benefit => (
-                <motion.li
-                  key={benefit}
-                  variants={{ hidden: { opacity: 0, y: 18 }, visible: { opacity: 1, y: 0 } }}
-                  className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
-                >
-                  <span className="mt-1 inline-flex h-2.5 w-2.5 flex-none rounded-full bg-gradient-to-r from-[#5b8cff] to-[#a06aff]" />
-                  <span>{benefit}</span>
-                </motion.li>
+              {HERO_METRICS.map(metric => (
+                <div key={metric.label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <dt className="text-xs uppercase tracking-[0.3em] text-white/40">{metric.label}</dt>
+                  <dd className="mt-2 text-lg font-semibold text-white">{metric.value}</dd>
+                </div>
               ))}
-            </motion.ul>
-          </motion.div>
+            </motion.dl>
+          </div>
+          <div className="relative flex items-center justify-center">
+            <div className="absolute inset-0 -z-10 rounded-[3rem] border border-white/10 bg-white/5 blur-3xl" aria-hidden />
+            <div className="relative w-full max-w-md">
+              <motion.div
+                className="pointer-events-none absolute -inset-16 rounded-[3.5rem] border border-white/5"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.8, ease: [0.4, 0, 0.2, 1] }}
+              />
+              <div className="relative">
+                <motion.div
+                  className="absolute -left-10 top-8 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs uppercase tracking-[0.3em] text-white/60"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.4, duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+                >
+                  <Radar className="h-4 w-4" /> Live session
+                </motion.div>
+                {PREVIEW_CARDS.map((card, index) => (
+                  <motion.div
+                    key={card.title}
+                    className={`glass group absolute ${card.position} w-[250px] rounded-[1.75rem] border border-white/10 bg-white/5 p-5 shadow-glow sm:w-[280px]`}
+                    style={{
+                      backdropFilter: "blur(26px)"
+                    }}
+                    initial={{ opacity: 0, y: 24, rotate: -2 + index }}
+                    animate={
+                      shouldReduceMotion
+                        ? { opacity: 1, y: 0 }
+                        : {
+                            opacity: 1,
+                            y: [0, index % 2 === 0 ? -12 : -18, 0],
+                            rotate: [-2 + index, -1 + index, -2 + index]
+                          }
+                    }
+                    transition={{ duration: 4 + index, repeat: shouldReduceMotion ? 0 : Infinity, ease: "easeInOut", delay: index * 0.25 }}
+                  >
+                    <motion.div
+                      className="pointer-events-none absolute inset-0 rounded-[inherit] opacity-0 transition duration-500 group-hover:opacity-40"
+                      style={{
+                        background: `linear-gradient(135deg, ${card.gradient})`
+                      }}
+                    />
+                    <div className="relative z-10 space-y-3">
+                      <div className="flex items-center justify-between text-xs uppercase tracking-[0.28em] text-white/60">
+                        <span>{card.title}</span>
+                        <span className="rounded-full border border-white/20 px-2 py-0.5 text-[0.6rem] text-white/60">{card.tag}</span>
+                      </div>
+                      <p className="text-sm text-white/80">{card.description}</p>
+                    </div>
+                  </motion.div>
+                ))}
+                <motion.div
+                  className="glass relative z-10 mx-auto flex w-full flex-col gap-4 rounded-[2.5rem] border border-white/10 bg-white/5 px-8 py-10 text-left"
+                  initial={{ opacity: 0, y: 32 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.35, duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-white">Ghost Desk Overlay</span>
+                    <span className="text-xs uppercase tracking-[0.32em] text-white/40">Real time</span>
+                  </div>
+                  <div className="space-y-3 text-sm text-white/70">
+                    <p>• Умный слой поверх приложений</p>
+                    <p>• Подсказки, заметки и тайм-коды</p>
+                    <p>• Экспорт отчётов по окончании разговора</p>
+                  </div>
+                </motion.div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>

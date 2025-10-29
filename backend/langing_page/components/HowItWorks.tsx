@@ -8,100 +8,127 @@ import { SectionHeading } from "./SectionHeading";
 const STEPS = [
   {
     title: "Подключите источники",
-    description: "Системный звук, микрофон, экран — один клик, и Ghost AI в курсе контекста.",
-    icon: Cable
+    description: "Выберите системный звук, микрофон и экран. Ghost AI подстраивается под ваш сетап за 30 секунд.",
+    icon: Cable,
+    result: "Готовый звуковой контур"
   },
   {
-    title: "В разговоре",
-    description: "Ghost AI транскрибирует и подсказывает в реальном времени прямо поверх вашего экрана.",
-    icon: MessagesSquare
+    title: "Во время разговора",
+    description:
+      "Ghost AI транскрибирует и подсказывает в реальном времени. Подсказки появляются рядом с курсором и не перекрывают интерфейсы.",
+    icon: MessagesSquare,
+    result: "Подсказки, заметки и тайм-коды"
   },
   {
     title: "После звонка",
-    description: "Авто-итоги, заметки, задачи и тайм-коды без ручной рутины.",
-    icon: PenTool
+    description:
+      "AI собирает итоги, задачи, цитаты и распределяет их по папкам. Вы выбираете, что отправить в CRM или командный чат.",
+    icon: PenTool,
+    result: "Конспект + action items"
   },
   {
     title: "В архиве",
-    description: "Умный поиск, темы, участники и AI-анализ по запросу.",
-    icon: Laptop2
+    description:
+      "Поиск по людям, темам и цитатам. Можно запросить AI-аналитику, построить дайджест или выгрузить данные в Notion.",
+    icon: Laptop2,
+    result: "Глубокие инсайты и память"
   }
 ];
 
 const SUPPORTING_POINTS = [
   {
-    title: "Прозрачный контроль",
-    copy: "Выбирайте, какие приложения слушать и что сохранять. Личные разговоры остаются личными.",
-    accent: "Гибкие фильтры позволяют отключить запись в один клик."
+    heading: "Прозрачный контроль",
+    copy: "Вы сами решаете, что записывать. Ghost AI уважает приватные окна, а локальные фильтры отключают запись в один клик."
   },
   {
-    title: "Эффект присутствия",
-    copy: "Подсказки появляются рядом с курсором и не перекрывают важный контент.",
-    accent: "Ключевые формулировки выделены крупным шрифтом, чтобы вы не искали их глазами."
-  },
-  {
-    title: "Память, которой можно доверять",
-    copy: "После встречи доступен структурированный отчёт с задачами и цитатами.",
-    accent: "Экспортируйте его в CRM или отправьте в командный чат за секунды."
+    heading: "Эффект присутствия",
+    copy: "Подсказки появляются мягко, без всплывающих окон и навязчивых вспышек. Вы концентрируетесь на разговоре."
   }
 ];
 
 export function HowItWorks() {
   return (
     <section id="how" className="relative mx-auto mt-32 w-full max-w-6xl px-4 sm:px-6">
-      <div className="grid gap-16 lg:grid-cols-[1.05fr,1fr] lg:items-start">
+      <div className="grid gap-16 lg:grid-cols-[1.02fr,0.98fr] lg:items-start">
         <div className="space-y-10">
           <SectionHeading
             eyebrow="Как это работает"
             title={
               <>
-                Включите Ghost AI один раз — и ведите диалог <span className="text-white/80">вместе с AI</span>
+                Один запуск — и Ghost AI ведёт вас через весь цикл встречи
               </>
             }
-            description="От подключения до архивирования — Ghost AI остаётся невидимым, но помогает на каждом шаге. Каждый этап оформлен отдельным блоком, поэтому вы всегда понимаете, что происходит."
+            description="Весь путь — от подключения до архивирования — происходит в фоне. Ghost AI остаётся невидимым, но помогает на каждом шаге."
             align="left"
           />
           <div className="grid gap-5">
             {SUPPORTING_POINTS.map((point, index) => (
               <motion.div
-                key={point.title}
+                key={point.heading}
                 className="rounded-3xl border border-white/10 bg-white/5 p-6 text-left"
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 18 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, amount: 0.3 }}
                 transition={{ delay: index * 0.06, duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
               >
-                <h3 className="text-base font-semibold text-white sm:text-lg">{point.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-white/70">{point.copy}</p>
-                <p className="mt-3 text-sm font-medium text-white">{point.accent}</p>
+                <h3 className="text-base font-semibold text-white sm:text-lg">{point.heading}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-white/75">{point.copy}</p>
               </motion.div>
             ))}
           </div>
+          <GlassCard className="relative overflow-hidden">
+            <div className="relative z-10 space-y-4 text-left">
+              <span className="text-xs uppercase tracking-[0.32em] text-white/40">Что видит команда</span>
+              <h3 className="text-xl font-semibold text-white">Общий журнал Ghost AI</h3>
+              <p className="text-sm text-white/75">
+                Каждая встреча сохраняется в единую ленту: тайм-коды, решения, action items и заметки. Можно фильтровать по людям и темам.
+              </p>
+              <div className="grid gap-3 text-sm text-white/70">
+                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                  <span>UX Interview — 12:00</span>
+                  <span className="text-xs uppercase tracking-[0.3em] text-white/40">+4 инсайта</span>
+                </div>
+                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                  <span>Sales demo — 15:30</span>
+                  <span className="text-xs uppercase tracking-[0.3em] text-white/40">CRM sync</span>
+                </div>
+              </div>
+            </div>
+          </GlassCard>
         </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {STEPS.map((step, index) => {
-            const Icon = step.icon;
-            return (
-              <GlassCard key={step.title} className="h-full">
+        <div className="relative pl-10">
+          <div className="absolute left-4 top-0 h-full w-px bg-gradient-to-b from-white/40 via-white/10 to-transparent" aria-hidden />
+          <div className="space-y-8">
+            {STEPS.map((step, index) => {
+              const Icon = step.icon;
+              return (
                 <motion.div
-                  className="flex h-full flex-col gap-4"
-                  initial={{ opacity: 0, y: 16 }}
+                  key={step.title}
+                  className="relative pl-10"
+                  initial={{ opacity: 0, y: 24 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true, amount: 0.35 }}
-                  transition={{ delay: index * 0.06, duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+                  transition={{ delay: index * 0.08, duration: 0.55, ease: [0.4, 0, 0.2, 1] }}
                 >
-                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white">
+                  <div className="absolute left-0 top-2 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white">
                     <Icon className="h-5 w-5" />
-                  </span>
-                  <div className="text-xs uppercase tracking-[0.3em] text-white/40">Шаг {index + 1}</div>
-                  <div className="space-y-3">
-                    <h3 className="text-lg font-semibold text-white">{step.title}</h3>
-                    <p className="text-sm leading-relaxed text-white/70">{step.description}</p>
                   </div>
+                  <GlassCard className="ml-2 border-white/15 bg-white/5">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs uppercase tracking-[0.32em] text-white/40">Шаг {index + 1}</span>
+                        <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[0.6rem] uppercase tracking-[0.28em] text-white/60">
+                          {step.result}
+                        </span>
+                      </div>
+                      <h3 className="text-lg font-semibold text-white">{step.title}</h3>
+                      <p className="text-sm leading-relaxed text-white/75">{step.description}</p>
+                    </div>
+                  </GlassCard>
                 </motion.div>
-              </GlassCard>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </div>
     </section>
