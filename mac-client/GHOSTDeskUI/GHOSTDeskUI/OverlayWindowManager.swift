@@ -40,6 +40,10 @@ final class OverlayWindowManager {
             if let screen = NSScreen.main { center(on: screen) }
             window = panel
             applyFocus(model.isFocusable)
+
+            DispatchQueue.main.async { [weak self] in
+                self?.forceUpdateToCurrentContentSize()
+            }
         } else {
             window?.alphaValue = model.alpha
             NSApp.activate(ignoringOtherApps: true)
@@ -62,7 +66,7 @@ final class OverlayWindowManager {
         let height = max(measuredSize.height, minimumContentSize.height)
         let desiredSize = CGSize(width: width, height: height)
 
-        guard lastContentSize != desiredSize else { return }
+        guard !lastContentSize.approximatelyEquals(desiredSize) else { return }
         lastContentSize = desiredSize
 
         var frame = panel.frame
@@ -78,6 +82,28 @@ final class OverlayWindowManager {
         panel.contentView?.setFrameSize(frame.size)
         hostingView?.setFrameSize(frame.size)
         hostingView?.layoutSubtreeIfNeeded()
+    }
+
+    func forceUpdateToCurrentContentSize() {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in
+                self?.forceUpdateToCurrentContentSize()
+            }
+            return
+        }
+
+        guard let hosting = hostingView else { return }
+        hosting.layoutSubtreeIfNeeded()
+
+        var size = hosting.fittingSize
+        if !size.width.isFinite || size.width <= 0 {
+            size.width = hosting.bounds.size.width
+        }
+        if !size.height.isFinite || size.height <= 0 {
+            size.height = hosting.bounds.size.height
+        }
+
+        updateSize(to: size)
     }
 
     func hide() {
@@ -135,6 +161,12 @@ final class OverlayWindowManager {
         if abs(f.minY - visible.minY) < snapDistance { f.origin.y = visible.minY }
         if abs(f.maxY - visible.maxY) < snapDistance { f.origin.y = visible.maxY - f.height }
         return f
+    }
+}
+
+private extension CGSize {
+    func approximatelyEquals(_ other: CGSize, tolerance: CGFloat = 0.5) -> Bool {
+        abs(width - other.width) <= tolerance && abs(height - other.height) <= tolerance
     }
 }
 

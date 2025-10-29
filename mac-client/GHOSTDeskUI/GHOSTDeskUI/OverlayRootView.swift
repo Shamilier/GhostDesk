@@ -138,9 +138,11 @@ struct OverlayRootView: View {
         .animation(.spring(response: 0.35, dampingFraction: 0.86), value: isExpanded)
         .onChange(of: isExpanded) { v in
             if v && selectedTab == .ask { askFocused = true }
+            requestWindowResize()
         }
         .onChange(of: selectedTab) { tab in
             if isExpanded && tab == .ask { askFocused = true }
+            requestWindowResize()
         }
     }
 
@@ -181,6 +183,7 @@ struct OverlayRootView: View {
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
                             showTranscript.toggle()
                         }
+                        requestWindowResize()
                     }
                     .buttonStyle(GlassPill())
 
@@ -253,6 +256,9 @@ struct OverlayRootView: View {
         }
         .frame(maxWidth: 600)   // ↓ уже, чем раньше
         .padding(.horizontal, 8)
+        .onChange(of: showTranscript) { _ in
+            requestWindowResize()
+        }
     }
 
     private struct TranscriptChatView: View {
@@ -584,6 +590,7 @@ struct OverlayRootView: View {
                         askVM.answerDraft = ""
                         askVM.answerError = nil
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) { showResponse = false }
+                        requestWindowResize()
                     },
                     onStop: { askVM.cancelStream() }
                 )
@@ -594,11 +601,22 @@ struct OverlayRootView: View {
         }
         .onChange(of: askVM.isSubmitting) { v in
             if v { withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) { showResponse = true } }
+            requestWindowResize()
         }
         .onChange(of: askVM.answerDraft) { v in
             if !v.isEmpty { showResponse = true }          // на случай мгновенного ответа
+            requestWindowResize()
+        }
+        .onChange(of: showResponse) { _ in
+            requestWindowResize()
         }
         .padding(.horizontal, 8)
+    }
+
+    private func requestWindowResize() {
+        DispatchQueue.main.async {
+            OverlayWindowManager.shared.forceUpdateToCurrentContentSize()
+        }
     }
 
 
