@@ -10,6 +10,7 @@ final class OverlayWindowManager {
     private var window: OverlayPanel?
     private var hostingView: NSHostingView<AnyView>? // <--- CHANGED
     private var lastContentSize: CGSize = .zero
+    private var anchorInWindow: CGPoint?
     private let minimumContentSize = CGSize(width: 320, height: 60)
     private var authState: AuthState?
     private let snapDistance: CGFloat = 12
@@ -31,6 +32,7 @@ final class OverlayWindowManager {
             panel.contentView = hosting
             hostingView = hosting
             lastContentSize = .zero
+            anchorInWindow = nil
             panel.alphaValue = model.alpha
 
             NSApp.activate(ignoringOtherApps: true)
@@ -51,7 +53,7 @@ final class OverlayWindowManager {
         }
     }
 
-    func updateSize(to measuredSize: CGSize) {
+    func updateSize(to measuredSize: CGSize, anchor: CGPoint? = nil) {
         guard measuredSize.width.isFinite,
               measuredSize.height.isFinite,
               measuredSize.width > 0,
@@ -62,22 +64,28 @@ final class OverlayWindowManager {
         let height = max(measuredSize.height, minimumContentSize.height)
         let desiredSize = CGSize(width: width, height: height)
 
-        guard lastContentSize != desiredSize else { return }
+        let sizeChanged = lastContentSize != desiredSize
         lastContentSize = desiredSize
 
-        var frame = panel.frame
-        let heightDelta = frame.size.height - desiredSize.height
-        frame.origin.y += heightDelta
-        frame.size = NSSize(width: desiredSize.width, height: desiredSize.height)
+        if sizeChanged {
+            var frame = panel.frame
+            let heightDelta = frame.size.height - desiredSize.height
+            frame.origin.y += heightDelta
+            frame.size = NSSize(width: desiredSize.width, height: desiredSize.height)
 
-        if let screen = panel.screen ?? NSScreen.main {
-            frame = clamped(frame, to: screen.visibleFrame)
+            if let screen = panel.screen ?? NSScreen.main {
+                frame = clamped(frame, to: screen.visibleFrame)
+            }
+
+            panel.setFrame(frame, display: true, animate: false)
+            panel.contentView?.setFrameSize(frame.size)
+            hostingView?.setFrameSize(frame.size)
+            hostingView?.layoutSubtreeIfNeeded()
         }
 
-        panel.setFrame(frame, display: true, animate: false)
-        panel.contentView?.setFrameSize(frame.size)
-        hostingView?.setFrameSize(frame.size)
-        hostingView?.layoutSubtreeIfNeeded()
+        if let anchor {
+            anchorInWindow = convertToAppKitAnchor(anchor, contentSize: desiredSize)
+        }
     }
 
     func hide() {
@@ -110,8 +118,11 @@ final class OverlayWindowManager {
         guard let w = window else { return }
         let rect = screen.visibleFrame
         var f = w.frame
-        f.origin.x = rect.midX - f.width/2
-        f.origin.y = rect.midY - f.height/2
+        let contentSize = lastContentSize == .zero ? f.size : lastContentSize
+        let fallbackAnchor = CGPoint(x: contentSize.width / 2, y: contentSize.height / 2)
+        let anchor = anchorInWindow ?? fallbackAnchor
+        f.origin.x = rect.midX - anchor.x
+        f.origin.y = rect.midY - anchor.y
         w.setFrame(clamped(f, to: rect), display: true, animate: false)
     }
 
@@ -135,6 +146,10 @@ final class OverlayWindowManager {
         if abs(f.minY - visible.minY) < snapDistance { f.origin.y = visible.minY }
         if abs(f.maxY - visible.maxY) < snapDistance { f.origin.y = visible.maxY - f.height }
         return f
+    }
+
+    private func convertToAppKitAnchor(_ anchor: CGPoint, contentSize: CGSize) -> CGPoint {
+        CGPoint(x: anchor.x, y: contentSize.height - anchor.y)
     }
 }
 
