@@ -60,8 +60,22 @@ final class OverlayWindowManager {
               measuredSize.height > 0,
               let panel = window else { return }
 
-        let width = max(measuredSize.width, minimumContentSize.width)
-        let height = max(measuredSize.height, minimumContentSize.height)
+        hostingView?.layoutSubtreeIfNeeded()
+
+        let intrinsicSize = hostingView?.fittingSize ?? .zero
+
+        let desiredWidth = max(measuredSize.width, intrinsicSize.width)
+        let desiredHeight: CGFloat
+        if intrinsicSize.height.isFinite, intrinsicSize.height > 0 {
+            desiredHeight = intrinsicSize.height
+        } else if measuredSize.height.isFinite, measuredSize.height > 0 {
+            desiredHeight = measuredSize.height
+        } else {
+            desiredHeight = minimumContentSize.height
+        }
+
+        let width = max(desiredWidth, minimumContentSize.width)
+        let height = max(desiredHeight, minimumContentSize.height)
         let desiredSize = CGSize(width: width, height: height)
 
         let sizeChanged = lastContentSize != desiredSize
