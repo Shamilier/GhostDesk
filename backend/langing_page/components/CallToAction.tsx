@@ -29,7 +29,7 @@ export function CallToAction() {
             </span>
             <h2 className="text-3xl font-semibold text-white sm:text-4xl">Готовы говорить уверенно?</h2>
             <p className="text-base text-white/70 sm:text-lg">
-              Запустите GhostDesk бесплатно, подключите любимые сервисы и почувствуйте, как AI держит весь контекст разговора.
+              Запустите Ghost AI бесплатно, подключите любимые сервисы и почувствуйте, как AI держит весь контекст разговора.
               В любой момент вы можете пригласить коллег и расширить план.
             </p>
             <ul className="grid gap-3 text-sm text-white/70 sm:grid-cols-2">
@@ -43,7 +43,7 @@ export function CallToAction() {
           </div>
           <div className="flex flex-col gap-3 sm:flex-row lg:flex-col">
             <motion.a
-              href="https://ghostdesk.app/signup"
+              href="https://ghostai.ru/signup"
               className="btn-primary justify-center px-8 py-4 text-sm uppercase tracking-[0.2em] sm:text-base"
               whileHover={shouldReduceMotion ? undefined : { scale: 1.06 }}
               whileTap={shouldReduceMotion ? undefined : { scale: 0.95 }}

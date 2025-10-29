@@ -1,7 +1,7 @@
 {
-  "name": "ghostdesk_web",
+  "name": "ghostai_web",
   "version": "1.0.0",
-  "description": "Authentication portal for GhostDesk with registration, login, and dashboard",
+  "description": "Authentication portal for Ghost AI with registration, login, and dashboard",
   "main": "src/server.js",
   "type": "commonjs",
   "scripts": {
@@ -9,7 +9,7 @@
     "dev": "nodemon src/server.js"
   },
   "keywords": [
-    "ghostdesk",
+    "ghostai",
     "auth",
     "express",
     "sqlite"

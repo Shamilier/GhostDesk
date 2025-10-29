@@ -83,7 +83,7 @@ export function Navbar() {
       >
         <Link href="#hero" className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.32em] text-white/80">
           <span className="h-2 w-2 rounded-full bg-white" aria-hidden="true" />
-          GhostDesk
+          Ghost AI
         </Link>
         <div className="hidden items-center gap-8 text-sm font-medium text-white/70 lg:flex">
           {NAV_LINKS.map(link => (

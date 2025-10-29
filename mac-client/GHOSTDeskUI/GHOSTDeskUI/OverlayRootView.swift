@@ -833,7 +833,7 @@ private struct HintStrip: View {
                             .buttonStyle(GlassPill(tint: .secondary))
                     }
                 } else if hint.isRunning {
-                    Text("GhostDesk готовит подсказку…")
+                    Text("Ghost AI готовит подсказку…")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .italic()
@@ -1312,7 +1312,7 @@ final class AskVM: ObservableObject {
         serverClient.authorize(&req, token: token)
 
         // multipart/form-data
-        let boundary = "----ghostdesk-\(UUID().uuidString)"
+        let boundary = "----ghostai-\(UUID().uuidString)"
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
         var body = Data()
@@ -1415,7 +1415,7 @@ final class AskVM: ObservableObject {
 private extension AskVM {
     /// Используется, когда авто-запрос вызван без распознанного текста.
     static let fallbackAutoAskPrompt = """
-    Ты — GhostDesk AI-помощник. Пользователь нажал горячую клавишу без голосового контекста. Проанализируй приложенный скриншот, опиши, что на нём происходит, какие проблемы заметны и какие шаги стоит предпринять, чтобы их решить. Отвечай кратко и по делу.
+    Ты — Ghost AI-помощник. Пользователь нажал горячую клавишу без голосового контекста. Проанализируй приложенный скриншот, опиши, что на нём происходит, какие проблемы заметны и какие шаги стоит предпринять, чтобы их решить. Отвечай кратко и по делу.
     """
 }
 

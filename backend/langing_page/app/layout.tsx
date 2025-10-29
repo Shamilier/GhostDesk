@@ -15,22 +15,22 @@ const raleway = Raleway({
 });
 
 export const metadata: Metadata = {
-  title: "GhostDesk — Невидимый AI-ассистент для разговоров",
+  title: "Ghost AI — Невидимый AI-ассистент для разговоров",
   description:
-    "Реал-тайм транскрибация, подсказки и пост-аналитика встреч. GhostDesk работает поверх любых приложений и помогает говорить уверенно.",
-  metadataBase: new URL("https://ghostdesk.app"),
+    "Реал-тайм транскрибация, подсказки и пост-аналитика встреч. Ghost AI работает поверх любых приложений и помогает говорить уверенно.",
+  metadataBase: new URL("https://ghostai.ru"),
   openGraph: {
-    title: "GhostDesk — Невидимый AI-ассистент для разговоров",
+    title: "Ghost AI — Невидимый AI-ассистент для разговоров",
     description:
-      "Реал-тайм транскрибация, подсказки и пост-аналитика встреч. GhostDesk работает поверх любых приложений.",
-    url: "https://ghostdesk.app",
-    siteName: "GhostDesk",
+      "Реал-тайм транскрибация, подсказки и пост-аналитика встреч. Ghost AI работает поверх любых приложений.",
+    url: "https://ghostai.ru",
+    siteName: "Ghost AI",
     images: [
       {
-        url: "https://ghostdesk.app/og-image.png",
+        url: "https://ghostai.ru/og-image.png",
         width: 1200,
         height: 630,
-        alt: "GhostDesk Landing"
+        alt: "Ghost AI Landing"
       }
     ],
     locale: "ru_RU",
@@ -38,10 +38,10 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "GhostDesk — Невидимый AI-ассистент для разговоров",
+    title: "Ghost AI — Невидимый AI-ассистент для разговоров",
     description:
-      "Говорите свободно. GhostDesk транскрибирует, подсказывает и сохраняет встречи в умный архив.",
-    creator: "@ghostdesk"
+      "Говорите свободно. Ghost AI транскрибирует, подсказывает и сохраняет встречи в умный архив.",
+    creator: "@ghostai"
   }
 };
 

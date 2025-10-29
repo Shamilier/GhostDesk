@@ -14,7 +14,7 @@ struct InsightsPanel: View {
     }
 
     private var cardSubtitle: String {
-        selection?.strapline ?? "Выберите подсказку, чтобы GhostDesk проанализировал беседу."
+        selection?.strapline ?? "Выберите подсказку, чтобы Ghost AI проанализировал беседу."
     }
 
     private var cardIcon: String {
@@ -24,7 +24,7 @@ struct InsightsPanel: View {
     private var placeholder: String {
         if let active = hint.activeIntent { return active.placeholder }
         if let last = hint.lastCompletedIntent { return last.placeholder }
-        return "GhostDesk соберёт контекст и предложит идеи, как только вы нажмёте одну из кнопок."
+        return "Ghost AI соберёт контекст и предложит идеи, как только вы нажмёте одну из кнопок."
     }
 
     var body: some View {
@@ -136,7 +136,7 @@ struct InsightsPanel: View {
                                 .lineSpacing(4)
                                 .fixedSize(horizontal: false, vertical: true)
                         } else if hint.isRunning {
-                            Text("GhostDesk анализирует последние реплики…")
+                            Text("Ghost AI анализирует последние реплики…")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                                 .italic()
