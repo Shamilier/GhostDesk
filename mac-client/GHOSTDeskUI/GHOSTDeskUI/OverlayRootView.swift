@@ -25,7 +25,6 @@ struct OverlayRootView: View {
     @ObservedObject private var hint = HintAgent.shared
     @State private var showTranscript = true
     @State private var showResponse: Bool = false
-    @State private var islandSize: CGSize = .zero
 
 
 
@@ -61,13 +60,6 @@ struct OverlayRootView: View {
                     .environmentObject(oauthCoordinator)
             }
         }
-        .onPreferenceChange(OverlayIslandSizePreferenceKey.self) { newSize in
-            guard newSize != .zero, newSize != islandSize else { return }
-            islandSize = newSize
-            OverlayWindowManager.shared.updateSize(to: newSize)
-        }
-
-
         // Если когда-нибудь захочешь дать AskVM доступ к активному SCStream,
         // просто присвой сюда askVM.stream = <твой stream> после старта.
     }
@@ -129,25 +121,24 @@ struct OverlayRootView: View {
                 .zIndex(1)
             }
         }
-        .background(
-            GeometryReader { proxy in
-                Color.clear.preference(key: OverlayIslandSizePreferenceKey.self, value: proxy.size)
-            }
-        )
         .fixedSize(horizontal: false, vertical: true)
         .animation(.spring(response: 0.35, dampingFraction: 0.86), value: isExpanded)
+        .onAppear(perform: requestWindowResize)
         .onChange(of: isExpanded) { v in
             if v && selectedTab == .ask { askFocused = true }
+            requestWindowResize()
         }
         .onChange(of: selectedTab) { tab in
             if isExpanded && tab == .ask { askFocused = true }
+            requestWindowResize()
         }
+        .onChange(of: showTranscript) { _ in requestWindowResize() }
+        .onChange(of: showResponse) { _ in requestWindowResize() }
     }
 
-    private struct OverlayIslandSizePreferenceKey: PreferenceKey {
-        static var defaultValue: CGSize = .zero
-        static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
-            value = nextValue()
+    private func requestWindowResize() {
+        DispatchQueue.main.async {
+            OverlayWindowManager.shared.sizeToFitContent()
         }
     }
 

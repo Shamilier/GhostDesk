@@ -25,13 +25,13 @@ final class OverlayWindowManager {
                 OverlayRootView(auth: auth)
                     .environmentObject(model)
                     .environmentObject(auth)
-                    .background(WindowDragHandle()) // << drag только по «пустому» месту
             )
             let hosting = NSHostingView(rootView: root)
             panel.contentView = hosting
             hostingView = hosting
             lastContentSize = .zero
             panel.alphaValue = model.alpha
+            panel.isMovableByWindowBackground = true
 
             NSApp.activate(ignoringOtherApps: true)
             panel.makeKeyAndOrderFront(nil)
@@ -40,6 +40,7 @@ final class OverlayWindowManager {
             if let screen = NSScreen.main { center(on: screen) }
             window = panel
             applyFocus(model.isFocusable)
+            DispatchQueue.main.async { [weak self] in self?.sizeToFitContent() }
         } else {
             window?.alphaValue = model.alpha
             NSApp.activate(ignoringOtherApps: true)
@@ -48,36 +49,18 @@ final class OverlayWindowManager {
             if hostingView == nil, let existing = window?.contentView as? NSHostingView<AnyView> {
                 hostingView = existing
             }
+            DispatchQueue.main.async { [weak self] in self?.sizeToFitContent() }
         }
     }
 
-    func updateSize(to measuredSize: CGSize) {
-        guard measuredSize.width.isFinite,
-              measuredSize.height.isFinite,
-              measuredSize.width > 0,
-              measuredSize.height > 0,
-              let panel = window else { return }
-
-        let width = max(measuredSize.width, minimumContentSize.width)
-        let height = max(measuredSize.height, minimumContentSize.height)
-        let desiredSize = CGSize(width: width, height: height)
-
-        guard lastContentSize != desiredSize else { return }
-        lastContentSize = desiredSize
-
-        var frame = panel.frame
-        let heightDelta = frame.size.height - desiredSize.height
-        frame.origin.y += heightDelta
-        frame.size = NSSize(width: desiredSize.width, height: desiredSize.height)
-
-        if let screen = panel.screen ?? NSScreen.main {
-            frame = clamped(frame, to: screen.visibleFrame)
+    func sizeToFitContent() {
+        guard let hostingView, hostingView.bounds.size != .zero else { return }
+        hostingView.layoutSubtreeIfNeeded()
+        var fittingSize = hostingView.fittingSize
+        if fittingSize == .zero {
+            fittingSize = hostingView.intrinsicContentSize
         }
-
-        panel.setFrame(frame, display: true, animate: false)
-        panel.contentView?.setFrameSize(frame.size)
-        hostingView?.setFrameSize(frame.size)
-        hostingView?.layoutSubtreeIfNeeded()
+        applyWindowSize(using: fittingSize)
     }
 
     func hide() {
@@ -123,6 +106,35 @@ final class OverlayWindowManager {
 
     // MARK: - Helpers
 
+    private func applyWindowSize(using measuredSize: CGSize) {
+        guard measuredSize.width.isFinite,
+              measuredSize.height.isFinite,
+              measuredSize.width > 0,
+              measuredSize.height > 0,
+              let panel = window else { return }
+
+        let width = max(measuredSize.width, minimumContentSize.width)
+        let height = max(measuredSize.height, minimumContentSize.height)
+        let desiredSize = CGSize(width: width, height: height)
+
+        guard lastContentSize != desiredSize else { return }
+        lastContentSize = desiredSize
+
+        var frame = panel.frame
+        let heightDelta = frame.size.height - desiredSize.height
+        frame.origin.y += heightDelta
+        frame.size = NSSize(width: desiredSize.width, height: desiredSize.height)
+
+        if let screen = panel.screen ?? NSScreen.main {
+            frame = clamped(frame, to: screen.visibleFrame)
+        }
+
+        panel.setFrame(frame, display: true, animate: false)
+        panel.contentView?.setFrameSize(frame.size)
+        hostingView?.setFrameSize(frame.size)
+        hostingView?.layoutSubtreeIfNeeded()
+    }
+
     private func clamped(_ frame: NSRect, to visible: NSRect) -> NSRect {
         var f = frame
         if f.maxX > visible.maxX { f.origin.x = visible.maxX - f.width }
@@ -153,7 +165,7 @@ final class OverlayPanel: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
-        isMovableByWindowBackground = false // двигаем только по DragHandle
+        isMovableByWindowBackground = true
 
         hidesOnDeactivate = false
         isFloatingPanel = true
@@ -217,34 +229,3 @@ final class OverlayPanel: NSPanel {
     }
 }
 
-// SwiftUI-прокладка для drag области (двигает всю панель только за «пустые» места)
-fileprivate struct WindowDragHandle: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let v = NSView()
-        let pan = NSPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.onPan(_:)))
-        v.addGestureRecognizer(pan)
-        return v
-    }
-    func updateNSView(_ nsView: NSView, context: Context) {}
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    final class Coordinator: NSObject {
-        private var last: CGPoint = .zero
-        @objc func onPan(_ g: NSPanGestureRecognizer) {
-            guard let w = g.view?.window else { return }
-            let loc = g.location(in: nil)
-            switch g.state {
-            case .began: last = loc
-            case .changed:
-                let dx = loc.x - last.x
-                let dy = loc.y - last.y
-                var f = w.frame
-                f.origin.x += dx
-                f.origin.y += dy
-                w.setFrame(f, display: true)
-                last = loc
-            default: break
-            }
-        }
-    }
-}
