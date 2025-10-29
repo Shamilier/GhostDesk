@@ -332,7 +332,7 @@ struct OverlayRootView: View {
                         shape
                             .fill(Color.white.opacity(0.03))
                             .overlay(
-                                shape.stroke(Color.white.opacity(0.08), lineWidth: 1)
+                                shape.stroke(Color.white.opacity(0), lineWidth: 0)
                             )
 
                         ScrollView {

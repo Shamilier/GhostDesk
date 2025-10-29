@@ -16,22 +16,9 @@
 		27E6B37D2E8AC61A00C77686 /* GHOSTDeskUI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GHOSTDeskUI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		276FB3132E8D2B4800F148B3 /* Exceptions for "GHOSTDeskUI" folder in "GHOSTDeskUI" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = 557EDE0E2E7ED168002ABA48 /* GHOSTDeskUI */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		557EDE112E7ED168002ABA48 /* GHOSTDeskUI */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				276FB3132E8D2B4800F148B3 /* Exceptions for "GHOSTDeskUI" folder in "GHOSTDeskUI" target */,
-			);
 			path = GHOSTDeskUI;
 			sourceTree = "<group>";
 		};

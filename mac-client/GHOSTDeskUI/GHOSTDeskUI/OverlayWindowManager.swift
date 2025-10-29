@@ -181,7 +181,6 @@ final class OverlayPanel: NSPanel {
         acceptsMouseMovedEvents = true
     }
 
-    // Локальный перехват шорткатов (как в Cluely)
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.type == .keyDown else { return false }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
