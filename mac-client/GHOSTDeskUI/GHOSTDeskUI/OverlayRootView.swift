@@ -9,8 +9,6 @@ import CoreMedia
 import Accelerate
 import CoreGraphics
 
-
-
 struct OverlayRootView: View {
 
     @ObservedObject private var overlay = OverlayModel.shared
@@ -25,12 +23,6 @@ struct OverlayRootView: View {
     @ObservedObject private var hint = HintAgent.shared
     @State private var showTranscript = true
     @State private var showResponse: Bool = false
-    @State private var islandSize: CGSize = .zero
-    @State private var islandAnchor: CGPoint?
-
-
-
-
 
     // наш безопасный ленивый транскрайбер
     @StateObject private var transcriptionCoordinator = TranscriptionCoordinator()
@@ -56,61 +48,28 @@ struct OverlayRootView: View {
         Group {
             if auth.isAuthorized {
                 authorizedOverlay
-
             } else {
                 ApiKeyGateView()
                     .environmentObject(oauthCoordinator)
             }
         }
-        .onPreferenceChange(OverlayIslandSizePreferenceKey.self) { newSize in
-            guard newSize != .zero, newSize != islandSize else { return }
-            islandSize = newSize
-            OverlayWindowManager.shared.updateSize(to: newSize, anchor: islandAnchor)
-        }
-        .onPreferenceChange(OverlayIslandAnchorPreferenceKey.self) { newAnchor in
-            guard islandAnchor != newAnchor else { return }
-            islandAnchor = newAnchor
-            guard let newAnchor, islandSize != .zero else { return }
-            OverlayWindowManager.shared.updateSize(to: islandSize, anchor: newAnchor)
-        }
-
-
-        // Если когда-нибудь захочешь дать AskVM доступ к активному SCStream,
-        // просто присвой сюда askVM.stream = <твой stream> после старта.
     }
 
     private var authorizedOverlay: some View {
-        VStack(spacing: 0) {
-            overlayIsland
-            Spacer(minLength: 0)
-        }
-        .onChange(of: overlay.askSolveTrigger) { _ in
-            isExpanded = true
-            selectedTab = .ask
-            question = ""
-            askFocused = true
-
-            let transcriptTail = makeTranscriptTail(seconds: 40, maxChars: 900)
-            Task {
-                await askVM.submitWithoutQuery(transcript: transcriptTail)
-            }
-        }
-        .background(Color.clear)
-        .coordinateSpace(name: OverlayCoordinateSpaces.root)
-        .sheet(isPresented: Binding(
-            get: { overlay.showSettings },
-            set: { overlay.showSettings = $0 }
-        )) {
-            SettingsSheet(
-                isShown: Binding(
-                    get: { overlay.showSettings },
-                    set: { overlay.showSettings = $0 }
-                )
-            )
-                .environmentObject(auth)
-        }
-
-    }
+         overlayIsland
+         .sheet(isPresented: Binding(
+             get: { overlay.showSettings },
+             set: { overlay.showSettings = $0 }
+         )) {
+             SettingsSheet(
+                 isShown: Binding(
+                     get: { overlay.showSettings },
+                     set: { overlay.showSettings = $0 }
+                 )
+             )
+             .environmentObject(auth)
+         }
+     }
 
     private var overlayIsland: some View {
         VStack(spacing: 14) {
@@ -122,13 +81,6 @@ struct OverlayRootView: View {
                 onMenuTap: { overlay.showSettings = true }
             )
             .padding(.top, 8)
-            .background(
-                GeometryReader { toolbarProxy in
-                    let frame = toolbarProxy.frame(in: .named(OverlayCoordinateSpaces.root))
-                    let center = CGPoint(x: frame.midX, y: frame.midY)
-                    Color.clear.preference(key: OverlayIslandAnchorPreferenceKey.self, value: Optional(center))
-                }
-            )
 
             if isExpanded {
                 Group {
@@ -144,37 +96,44 @@ struct OverlayRootView: View {
                 .zIndex(1)
             }
         }
-        .background(
-            GeometryReader { proxy in
-                Color.clear.preference(key: OverlayIslandSizePreferenceKey.self, value: proxy.size)
-            }
-        )
+        // КЛЮЧЕВОЕ: «островок» ровно по контенту и дергает ресайз окна при изменениим
         .fixedSize(horizontal: false, vertical: true)
+        .overlayAutoResize()
         .animation(.spring(response: 0.35, dampingFraction: 0.86), value: isExpanded)
+        .onChange(of: overlay.askSolveTrigger) { _ in
+            isExpanded = true
+            selectedTab = .ask
+            question = ""
+            askFocused = true
+
+            let transcriptTail = makeTranscriptTail(seconds: 40, maxChars: 900)
+            Task {
+                await askVM.submitWithoutQuery(transcript: transcriptTail)
+            }
+               // во время анимации — коалесим без анимации
+               OverlayWindowManager.shared.scheduleResize(animate: false)
+               // после — один красивый анимированный ресайз
+               OverlayWindowManager.shared.kickFinalResize(after: 0.38)
+        }
         .onChange(of: isExpanded) { v in
             if v && selectedTab == .ask { askFocused = true }
+               OverlayWindowManager.shared.scheduleResize(animate: false)
+               OverlayWindowManager.shared.kickFinalResize(after: 0.38)
         }
         .onChange(of: selectedTab) { tab in
             if isExpanded && tab == .ask { askFocused = true }
+               OverlayWindowManager.shared.scheduleResize(animate: false)
+               OverlayWindowManager.shared.kickFinalResize(after: 0.38)
         }
-    }
-
-    private struct OverlayIslandSizePreferenceKey: PreferenceKey {
-        static var defaultValue: CGSize = .zero
-        static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
-            value = nextValue()
+        .onChange(of: showTranscript) { _ in
+               OverlayWindowManager.shared.scheduleResize(animate: false)
+               OverlayWindowManager.shared.kickFinalResize(after: 0.38)
         }
-    }
-
-    private struct OverlayIslandAnchorPreferenceKey: PreferenceKey {
-        static var defaultValue: CGPoint? = nil
-        static func reduce(value: inout CGPoint?, nextValue: () -> CGPoint?) {
-            value = nextValue() ?? value
+        .onAppear {
+            // первичная подгонка окна под стартовую высоту
+               OverlayWindowManager.shared.scheduleResize(animate: false)
+               OverlayWindowManager.shared.kickFinalResize(after: 0.38)
         }
-    }
-
-    private enum OverlayCoordinateSpaces {
-        static let root = "overlayWindow"
     }
 
     // MARK: - Listen Panel
@@ -207,6 +166,8 @@ struct OverlayRootView: View {
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
                             showTranscript.toggle()
                         }
+                        OverlayWindowManager.shared.scheduleResize(animate: false)
+                        OverlayWindowManager.shared.kickFinalResize(after: 0.30)
                     }
                     .buttonStyle(GlassPill())
 
@@ -256,7 +217,7 @@ struct OverlayRootView: View {
                         autoScroll: $autoScroll
                     )
                     .transition(.opacity.combined(with: .move(edge: .top)))
-                    .frame(minHeight: 320, maxHeight: 520) // ↑ единое окно с чатом
+                    .frame(minHeight: 320, maxHeight: 520) // ↑ окно чата
 
                     HintStrip()
                         .padding(.top, 6)
@@ -277,7 +238,7 @@ struct OverlayRootView: View {
                 }
             }
         }
-        .frame(maxWidth: 600)   // ↓ уже, чем раньше
+        .frame(maxWidth: 600)
         .padding(.horizontal, 8)
     }
 
@@ -358,7 +319,7 @@ struct OverlayRootView: View {
                         }
                         .clipShape(shape)
                     }
-                    .frame(minHeight: 320, maxHeight: .infinity, alignment: .top)
+                    .frame(minHeight: 320, alignment: .top)
                     .onAppear {
                         hasAppeared = true
                         DispatchQueue.main.async {
@@ -387,7 +348,7 @@ struct OverlayRootView: View {
                     }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
 
         private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool = true) {
@@ -549,38 +510,6 @@ struct OverlayRootView: View {
         }
     }
 
-    private struct GlassCard<Content: View>: View {
-        @ViewBuilder var content: () -> Content
-
-        var body: some View {
-            ZStack {
-                let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
-
-                shape
-                    .fill(.thinMaterial) // без дымки и лишних теней
-                    .overlay(
-                        shape.stroke(
-                            LinearGradient(
-                                colors: [.white.opacity(0.45), .white.opacity(0.12)],
-                                startPoint: .topLeading, endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                    )
-
-                // ВАЖНО: контент ВНУТРИ, а не в overlay
-                VStack(spacing: 0) { content() }
-                    .padding(12)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        }
-    }
-
-
-
-
-
     // MARK: - Ask Panel
 
     private var askPanel: some View {
@@ -613,7 +542,6 @@ struct OverlayRootView: View {
                     },
                     onStop: { askVM.cancelStream() }
                 )
-
                 .frame(maxWidth: 860, minHeight: 220)
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -622,15 +550,12 @@ struct OverlayRootView: View {
             if v { withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) { showResponse = true } }
         }
         .onChange(of: askVM.answerDraft) { v in
-            if !v.isEmpty { showResponse = true }          // на случай мгновенного ответа
+            if !v.isEmpty { showResponse = true }
         }
         .padding(.horizontal, 8)
     }
 
-
-
-
-    // MARK: - Header
+    // MARK: - Header (не используется в текущем лэйауте, оставлен как заготовка)
 
     private var header: some View {
         HStack(spacing: 12) {
@@ -646,7 +571,7 @@ struct OverlayRootView: View {
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(overlay.anyChannelIsTranscribing ? .green.opacity(0.9) : .secondary)
                 }
-                    }
+            }
 
             Spacer()
 
@@ -662,7 +587,6 @@ struct OverlayRootView: View {
                 .buttonStyle(GlassPill(tint: transcriptionCoordinator.isMicrophoneArmed ? .pink : .secondary))
                 .disabled(microphoneBusy)
 
-                // Start/Stop управляет обоими каналами
                 Button {
                     switch transcriptionCoordinator.overallPhase {
                     case .idle:
@@ -716,10 +640,9 @@ struct OverlayRootView: View {
 
     // MARK: - Actions
 
-
     // NEW: Submit ВСЕГДА шлёт ВОПРОС + ХВОСТ ТРАНСКРИПТА + СКРИНШОТ
     private func submitQuestion() async {
-        let tr = makeTranscriptTail(seconds: 40, maxChars: 900) // хвост речи как контекст
+        let tr = makeTranscriptTail(seconds: 40, maxChars: 900)
 
         await askVM.submit(
             question: question,
@@ -736,20 +659,18 @@ struct OverlayRootView: View {
         }
     }
 
-    // Хвост транскрибации из текущего транскрайбера (если не подключён TranscriptBuffer)
+    // Хвост транскрибации
     private func makeTranscriptTail(seconds: Int = 40, maxChars: Int = 900) -> String {
         let bufferTail = TranscriptBuffer.shared.tail(lastSeconds: seconds, maxChars: maxChars)
         if !bufferTail.isEmpty {
             return bufferTail
         }
-
         return transcriptionCoordinator.transcriptTail(for: .system, maxChars: maxChars)
     }
-
 }
 
+// MARK: - Универсальная стеклянная карточка
 
-// Универсальная стеклянная карточка без теней
 private struct GlassCard<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
@@ -757,7 +678,6 @@ private struct GlassCard<Content: View>: View {
         let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
 
         ZStack {
-            // материал кладём через background(_:in:), чтобы не ловить ошибки ShapeStyle
             Color.clear
                 .background(.ultraThinMaterial, in: shape)
                 .overlay(
@@ -775,9 +695,11 @@ private struct GlassCard<Content: View>: View {
         }
         .clipShape(shape)
         .contentShape(shape)
+        .fixedSize(horizontal: false, vertical: true) // ← самосжатие по высоте
     }
 }
 
+// MARK: - HintStrip (без изменений)
 
 private struct HintStrip: View {
     @ObservedObject var hint: HintAgent = .shared
@@ -944,10 +866,6 @@ private struct AIResponseCard: View {
     }
 }
 
-
-
-
-
 // MARK: - AskField
 
 private struct AskBar: View {
@@ -971,7 +889,7 @@ private struct AskBar: View {
                     .onSubmit { Task { await onSubmit() } }
             }
             .padding(.horizontal, 14)
-            .frame(height: 42) // ← внутренняя капсула
+            .frame(height: 42)
 
             Button(isSubmitting ? "Submitting…" : "Submit") {
                 Task { await onSubmit() }
@@ -981,7 +899,7 @@ private struct AskBar: View {
             .disabled(isSubmitting)
         }
         .padding(8)
-        .frame(height: 58) // ← ВСЯ панель фиксирована по высоте
+        .frame(height: 58)
         .background(
             Color.clear.background(
                 .ultraThinMaterial,
@@ -995,8 +913,6 @@ private struct AskBar: View {
     }
 }
 
-
-
 private struct AskInputBar: View {
     @Binding var text: String
     @Binding var smart: Bool
@@ -1006,7 +922,6 @@ private struct AskInputBar: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            // маленький чип Smart
             Button {
                 smart.toggle()
             } label: {
@@ -1024,11 +939,9 @@ private struct AskInputBar: View {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(.white.opacity(0.18), lineWidth: 1)
                 )
-
             }
             .buttonStyle(.plain)
 
-            // поле ввода — одна строка, как у Glass
             TextField("Ask about your screen or audio", text: $text)
                 .focused(focus)
                 .textFieldStyle(.plain)
@@ -1038,7 +951,7 @@ private struct AskInputBar: View {
                     Capsule().fill(Color.white.opacity(0.06))
                         .overlay(Capsule().stroke(.white.opacity(0.10), lineWidth: 1))
                 )
-                .onSubmit { onSubmit() }                    // Enter отправляет
+                .onSubmit { onSubmit() }
                 .disableAutocorrection(true)
 
             Button(isSubmitting ? "Submitting…" : "Submit") {
@@ -1052,11 +965,10 @@ private struct AskInputBar: View {
             )
             .foregroundStyle(.white)
             .disabled(isSubmitting)
-            .keyboardShortcut(.return, modifiers: [.command]) // ⌘↩ тоже шлёт
+            .keyboardShortcut(.return, modifiers: [.command])
         }
     }
 }
-
 
 private struct ResponseCard: View {
     var questionTitle: String
@@ -1069,7 +981,6 @@ private struct ResponseCard: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            // header
             HStack(spacing: 10) {
                 HStack(spacing: 8) {
                     Circle().fill(Color.white.opacity(0.15)).frame(width: 10, height: 10)
@@ -1099,7 +1010,6 @@ private struct ResponseCard: View {
 
             Divider().overlay(Color.white.opacity(0.08))
 
-            // body
             ScrollView {
                 Text(bodyText)
                     .textSelection(.enabled)
@@ -1112,7 +1022,6 @@ private struct ResponseCard: View {
         .padding(6)
     }
 }
-
 
 private struct MiniIconButton: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
@@ -1128,35 +1037,26 @@ private struct MiniIconButton: ButtonStyle {
     }
 }
 
-
 // AskField
 struct AskField: View {
     @Binding var text: String
     @Binding var smartEnabled: Bool
     var isSubmitting: Bool = false
     var onSubmit: () async -> Void
-    var focused: FocusState<Bool>.Binding    // ← новый параметр
-
-
-    
+    var focused: FocusState<Bool>.Binding
 
     var body: some View {
         HStack(spacing: 10) {
-            // Заменить TextField на TextEditor, если нужна многострочность
             TextEditor(text: $text)
-                .focused(focused)                         // ← фокус сюда
+                .focused(focused)
                 .font(.title3.weight(.medium))
-                .frame(minHeight: 80)                     // чуть больше, чтобы точно хватало
+                .frame(minHeight: 80)
                 .padding(.vertical, 10)
                 .padding(.leading, 12)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color(NSColor.textBackgroundColor))
                 )
-
-
-
-
 
             HStack(spacing: 8) {
                 Toggle(isOn: $smartEnabled) {
@@ -1168,11 +1068,10 @@ struct AskField: View {
                 .tint(.accentColor.opacity(0.7))
 
                 Button(isSubmitting ? "Submitting…" : "Submit") {
-                    print("Submit tapped")
                     Task { await onSubmit() }
                 }
                 .buttonStyle(GlassPill(tint: .accentColor))
-                .disabled(isSubmitting) // ← только этот флаг
+                .disabled(isSubmitting)
             }
             .padding(.trailing, 8)
         }
@@ -1181,9 +1080,6 @@ struct AskField: View {
         .allowsHitTesting(true)
     }
 }
-
-
-
 
 // MARK: - GlassPill
 
@@ -1210,18 +1106,19 @@ struct GlassPill: ButtonStyle {
     }
 }
 
+// ====== ВСПОМОГАТЕЛЬНЫЕ ШТУКИ (как были) ======
 
 @MainActor
 final class AskVM: ObservableObject {
     @Published var isSubmitting: Bool = false
-    @Published var answerDraft: String = ""          // сюда льётся стрим
+    @Published var answerDraft: String = ""
     @Published var answerError: String? = nil
-    @Published var canStop: Bool = false             // показать кнопку «Стоп»
+    @Published var canStop: Bool = false
 
-    private var streamTask: Task<Void, Never>?       // чтобы уметь отменять
+    private var streamTask: Task<Void, Never>?
     private var streamRunID = UUID()
     private let baseURL = URL(string: "https://api.disciplaner.online")!
-    private let sessionId = UUID().uuidString        // одна сессия на жизненный цикл VM
+    private let sessionId = UUID().uuidString
     private let auth: AuthState
     private let serverClient: ServerClient
 
@@ -1238,7 +1135,6 @@ final class AskVM: ObservableObject {
         isSubmitting = false
     }
 
-    // Submit ВСЕГДА отправляет вопрос + хвост транскрибации + скриншот
     func submit(
         question: String,
         smart: Bool,
@@ -1292,7 +1188,6 @@ final class AskVM: ObservableObject {
         let runID = UUID()
         streamRunID = runID
 
-        // сброс состояния ответа
         answerDraft = ""
         answerError = nil
         isSubmitting = true
@@ -1305,10 +1200,8 @@ final class AskVM: ObservableObject {
         }
 
         do {
-            // 1) делаем PNG снимок
             let png = try await Snapshot.captureAllDisplaysPNG(maxSide: 1280)
 
-            // 2) шлём на сервер и читаем SSE стрим
             try await sendToGPT(
                 endpoint: endpoint,
                 question: question,
@@ -1323,7 +1216,6 @@ final class AskVM: ObservableObject {
         }
     }
 
-    // MARK: - сетевой вызов со streaming SSE
     private func sendToGPT(
         endpoint: String,
         question: String?,
@@ -1334,10 +1226,9 @@ final class AskVM: ObservableObject {
     ) async throws {
         var req = URLRequest(url: baseURL.appendingPathComponent(endpoint))
         req.httpMethod = "POST"
-        req.setValue("text/event-stream", forHTTPHeaderField: "Accept") // ожидаем SSE
+        req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         serverClient.authorize(&req, token: token)
 
-        // multipart/form-data
         let boundary = "----ghostai-\(UUID().uuidString)"
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
@@ -1355,24 +1246,20 @@ final class AskVM: ObservableObject {
             body.append("\r\n".data(using: .utf8)!)
         }
 
-        // обязательные поля
         if let question {
             appendField("question", question)
         }
         appendField("smart", smart ? "true" : "false")
         appendField("sessionId", sessionId)
 
-        // контекст речи — trimmed хвост транскрибации (может быть пустым)
         let transcriptPayload = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         appendField("transcript", transcriptPayload)
 
-        // скрин — ВСЕГДА для Submit
         appendFile("image", filename: "screen.png", mime: "image/png", data: screenshotPNG)
 
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
         req.httpBody = body
 
-        // 3) читаем SSE построчно.
         let (bytes, response) = try await URLSession.shared.bytes(for: req)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
 
@@ -1385,15 +1272,14 @@ final class AskVM: ObservableObject {
             var errText = "HTTP \(http.statusCode) \(HTTPURLResponse.localizedString(forStatusCode: http.statusCode))"
             var data = Data()
             do {
-                for try await b in bytes { data.append(b) } // вычитаем тело ошибки
+                for try await b in bytes { data.append(b) }
                 if let s = String(data: data, encoding: .utf8), !s.isEmpty { errText += "\n\(s)" }
             } catch {}
             throw NSError(domain: "net", code: http.statusCode,
                           userInfo: [NSLocalizedDescriptionKey: errText])
         }
 
-        // читаем строки SSE
-        var buffer = "" // микро-батчинг на клиенте, чтобы не дёргать UI по 1 символу
+        var buffer = ""
         var lastFlush = Date()
 
         for try await line in bytes.lines {
@@ -1409,7 +1295,6 @@ final class AskVM: ObservableObject {
 
             if type == "delta", let text = obj["text"] as? String {
                 buffer += text
-                // флашим если буфер вырос или пришёл знак конца фразы, или прошло 60 мс
                 let shouldFlushByLen = buffer.count >= 64
                 let shouldFlushByPunct = buffer.last.map { ".,!?;:\n ".contains($0) } ?? false
                 let shouldFlushByTime = Date().timeIntervalSince(lastFlush) > 0.06
@@ -1419,7 +1304,6 @@ final class AskVM: ObservableObject {
                     lastFlush = Date()
                 }
             } else if type == "done" {
-                // добросим хвост
                 if !buffer.isEmpty {
                     answerDraft += buffer
                     buffer.removeAll()
@@ -1432,19 +1316,15 @@ final class AskVM: ObservableObject {
             }
         }
 
-        if !buffer.isEmpty {
-            answerDraft += buffer
-        }
+        if !buffer.isEmpty { answerDraft += buffer }
     }
 }
 
 private extension AskVM {
-    /// Используется, когда авто-запрос вызван без распознанного текста.
     static let fallbackAutoAskPrompt = """
     Ты — Ghost AI-помощник. Пользователь нажал горячую клавишу без голосового контекста. Проанализируй приложенный скриншот, опиши, что на нём происходит, какие проблемы заметны и какие шаги стоит предпринять, чтобы их решить. Отвечай кратко и по делу.
     """
 }
-
 
 // MARK: - Внутренняя однофайловая реализация снимка экрана
 
@@ -1456,14 +1336,12 @@ private enum Snapshot {
         case internalFailure(String)
     }
 
-    /// Публичная точка: PNG сжат до `maxSide` по большей стороне
     static func captureAllDisplaysPNG(maxSide: CGFloat = 1280) async throws -> Data {
         let cg = try await captureAllDisplaysCGImage(width: 1280, height: 720, showsCursor: false, timeout: 2.0)
         let resized = resizeCGImage(cg, maxSide: maxSide)
         return pngData(from: resized)
     }
 
-    /// Одноразовый CGImage через временный SCStream
     static func captureAllDisplaysCGImage(
         width: Int = 1280,
         height: Int = 720,
@@ -1472,30 +1350,19 @@ private enum Snapshot {
     ) async throws -> CGImage {
 
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-
         guard let main = content.displays.first else { throw Error.noDisplays }
 
-
-        // let filter = SCContentFilter(display: main, excludingWindows: [], exceptingWindows: [])
-
-        // Самый совместимый вариант для разных SDK/macOS
         let filter = SCContentFilter(display: main, excludingWindows: [])
 
-        // Конфигурация стрима
         let cfg = SCStreamConfiguration()
-        cfg.width  = (width  / 8) * 8        // чуть выравниваем для стабильности
+        cfg.width  = (width  / 8) * 8
         cfg.height = (height / 8) * 8
         cfg.showsCursor = showsCursor
         cfg.pixelFormat = kCVPixelFormatType_32BGRA
-        // Можно задать минимальный интервал кадров, но для "одного кадра" не критично:
-        // cfg.minimumFrameInterval = CMTime(value: 1, timescale: 30)
 
-        // Захват одного кадра
         let grabber = SingleFrameGrabber(queueLabel: "sc.single.grab.queue")
         return try await grabber.grab(filter: filter, configuration: cfg, timeout: timeout)
     }
-
-    // MARK: - Helpers (PNG и ресайз)
 
     private static func pngData(from cg: CGImage) -> Data {
         let data = NSMutableData()
@@ -1527,8 +1394,6 @@ private enum Snapshot {
         return ctx.makeImage()!
     }
 
-    // MARK: - Одноразовый граббер кадра
-
     private final class SingleFrameGrabber: NSObject, SCStreamOutput, SCStreamDelegate {
         private var stream: SCStream?
         private var cont: CheckedContinuation<CGImage, Swift.Error>?
@@ -1548,14 +1413,12 @@ private enum Snapshot {
             let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
             self.stream = stream
 
-            // Обрабатываем кадры НЕ на main
             try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
             try await stream.startCapture()
 
             return try await withTaskCancellationHandler(operation: {
                 try await withCheckedThrowingContinuation { (c: CheckedContinuation<CGImage, Swift.Error>) in
                     self.cont = c
-                    // Таймаут
                     self.queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
                         guard let self, !self.finished else { return }
                         self.finish(error: Snapshot.Error.timeout)
@@ -1571,8 +1434,6 @@ private enum Snapshot {
             stream = nil
         }
 
-        // MARK: - SCStreamOutput
-
         func stream(_ stream: SCStream, didOutputSampleBuffer sb: CMSampleBuffer, of type: SCStreamOutputType) {
             guard type == .screen, let pb = sb.imageBuffer else { return }
             let ciImage = CIImage(cvPixelBuffer: pb)
@@ -1581,13 +1442,9 @@ private enum Snapshot {
             }
         }
 
-        // MARK: - SCStreamDelegate
-
         func stream(_ stream: SCStream, didStopWithError error: Swift.Error) {
             finish(error: error)
         }
-
-        // MARK: - Finish helpers
 
         private func finish(image: CGImage) {
             queue.async {
@@ -1611,7 +1468,6 @@ private enum Snapshot {
     }
 }
 
-
 #if os(macOS)
 import AppKit
 import SwiftUI
@@ -1620,14 +1476,14 @@ public struct WindowChromeTweaks: NSViewRepresentable {
     public init() {}
 
     public func makeNSView(context: Context) -> NSView {
-        let v = NSView()                       // ← обычный NSView без хит-тест трюков
+        let v = NSView()
         v.wantsLayer = true
         v.layer?.backgroundColor = NSColor.clear.cgColor
         DispatchQueue.main.async {
             if let w = v.window {
                 w.titleVisibility = .hidden
                 w.titlebarAppearsTransparent = true
-                w.isMovableByWindowBackground = false   // ← ВАЖНО: выключено
+                w.isMovableByWindowBackground = false
                 w.backgroundColor = .clear
             }
         }
@@ -1643,14 +1499,9 @@ public struct WindowChromeTweaks: View {
 }
 #endif
 
-
-
-
-
 import Foundation
 
-/// Потокобезопасный буфер последних реплик с таймстемпами.
-/// Хранит подтверждённые куски и актуальный partial-хвост.
+/// Потокобезопасный буфер последних реплик
 final class TranscriptBuffer {
     static let shared = TranscriptBuffer()
     private init() {}
@@ -1662,19 +1513,16 @@ final class TranscriptBuffer {
 
     private static let noSpaceCharacters: Set<Character> = [".", "?", "!", ",", ";", ":", "…"]
 
-    /// Добавить подтверждённый (final) текст
     func appendFinal(_ text: String, at time: Date = .init()) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
         q.async {
             self.items.append(.init(t: time, text: clean))
-            // ограничим рост буфера (по числу элементов)
             if self.items.count > 500 { self.items.removeFirst(self.items.count - 500) }
-            self.partial = nil // сбрасываем текущий хвост
+            self.partial = nil
         }
     }
 
-    /// Слить кусок в конец последнего final-сообщения (если оно есть)
     func mergeIntoLastFinal(_ text: String) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
@@ -1686,7 +1534,6 @@ final class TranscriptBuffer {
         }
     }
 
-    /// Заменить последний final-текст новым значением
     func replaceLastFinal(with text: String, at time: Date = .init()) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
@@ -1703,7 +1550,6 @@ final class TranscriptBuffer {
         }
     }
 
-    /// Обновить текущий partial (неподтверждённый) текст
     func setPartial(_ text: String, at time: Date = .init()) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         q.async {
@@ -1732,7 +1578,6 @@ final class TranscriptBuffer {
         return result
     }
 
-    /// Хвост за N секунд, с жёстной усечкой по символам.
     func tail(lastSeconds: Int = 40, maxChars: Int = 900) -> String {
         let now = Date()
         return q.sync {
@@ -1740,9 +1585,7 @@ final class TranscriptBuffer {
             var chunks = items.filter { $0.t >= cut }.map { $0.text }
             if let p = partial, p.t >= cut { chunks.append(p.text) }
             var s = chunks.joined(separator: " ")
-            if s.count > maxChars {
-                s = String(s.suffix(maxChars))
-            }
+            if s.count > maxChars { s = String(s.suffix(maxChars)) }
             return s.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
@@ -1755,4 +1598,32 @@ final class TranscriptBuffer {
     }
 }
 
+// === АВТО-РЕСАЙЗ МОДИФИКАТОР ===
 
+private enum OverlaySizeKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
+}
+
+private struct OverlayAutoResize: ViewModifier {
+    @State private var last: CGSize = .zero
+    func body(content: Content) -> some View {
+        content
+            .fixedSize(horizontal: false, vertical: true)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: OverlaySizeKey.self, value: proxy.size)
+                }
+            )
+            .onPreferenceChange(OverlaySizeKey.self) { new in
+                if abs(new.width - last.width) > 0.5 || abs(new.height - last.height) > 0.5 {
+                    last = new
+                    OverlayWindowManager.shared.scheduleResize(animate: false, coalesce: 0.02)
+                }
+            }
+    }
+}
+
+extension View {
+    func overlayAutoResize() -> some View { modifier(OverlayAutoResize()) }
+}

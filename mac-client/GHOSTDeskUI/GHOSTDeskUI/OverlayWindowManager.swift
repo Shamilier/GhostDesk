@@ -8,26 +8,49 @@ final class OverlayWindowManager {
     private init() {}
 
     private var window: OverlayPanel?
-    private var hostingView: NSHostingView<AnyView>? // <--- CHANGED
+    private var hostingView: NSHostingView<AnyView>?   // ✅ конкретный тип
     private var lastContentSize: CGSize = .zero
     private var anchorInWindow: CGPoint?
     private let minimumContentSize = CGSize(width: 320, height: 60)
     private var authState: AuthState?
     private let snapDistance: CGFloat = 12
+    // MARK: - Coalesced resize
+    private var resizeWorkItem: DispatchWorkItem?
+
+    /// Коалесим частые ресайзы (во время анимации) и делаем их без анимации.
+    func scheduleResize(animate: Bool = false, coalesce: TimeInterval = 0.02) {
+        resizeWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.resizeToFitContent(animate: animate)
+        }
+        resizeWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + coalesce, execute: item)
+    }
+
+    /// Один финальный анимированный ресайз после завершения spring-анимации SwiftUI.
+    func kickFinalResize(after delay: TimeInterval = 0.38) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.resizeToFitContent(animate: true)
+        }
+    }
+    
 
     var isVisible: Bool { window?.isVisible ?? false }
 
     func show(model: OverlayModel, auth: AuthState) {
         authState = auth
         model.attachAuth(auth)
+
         if window == nil {
             let panel = OverlayPanel(contentRect: NSRect(x: 0, y: 0, width: 920, height: 160))
+
             let root = AnyView(
                 OverlayRootView(auth: auth)
                     .environmentObject(model)
                     .environmentObject(auth)
-                    .background(WindowDragHandle()) // << drag только по «пустому» месту
+                    .background(WindowDragHandle())   // drag только по «пустому» месту
             )
+
             let hosting = NSHostingView(rootView: root)
             panel.contentView = hosting
             hostingView = hosting
@@ -42,64 +65,28 @@ final class OverlayWindowManager {
             if let screen = NSScreen.main { center(on: screen) }
             window = panel
             applyFocus(model.isFocusable)
+
+            // ✅ сразу подгоняем размер под фактический контент
+            resizeToFitContent(animate: false)
+
         } else {
             window?.alphaValue = model.alpha
             NSApp.activate(ignoringOtherApps: true)
             window?.makeKeyAndOrderFront(nil)
             window?.setIsVisible(true)
+
             if hostingView == nil, let existing = window?.contentView as? NSHostingView<AnyView> {
                 hostingView = existing
             }
+
+            // ✅ на всякий случай подгоняем и тут, если до этого окно «раздулось»
+            resizeToFitContent()
         }
     }
 
-    func updateSize(to measuredSize: CGSize, anchor: CGPoint? = nil) {
-        guard measuredSize.width.isFinite,
-              measuredSize.height.isFinite,
-              measuredSize.width > 0,
-              measuredSize.height > 0,
-              let panel = window else { return }
-
-        hostingView?.layoutSubtreeIfNeeded()
-
-        let intrinsicSize = hostingView?.fittingSize ?? .zero
-
-        let desiredWidth = max(measuredSize.width, intrinsicSize.width)
-        let desiredHeight: CGFloat
-        if intrinsicSize.height.isFinite, intrinsicSize.height > 0 {
-            desiredHeight = intrinsicSize.height
-        } else if measuredSize.height.isFinite, measuredSize.height > 0 {
-            desiredHeight = measuredSize.height
-        } else {
-            desiredHeight = minimumContentSize.height
-        }
-
-        let width = max(desiredWidth, minimumContentSize.width)
-        let height = max(desiredHeight, minimumContentSize.height)
-        let desiredSize = CGSize(width: width, height: height)
-
-        let sizeChanged = lastContentSize != desiredSize
-        lastContentSize = desiredSize
-
-        if sizeChanged {
-            var frame = panel.frame
-            let heightDelta = frame.size.height - desiredSize.height
-            frame.origin.y += heightDelta
-            frame.size = NSSize(width: desiredSize.width, height: desiredSize.height)
-
-            if let screen = panel.screen ?? NSScreen.main {
-                frame = clamped(frame, to: screen.visibleFrame)
-            }
-
-            panel.setFrame(frame, display: true, animate: false)
-            panel.contentView?.setFrameSize(frame.size)
-            hostingView?.setFrameSize(frame.size)
-            hostingView?.layoutSubtreeIfNeeded()
-        }
-
-        if let anchor {
-            anchorInWindow = convertToAppKitAnchor(anchor, contentSize: desiredSize)
-        }
+    func updateSize(to newContentSize: CGSize, animate: Bool = true) {
+        lastContentSize = newContentSize
+        resizeToFitContent(animate: animate)
     }
 
     func hide() {
@@ -167,6 +154,92 @@ final class OverlayWindowManager {
     }
 }
 
+private extension OverlayWindowManager {
+    func resolveDimension(
+        measured rawMeasured: CGFloat,
+        intrinsic rawIntrinsic: CGFloat,
+        previous rawPrevious: CGFloat,
+        minimum: CGFloat
+    ) -> CGFloat {
+        let measured = rawMeasured.isFinite && rawMeasured > 0 ? rawMeasured : nil
+        let intrinsic = rawIntrinsic.isFinite && rawIntrinsic > 0 ? rawIntrinsic : nil
+        let previous = rawPrevious.isFinite && rawPrevious > 0 ? rawPrevious : minimum
+
+        if let measured, let intrinsic {
+            let shrinking = measured < previous || intrinsic < previous
+            let candidate = shrinking ? min(measured, intrinsic) : max(measured, intrinsic)
+            return max(candidate, minimum)
+        }
+        if let measured { return max(measured, minimum) }
+        if let intrinsic { return max(intrinsic, minimum) }
+        return max(previous, minimum)
+    }
+}
+
+extension OverlayWindowManager {
+    /// Подгоняет NSPanel под intrinsic-размер SwiftUI-контента (без бесконечных высот).
+    func resizeToFitContent(animate: Bool = true) {
+        guard let window = window else { return }
+
+        // Берём уже существующий NSHostingView<AnyView>
+        let hosting = hostingView ?? (window.contentView as? NSHostingView<AnyView>)
+        guard let hosting else { return }
+
+        hosting.layoutSubtreeIfNeeded()
+
+        // Текущая доступная ширина контента внутри окна
+        let contentRect = window.contentLayoutRect
+        let availableWidth = max(minimumContentSize.width, floor(contentRect.width))
+
+        // Верхняя граница по высоте — видимая область экрана минус небольшой зазор
+        let screen = window.screen ?? NSScreen.main
+        let screenMaxH = screen?.visibleFrame.height ?? 1200
+        let hardMaxHeight = max(200, floor(screenMaxH - 20)) // clamp сверху
+
+        // ✅ Измеряем: фиксируем ШИРИНУ и ставим БЕЗОПАСНУЮ "потолочную" высоту
+        let originalSize = hosting.frame.size
+        hosting.setFrameSize(NSSize(width: availableWidth, height: hardMaxHeight))
+        hosting.layoutSubtreeIfNeeded()
+        var measured = hosting.fittingSize
+        // вернуть как было (на всякий)
+        hosting.setFrameSize(originalSize)
+
+        // Санитизируем
+        if !measured.width.isFinite || measured.width <= 0 { measured.width = availableWidth }
+        if !measured.height.isFinite || measured.height <= 0 { measured.height = minimumContentSize.height }
+
+        var targetW = max(measured.width,  minimumContentSize.width)
+        var targetH = max(measured.height, minimumContentSize.height)
+        targetH = min(targetH, hardMaxHeight) // жёсткий потолок по высоте
+
+        // Ранний выход, если почти не изменилось
+        if abs(targetW - lastContentSize.width) < 0.5 &&
+           abs(targetH - lastContentSize.height) < 0.5 {
+            return
+        }
+
+        // Якорим верх окна (чтобы при сжатии не «падало» вниз)
+        var frame = window.frame
+        let deltaH = targetH - frame.size.height
+        if abs(deltaH) < hardMaxHeight * 2 {
+            frame.origin.y -= deltaH
+        }
+        frame.size.height = targetH
+        frame.size.width  = max(frame.size.width, targetW) // или = targetW, если нужна автоподгонка ширины
+
+        if animate {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.25
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                window.animator().setFrame(frame, display: true)
+            }
+        } else {
+            window.setFrame(frame, display: true)
+        }
+        lastContentSize = CGSize(width: targetW, height: targetH)
+    }
+}
+
 // Безрамочная панель, поверх всех окон
 final class OverlayPanel: NSPanel {
     override var canBecomeKey: Bool { true }
@@ -191,7 +264,7 @@ final class OverlayPanel: NSPanel {
 
         level = .statusBar
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .stationary]
-        sharingType = .none      // best-effort «невидимость» в шаринге
+        sharingType = .none
         acceptsMouseMovedEvents = true
     }
 
