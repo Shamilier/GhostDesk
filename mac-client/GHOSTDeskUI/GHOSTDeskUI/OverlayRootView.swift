@@ -26,6 +26,7 @@ struct OverlayRootView: View {
     @State private var showTranscript = true
     @State private var showResponse: Bool = false
     @State private var islandSize: CGSize = .zero
+    @State private var islandAnchor: CGPoint?
 
 
 
@@ -64,7 +65,13 @@ struct OverlayRootView: View {
         .onPreferenceChange(OverlayIslandSizePreferenceKey.self) { newSize in
             guard newSize != .zero, newSize != islandSize else { return }
             islandSize = newSize
-            OverlayWindowManager.shared.updateSize(to: newSize)
+            OverlayWindowManager.shared.updateSize(to: newSize, anchor: islandAnchor)
+        }
+        .onPreferenceChange(OverlayIslandAnchorPreferenceKey.self) { newAnchor in
+            guard islandAnchor != newAnchor else { return }
+            islandAnchor = newAnchor
+            guard let newAnchor, islandSize != .zero else { return }
+            OverlayWindowManager.shared.updateSize(to: islandSize, anchor: newAnchor)
         }
 
 
@@ -89,6 +96,7 @@ struct OverlayRootView: View {
             }
         }
         .background(Color.clear)
+        .coordinateSpace(name: OverlayCoordinateSpaces.root)
         .sheet(isPresented: Binding(
             get: { overlay.showSettings },
             set: { overlay.showSettings = $0 }
@@ -114,6 +122,13 @@ struct OverlayRootView: View {
                 onMenuTap: { overlay.showSettings = true }
             )
             .padding(.top, 8)
+            .background(
+                GeometryReader { toolbarProxy in
+                    let frame = toolbarProxy.frame(in: .named(OverlayCoordinateSpaces.root))
+                    let center = CGPoint(x: frame.midX, y: frame.midY)
+                    Color.clear.preference(key: OverlayIslandAnchorPreferenceKey.self, value: Optional(center))
+                }
+            )
 
             if isExpanded {
                 Group {
@@ -149,6 +164,17 @@ struct OverlayRootView: View {
         static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
             value = nextValue()
         }
+    }
+
+    private struct OverlayIslandAnchorPreferenceKey: PreferenceKey {
+        static var defaultValue: CGPoint? = nil
+        static func reduce(value: inout CGPoint?, nextValue: () -> CGPoint?) {
+            value = nextValue() ?? value
+        }
+    }
+
+    private enum OverlayCoordinateSpaces {
+        static let root = "overlayWindow"
     }
 
     // MARK: - Listen Panel
