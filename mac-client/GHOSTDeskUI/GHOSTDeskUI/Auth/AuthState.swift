@@ -31,7 +31,7 @@ final class AuthState: ObservableObject {
     }
 
     private enum Keychain {
-        static let service = Bundle.main.bundleIdentifier ?? "com.ghostdesk.overlay"
+        static let service = Bundle.main.bundleIdentifier ?? "com.ghostai.overlay"
         static let accessAccount = "AuthState.accessToken"
         static let refreshAccount = "AuthState.refreshToken"
     }
@@ -70,7 +70,7 @@ final class AuthState: ObservableObject {
         if isAuthorized { return nil }
         if let lastError { return lastError }
         guard let session else {
-            return "Выполните вход, чтобы пользоваться GhostDesk."
+            return "Выполните вход, чтобы пользоваться Ghost AI."
         }
         if session.accessToken.isEmpty || session.refreshToken.isEmpty {
             return "Недействительная сессия. Пожалуйста, войдите снова."

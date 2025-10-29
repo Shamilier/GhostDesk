@@ -34,7 +34,7 @@ const USE_CASES = [
     icon: BriefcaseBusiness,
     headline: "Закрывайте сделки быстрее",
     summary:
-      "GhostDesk фиксирует боли клиента, помнит договорённости и подсказывает, что предложить дальше — без переключения вкладок.",
+      "Ghost AI фиксирует боли клиента, помнит договорённости и подсказывает, что предложить дальше — без переключения вкладок.",
     bullets: [
       "Темплейты ответов на возражения и FAQ",
       "Подбор action items и сроков по каждой встрече",
@@ -108,8 +108,8 @@ export function UseCases() {
     <section id="use-cases" className="relative mx-auto mt-32 w-full max-w-6xl px-4 sm:px-6">
       <SectionHeading
         eyebrow="Сценарии"
-        title="GhostDesk усиливает каждую встречу"
-        description="Выбирайте сценарий, и вы увидите, как GhostDesk структурирует разговор. Карточки можно пролистывать без перезагрузки страницы — каждый кейс раскрывается в отдельном блоке."
+        title="Ghost AI усиливает каждую встречу"
+        description="Выбирайте сценарий, и вы увидите, как Ghost AI структурирует разговор. Карточки можно пролистывать без перезагрузки страницы — каждый кейс раскрывается в отдельном блоке."
       />
       <div className="mt-16 grid gap-12 lg:grid-cols-[1.2fr,0.9fr]">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

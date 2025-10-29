@@ -2,10 +2,10 @@ const crypto = require('crypto');
 const db = require('./db');
 
 const clients = {
-  'ghostdesk-desktop': {
-    id: 'ghostdesk-desktop',
-    name: 'GhostDesk Desktop',
-    redirectUris: ['ghostdesk://auth/callback'],
+  'ghostai-desktop': {
+    id: 'ghostai-desktop',
+    name: 'Ghost AI Desktop',
+    redirectUris: ['ghostai://auth/callback'],
     public: true,
     scope: 'profile',
     prompt: 'login',

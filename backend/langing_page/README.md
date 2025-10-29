@@ -1,6 +1,6 @@
-# GhostDesk Landing
+# Ghost AI Landing
 
-Современный лендинг GhostDesk на Next.js 14 (App Router) с Tailwind CSS, Framer Motion и стеклянной эстетикой.
+Современный лендинг Ghost AI на Next.js 14 (App Router) с Tailwind CSS, Framer Motion и стеклянной эстетикой.
 
 ## Быстрый старт
 
@@ -49,4 +49,4 @@ npm run dev
 - Навбар липкий, имеет scrollspy и мобильное меню
 - Для добавления новых секций дублируйте паттерны `GlassCard` + motion-анимации
 
-Готово к дальнейшей кастомизации и интеграции с продуктом GhostDesk.
+Готово к дальнейшей кастомизации и интеграции с продуктом Ghost AI.

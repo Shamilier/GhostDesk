@@ -276,7 +276,7 @@ final class HintAgent: ObservableObject {
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         serverClient.authorize(&req, token: token)
 
-        let boundary = "----ghostdesk-hint-\(UUID().uuidString)"
+        let boundary = "----ghostai-hint-\(UUID().uuidString)"
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
         var body = Data()

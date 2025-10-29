@@ -95,7 +95,7 @@ struct ApiKeyGateView: View {
     private var card: some View {
         VStack(spacing: 28) {
             VStack(spacing: 10) {
-                Text("Добро пожаловать в GhostDesk")
+                Text("Добро пожаловать в Ghost AI")
                     .font(.system(size: 28, weight: .semibold, design: .rounded))
                     .foregroundStyle(GD.textPrimary)
                     .multilineTextAlignment(.center)
@@ -134,7 +134,7 @@ struct ApiKeyGateView: View {
                     .tint(.white)
             }
 
-            Text("Powered by GhostDesk AI")
+            Text("Powered by Ghost AI")
                 .font(.system(size: 13, weight: .regular, design: .rounded))
                 .foregroundStyle(GD.textTertiary)
                 .padding(.top, 4)

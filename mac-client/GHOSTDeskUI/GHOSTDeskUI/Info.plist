@@ -6,10 +6,10 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.ghostdesk.overlay.auth</string>
+                      <string>com.ghostai.overlay.auth</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>ghostdesk</string>
+                             <string>ghostai</string>
 			</array>
 		</dict>
 	</array>

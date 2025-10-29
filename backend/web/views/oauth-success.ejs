@@ -6,15 +6,15 @@
     <%- include('partials/header') %>
     <main class="page narrow">
       <section class="auth-card oauth-success-card">
-        <h1>GhostDesk готов!</h1>
+        <h1>Ghost AI готов!</h1>
         <p class="auth-subtitle">
           <% if (statusMessage) { %>
           <%= statusMessage %>
           <% } else { %>
-          Мы открываем десктопное приложение GhostDesk. Если этого не произошло автоматически, воспользуйтесь кнопкой ниже.
+          Мы открываем десктопное приложение Ghost AI. Если этого не произошло автоматически, воспользуйтесь кнопкой ниже.
           <% } %>
         </p>
-        <a class="primary-button full-width" href="<%= redirectUrl %>" data-redirect-url>Открыть GhostDesk</a>
+        <a class="primary-button full-width" href="<%= redirectUrl %>" data-redirect-url>Открыть Ghost AI</a>
         <div class="manual-fallback is-hidden" data-manual-fallback>
           <p>
             Если приложение не запустилось, нажмите кнопку ещё раз или скопируйте ссылку: <span class="redirect-url"><%= redirectUrl %></span>

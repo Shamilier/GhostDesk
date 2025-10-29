@@ -11,9 +11,9 @@ const FOOTER_LINKS = [
 ];
 
 const SOCIALS = [
-  { label: "Twitter", href: "https://twitter.com/ghostdesk" },
-  { label: "LinkedIn", href: "https://linkedin.com/company/ghostdesk" },
-  { label: "Product Hunt", href: "https://www.producthunt.com/posts/ghostdesk" }
+  { label: "Twitter", href: "https://twitter.com/ghostai" },
+  { label: "LinkedIn", href: "https://linkedin.com/company/ghostai" },
+  { label: "Product Hunt", href: "https://www.producthunt.com/posts/ghost-ai" }
 ];
 
 export function Footer() {
@@ -23,10 +23,10 @@ export function Footer() {
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.32em] text-white/60">
             <span className="h-2 w-2 rounded-full bg-white" aria-hidden="true" />
-            GhostDesk
+            Ghost AI
           </div>
           <p className="mt-3 max-w-md text-sm text-white/70">
-            Невидимый AI-ассистент для разговоров. GhostDesk помогает слышать, понимать и действовать уверенно в каждом диалоге.
+            Невидимый AI-ассистент для разговоров. Ghost AI помогает слышать, понимать и действовать уверенно в каждом диалоге.
           </p>
         </div>
         <nav className="flex flex-1 flex-col gap-6 text-sm text-white/70 sm:flex-row sm:items-center sm:justify-end sm:gap-8">
@@ -46,7 +46,7 @@ export function Footer() {
           </div>
         </nav>
       </div>
-      <div className="mt-8 text-xs text-white/40">© {new Date().getFullYear()} GhostDesk. Все права защищены.</div>
+      <div className="mt-8 text-xs text-white/40">© {new Date().getFullYear()} Ghost AI. Все права защищены.</div>
     </footer>
   );
 }

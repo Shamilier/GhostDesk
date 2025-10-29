@@ -57,7 +57,7 @@ export function FeaturesGrid() {
       <SectionHeading
         eyebrow="Возможности"
         title="Все, что нужно для ясных разговоров"
-        description="GhostDesk объединяет звук, экран и AI-подсказки в один невидимый слой. Каждый блок — отдельный инструмент, который работает автономно и не перегружает ваш экран."
+        description="Ghost AI объединяет звук, экран и AI-подсказки в один невидимый слой. Каждый блок — отдельный инструмент, который работает автономно и не перегружает ваш экран."
       />
       <div className="mt-16 grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
         {FEATURES.map((feature, index) => {

@@ -11,7 +11,7 @@ const oauth = require('./oauth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const SESSION_SECRET = process.env.SESSION_SECRET || 'ghostdesk_super_secret';
+const SESSION_SECRET = process.env.SESSION_SECRET || 'ghostai_super_secret';
 const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 32);
 
 app.set('view engine', 'ejs');
@@ -27,7 +27,7 @@ app.use(
         "style-src": ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         "font-src": ["'self'", 'https://fonts.gstatic.com', 'data:'],
         "form-action": ["'self'", 'https://disciplaner.online', 'https://app.disciplaner.online'],
-        "navigate-to": ["'self'", 'ghostdesk:'],
+        "navigate-to": ["'self'", 'ghostai:'],
       },
     },
     crossOriginEmbedderPolicy: false,
@@ -68,7 +68,7 @@ app.use((req, res, next) => {
   next();
 });
 
-const DEFAULT_CLIENT_ID = 'ghostdesk-desktop';
+const DEFAULT_CLIENT_ID = 'ghostai-desktop';
 
 const normalizeOAuthQuery = (query = {}) => {
   if (!query.client_id || !query.redirect_uri || !query.code_challenge) {
@@ -227,7 +227,7 @@ const formatAsIso8601 = (value) => {
 
 app.get('/', (req, res) => {
   res.render('index', {
-    title: 'GhostDesk Portal',
+    title: 'Ghost AI Portal',
     features: [
       'Мгновенное подключение к встречам и звонкам',
       'AI-подсказки и сценарии разговоров в реальном времени',
@@ -330,7 +330,7 @@ app.post('/register', async (req, res) => {
           }
 
           req.session.user = { id: this.lastID, email: email.toLowerCase(), token, plan: 'free', referral: referral || null };
-          req.session.flash = { type: 'success', message: 'Добро пожаловать в GhostDesk!' };
+          req.session.flash = { type: 'success', message: 'Добро пожаловать в Ghost AI!' };
 
           if (oauthContinue) {
             req.session.oauthReturnTo = null;
@@ -348,7 +348,7 @@ app.post('/register', async (req, res) => {
                 return res.render('oauth-success', {
                   title: 'Авторизация завершена',
                   redirectUrl: oauthSuccess.redirectUrl,
-                  statusMessage: statusMessage || 'Ваш аккаунт создан. Переключаемся в приложение GhostDesk.',
+                  statusMessage: statusMessage || 'Ваш аккаунт создан. Переключаемся в приложение Ghost AI.',
                   fallbackUrl: '/dashboard',
                 });
               }
@@ -454,7 +454,7 @@ app.post('/login', (req, res) => {
           return res.render('oauth-success', {
             title: 'Авторизация завершена',
             redirectUrl: oauthSuccess.redirectUrl,
-            statusMessage: statusMessage || 'С возвращением! Переключаемся в приложение GhostDesk.',
+            statusMessage: statusMessage || 'С возвращением! Переключаемся в приложение Ghost AI.',
             fallbackUrl: '/dashboard',
           });
         }
@@ -546,7 +546,7 @@ app.get('/oauth/authorize', async (req, res) => {
     return res.render('oauth-success', {
       title: 'Авторизация завершена',
       redirectUrl: oauthSuccess.redirectUrl,
-      statusMessage: 'Авторизация подтверждена. Переключаемся в приложение GhostDesk.',
+      statusMessage: 'Авторизация подтверждена. Переключаемся в приложение Ghost AI.',
       fallbackUrl: '/dashboard',
     });
   } catch (err) {
@@ -687,5 +687,5 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`GhostDesk portal is running on http://localhost:${PORT}`);
+  console.log(`Ghost AI portal is running on http://localhost:${PORT}`);
 });

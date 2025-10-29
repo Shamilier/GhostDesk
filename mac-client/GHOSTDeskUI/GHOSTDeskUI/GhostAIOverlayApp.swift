@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 @main
-struct GhostDeskOverlayApp: App {
+struct GhostAIOverlayApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var model = OverlayModel.shared
     @StateObject private var auth = AuthState()
@@ -61,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleIncoming(url: URL) -> Bool {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              components.scheme == "ghostdesk",
+              components.scheme == "ghostai",
               components.host == "auth",
               components.path == "/callback",
               let code = components.queryItems?.first(where: { $0.name == "code" })?.value,

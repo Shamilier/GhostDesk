@@ -25,19 +25,19 @@
         <article class="stat-card">
           <h3>Токен доступа</h3>
           <p class="token-value"><%= user.token %></p>
-          <p class="stat-description">Используйте этот токен, чтобы авторизовать GhostDesk в приложении.</p>
+          <p class="stat-description">Используйте этот токен, чтобы авторизовать Ghost AI в приложении.</p>
           <button class="primary-button copy-token" data-token="<%= user.token %>">Скопировать</button>
         </article>
         <article class="stat-card">
           <h3>Реферальный код</h3>
           <p class="stat-value"><%= user.referral ? user.referral : '—' %></p>
           <p class="stat-description">Поделитесь кодом с коллегами и получите бонусные подключения.</p>
-          <a class="ghost-button" href="mailto:support@ghostdesk.app?subject=Referral%20program">Узнать условия</a>
+          <a class="ghost-button" href="mailto:support@ghostai.ru?subject=Referral%20program">Узнать условия</a>
         </article>
         <article class="stat-card">
           <h3>Дата регистрации</h3>
           <p class="stat-value"><%= new Date(user.created_at || Date.now()).toLocaleDateString('ru-RU') %></p>
-          <p class="stat-description">GhostDesk уже отслеживает ваши ключевые встречи.</p>
+          <p class="stat-description">Ghost AI уже отслеживает ваши ключевые встречи.</p>
         </article>
       </section>
     </main>
