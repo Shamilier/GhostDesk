@@ -77,7 +77,14 @@ struct OverlayRootView: View {
                 isRecording: overlay.anyChannelIsTranscribing,
                 selected: $selectedTab,
                 onPrimaryTap: { isExpanded = true },
-                onEyeTap: { isExpanded.toggle() },
+//                onEyeTap: { isExpanded.toggle() },
+                 onEyeTap: {
+                     // На время spring-анимации выключаем авто-ресайз
+                     OverlayWindowManager.shared.withResizeSuspended(0.9, finalAnimate: true)
+                     withAnimation(.spring(response: 0.4, dampingFraction: 0.86)) {
+                         isExpanded.toggle()
+                     }
+                 },
                 onMenuTap: { overlay.showSettings = true }
             )
             .padding(.top, 8)
@@ -1615,12 +1622,15 @@ private struct OverlayAutoResize: ViewModifier {
                     Color.clear.preference(key: OverlaySizeKey.self, value: proxy.size)
                 }
             )
-            .onPreferenceChange(OverlaySizeKey.self) { new in
-                if abs(new.width - last.width) > 0.5 || abs(new.height - last.height) > 0.5 {
-                    last = new
-                    OverlayWindowManager.shared.scheduleResize(animate: false, coalesce: 0.02)
-                }
-            }
+         .onPreferenceChange(OverlaySizeKey.self) { new in
+             if abs(new.width - last.width) > 0.5 || abs(new.height - last.height) > 0.5 {
+                 last = new
+                 // Если подавление включено — пропускаем тик
+                 if !OverlayWindowManager.shared.isAutoResizeSuppressed {
+                     OverlayWindowManager.shared.scheduleResize(animate: false, coalesce: 0.02)
+                 }
+             }
+         }
     }
 }
 

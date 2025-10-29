@@ -16,9 +16,17 @@ final class OverlayWindowManager {
     private let snapDistance: CGFloat = 12
     // MARK: - Coalesced resize
     private var resizeWorkItem: DispatchWorkItem?
+    
+    // MARK: - Coalesced & Suppressed resize
+    private var suppressAutoResize = false
 
-    /// Коалесим частые ресайзы (во время анимации) и делаем их без анимации.
+    /// Публичный флаг для SwiftUI-модификатора
+    var isAutoResizeSuppressed: Bool { suppressAutoResize }
+
+    /// Коалесим частые ресайзы (используется из overlayAutoResize).
     func scheduleResize(animate: Bool = false, coalesce: TimeInterval = 0.02) {
+        // Если подавление включено — просто игнорируем текущий тик
+        guard !suppressAutoResize else { return }
         resizeWorkItem?.cancel()
         let item = DispatchWorkItem { [weak self] in
             self?.resizeToFitContent(animate: animate)
@@ -27,6 +35,19 @@ final class OverlayWindowManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + coalesce, execute: item)
     }
 
+    /// На время анимации блокируем авто-ресайзы и делаем один финальный.
+    func withResizeSuspended(_ duration: TimeInterval, finalAnimate: Bool = true) {
+        suppressAutoResize = true
+        // Сбросим отложенный коалессер, чтобы не мигал
+        resizeWorkItem?.cancel()
+        resizeWorkItem = nil
+        // По окончании анимации — один красивый ресайз
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+            guard let self else { return }
+            self.suppressAutoResize = false
+            self.resizeToFitContent(animate: finalAnimate)
+        }
+    }
     /// Один финальный анимированный ресайз после завершения spring-анимации SwiftUI.
     func kickFinalResize(after delay: TimeInterval = 0.38) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
