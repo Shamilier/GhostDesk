@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // MARK: - Design Tokens
 
@@ -36,27 +37,89 @@ private enum GD {
 
 
 
+private final class WindowConfiguratorView: NSView {
+    private var originalMinSize: NSSize?
+    private var originalMaxSize: NSSize?
+    private var originalHasShadow: Bool?
+    private var originalStyleMask: NSWindow.StyleMask?
+    private weak var observedWindow: NSWindow?
+
+    private let onboardingContentSize = NSSize(width: 640, height: 460)
+    private let overlayMinimumContentSize = NSSize(width: 320, height: 60)
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+
+        guard let window = window else {
+            restoreWindowStateIfNeeded()
+            return
+        }
+
+        observedWindow = window
+
+        if originalMinSize == nil { originalMinSize = window.minSize }
+        if originalMaxSize == nil { originalMaxSize = window.maxSize }
+        if originalHasShadow == nil { originalHasShadow = window.hasShadow }
+        if originalStyleMask == nil { originalStyleMask = window.styleMask }
+
+        applyOnboardingConstraints(to: window)
+    }
+
+    private func applyOnboardingConstraints(to window: NSWindow) {
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = false
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+
+        window.setContentSize(onboardingContentSize)
+        window.minSize = onboardingContentSize
+        window.maxSize = onboardingContentSize
+
+        var styleMask = window.styleMask
+        styleMask.remove(.resizable)
+        window.styleMask = styleMask
+    }
+
+    private func restoreWindowStateIfNeeded() {
+        guard let window = observedWindow else { return }
+
+        if let originalStyleMask {
+            window.styleMask = originalStyleMask
+        }
+
+        if let originalHasShadow {
+            window.hasShadow = originalHasShadow
+        }
+
+        if let originalMinSize {
+            let width = max(originalMinSize.width, overlayMinimumContentSize.width)
+            let height = max(originalMinSize.height, overlayMinimumContentSize.height)
+            window.minSize = NSSize(width: width, height: height)
+        } else {
+            window.minSize = overlayMinimumContentSize
+        }
+
+        if let originalMaxSize {
+            var adjustedMax = originalMaxSize
+            adjustedMax.width = max(adjustedMax.width, window.minSize.width)
+            adjustedMax.height = max(adjustedMax.height, window.minSize.height)
+            window.maxSize = adjustedMax
+        }
+
+        originalMinSize = nil
+        originalMaxSize = nil
+        originalHasShadow = nil
+        originalStyleMask = nil
+        observedWindow = nil
+    }
+}
+
 struct WindowConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
-        let v = NSView()
-        DispatchQueue.main.async {
-            if let w = v.window {
-                w.isOpaque = false
-                w.backgroundColor = .clear
-                w.hasShadow = false
-                w.titleVisibility = .hidden
-                w.titlebarAppearsTransparent = true
-
-                // 🔒 фиксируем размер окна
-                let size = NSSize(width: 640, height: 460) // подбери под свою карточку
-                w.setContentSize(size)
-                w.styleMask.remove(.resizable)
-                w.minSize = size
-                w.maxSize = size
-            }
-        }
-        return v
+        WindowConfiguratorView()
     }
+
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
