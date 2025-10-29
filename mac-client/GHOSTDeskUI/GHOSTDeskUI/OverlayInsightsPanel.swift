@@ -80,7 +80,7 @@ struct InsightsPanel: View {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: cardIcon)
                         .font(.title3.weight(.semibold))
-                        .foregroundStyle(.accentColor)
+                        .foregroundStyle(Color.accentColor)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(cardTitle)

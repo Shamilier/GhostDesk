@@ -55,11 +55,11 @@ final class HintAgent: ObservableObject {
             case .general:
                 return "Нажмите, чтобы получить быстрый совет по живой речи."
             case .nextUtterance:
-                return "GhostDesk подготовит точную реплику, которую можно произнести прямо сейчас."
+                return "Ghost AI подготовит точную реплику, которую можно произнести прямо сейчас."
             case .topicSummary:
                 return "Получите короткое резюме того, что сейчас обсуждают."
             case .followUpQuestion:
-                return "Попросите GhostDesk предложить сильный уточняющий вопрос."
+                return "Попросите Ghost AI предложить сильный уточняющий вопрос."
             }
         }
 
@@ -104,7 +104,7 @@ final class HintAgent: ObservableObject {
             case .general:
                 return """
                 Ты ассистент для живого разговора.
-                Если в самом конце контекста есть явный вопрос собеседника — дай краткий уверенный ответ (2–3 предложения).
+                Если в самом конце контекста есть вопрос собеседника — дай краткий уверенный ответ (2–3 предложения).
                 Если явного вопроса нет — предложи одну тактичную реплику (1–2 предложения), которую удобно произнести.
                 Никаких дисклеймеров. Пиши естественно и по делу.
                 """.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -151,7 +151,7 @@ final class HintAgent: ObservableObject {
     @Published var lastFinishedAt: Date? = nil
 
     private var task: Task<Void, Never>?
-    private let baseURL = URL(string: "https://api.disciplaner.online")!
+    private let baseURL = URL(string: "https://api.ghostai.ru")!
     private var sessionIds: [Intent: String] = [:]
 
     private func sessionId(for intent: Intent) -> String {
