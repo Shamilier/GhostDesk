@@ -8,10 +8,9 @@ import { Menu, X } from "lucide-react";
 
 const NAV_LINKS = [
   { label: "Возможности", href: "#features" },
-  { label: "Как работает", href: "#how" },
-  { label: "Кейсы", href: "#use-cases" },
-  { label: "Тарифы", href: "#pricing" },
-  { label: "FAQ", href: "#faq" }
+  { label: "Сценарии", href: "#scenarios" },
+  { label: "Как работает", href: "#workflow" },
+  { label: "Скоро", href: "#roadmap" }
 ];
 
 export function Navbar() {
@@ -31,7 +30,7 @@ export function Navbar() {
   }, []);
 
   useEffect(() => {
-    const ids = ["hero", "social-proof", "features", "how", "use-cases", "pricing", "faq", "cta"] as const;
+    const ids = ["hero", "features", "scenarios", "workflow", "roadmap", "cta"] as const;
     const observer = new IntersectionObserver(
       entries => {
         entries.forEach(entry => {
@@ -69,17 +68,12 @@ export function Navbar() {
     <header className="fixed inset-x-0 top-0 z-50 flex justify-center px-3 pt-4 sm:px-6">
       <motion.nav
         className={clsx(
-          "glass relative flex w-full max-w-6xl items-center justify-between rounded-full px-4 py-3 transition-all sm:px-6",
-          isScrolled ? "backdrop-blur-2xl" : "backdrop-blur-lg"
+          "relative flex w-full max-w-5xl items-center justify-between rounded-full border border-white/12 bg-[#0f1016bf] px-4 py-3 backdrop-blur-xl transition-all sm:px-6",
+          isScrolled ? "shadow-[0_25px_45px_-35px_rgba(5,9,27,0.85)]" : "shadow-[0_18px_36px_-28px_rgba(5,9,27,0.65)]"
         )}
         initial={{ opacity: 0, y: -16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
-        style={{
-          background: isScrolled ? "rgba(18, 20, 36, 0.82)" : "rgba(18, 20, 36, 0.6)",
-          borderColor: "rgba(255,255,255,0.14)",
-          boxShadow: isScrolled ? "0 18px 50px -28px rgba(4,8,24,0.85)" : "0 12px 40px -32px rgba(4,8,24,0.65)"
-        }}
       >
         <Link href="#hero" className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.32em] text-white/80">
           <span className="h-2 w-2 rounded-full bg-white" aria-hidden="true" />
@@ -110,16 +104,10 @@ export function Navbar() {
         </div>
         <div className="hidden items-center gap-3 lg:flex">
           <Link
-            href="#pricing"
-            className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium uppercase tracking-[0.18em] text-white/80 transition hover:border-white/35 hover:text-white"
-          >
-            Смотреть демо
-          </Link>
-          <Link
             href="#cta"
-            className="relative inline-flex items-center gap-2 overflow-hidden rounded-full bg-white/10 px-5 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white shadow-glow transition duration-300 hover:bg-white/20"
+            className="inline-flex items-center gap-2 rounded-full bg-white/12 px-5 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-white/20"
           >
-            Попробовать бесплатно
+            Скачать для macOS
           </Link>
         </div>
         <button
@@ -153,18 +141,11 @@ export function Navbar() {
               </div>
               <div className="mt-4 flex flex-col gap-2">
                 <Link
-                  href="#pricing"
-                  onClick={closeMenu}
-                  className="btn-secondary justify-center text-xs uppercase tracking-[0.2em]"
-                >
-                  Смотреть демо
-                </Link>
-                <Link
                   href="#cta"
                   onClick={closeMenu}
                   className="btn-primary justify-center text-xs uppercase tracking-[0.2em]"
                 >
-                  Попробовать бесплатно
+                  Скачать для macOS
                 </Link>
               </div>
             </motion.div>

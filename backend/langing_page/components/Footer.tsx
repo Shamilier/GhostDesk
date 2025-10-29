@@ -4,10 +4,9 @@ import Link from "next/link";
 
 const FOOTER_LINKS = [
   { label: "Возможности", href: "#features" },
-  { label: "Как это работает", href: "#how" },
-  { label: "Кейсы", href: "#use-cases" },
-  { label: "Тарифы", href: "#pricing" },
-  { label: "FAQ", href: "#faq" }
+  { label: "Сценарии", href: "#scenarios" },
+  { label: "Как работает", href: "#workflow" },
+  { label: "Что дальше", href: "#roadmap" }
 ];
 
 const SOCIALS = [
@@ -26,7 +25,7 @@ export function Footer() {
             Ghost AI
           </div>
           <p className="mt-3 max-w-md text-sm text-white/70">
-            Невидимый AI-ассистент для разговоров. Ghost AI помогает слышать, понимать и действовать уверенно в каждом диалоге.
+            Невидимый AI-ассистент для звонков, лекций и живых встреч. Слушает, подсказывает и остаётся за кадром.
           </p>
         </div>
         <nav className="flex flex-1 flex-col gap-6 text-sm text-white/70 sm:flex-row sm:items-center sm:justify-end sm:gap-8">
