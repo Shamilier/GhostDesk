@@ -1,10 +1,11 @@
 import SwiftUI
 
 // MARK: - Tabs (переименовано, чтобы не конфликтовало)
-public enum CommandTab: String, CaseIterable {
-    case listen = "Listen"
-    case ask    = "Ask"
-}
+//public enum CommandTab: String, CaseIterable {
+//    case listen = "Listen"
+//    case ask    = "Ask"
+//    case settings = ""
+//}
 
 // MARK: - Публичная оболочка с прежним API
 public struct FloatingToolbar: View {

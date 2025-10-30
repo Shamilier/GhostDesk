@@ -9,6 +9,14 @@ import CoreMedia
 import Accelerate
 import CoreGraphics
 
+
+// MARK: - Tabs
+//enum CommandTab: Hashable {
+//    case listen
+//    case ask
+//    case settings
+//}
+
 struct OverlayRootView: View {
 
     @ObservedObject private var overlay = OverlayModel.shared
@@ -23,6 +31,9 @@ struct OverlayRootView: View {
     @ObservedObject private var hint = HintAgent.shared
     @State private var showTranscript = true
     @State private var showResponse: Bool = false
+    @State private var lastNonSettingsTab: CommandTab = .listen
+    // MARK: - Tabs
+
 
     // наш безопасный ленивый транскрайбер
     @StateObject private var transcriptionCoordinator = TranscriptionCoordinator()
@@ -54,22 +65,16 @@ struct OverlayRootView: View {
             }
         }
     }
+    
+    private var settingsPanel: some View {
+        SettingsSheet(isShown: settingsShownBinding)
+            .environmentObject(auth)
+            .padding(.horizontal, 8)
+    }
 
     private var authorizedOverlay: some View {
-         overlayIsland
-         .sheet(isPresented: Binding(
-             get: { overlay.showSettings },
-             set: { overlay.showSettings = $0 }
-         )) {
-             SettingsSheet(
-                 isShown: Binding(
-                     get: { overlay.showSettings },
-                     set: { overlay.showSettings = $0 }
-                 )
-             )
-             .environmentObject(auth)
-         }
-     }
+        overlayIsland
+    }
 
     private var overlayIsland: some View {
         VStack(spacing: 14) {
@@ -77,24 +82,34 @@ struct OverlayRootView: View {
                 isRecording: overlay.anyChannelIsTranscribing,
                 selected: $selectedTab,
                 onPrimaryTap: { isExpanded = true },
-//                onEyeTap: { isExpanded.toggle() },
-                 onEyeTap: {
-                     // На время spring-анимации выключаем авто-ресайз
-                     OverlayWindowManager.shared.withResizeSuspended(0.9, finalAnimate: true)
-                     withAnimation(.spring(response: 0.4, dampingFraction: 0.86)) {
-                         isExpanded.toggle()
-                     }
-                 },
-                onMenuTap: { overlay.showSettings = true }
+                onEyeTap: {
+                    OverlayWindowManager.shared.withResizeSuspended(0.9, finalAnimate: true)
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.86)) {
+                        isExpanded.toggle()
+                    }
+                },
+                onMenuTap: {
+                    OverlayWindowManager.shared.withResizeSuspended(0.36, finalAnimate: true)
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                        if selectedTab == .settings {
+                            selectedTab = lastNonSettingsTab
+                        } else {
+                            lastNonSettingsTab = selectedTab
+                            selectedTab = .settings
+                            isExpanded = true
+                        }
+                    }
+                }
             )
             .padding(.top, 8)
 
+            // ⬇️ ГЛАВНОЕ: если открыт Settings — показываем его вместо остальных панелей
             if isExpanded {
                 Group {
-                    if selectedTab == .listen {
-                        listenPanel
-                    } else {
-                        askPanel
+                    switch selectedTab {
+                    case .listen:    listenPanel
+                    case .ask:       askPanel
+                    case .settings:  settingsPanel
                     }
                 }
                 .padding(.horizontal, 8)
@@ -103,10 +118,10 @@ struct OverlayRootView: View {
                 .zIndex(1)
             }
         }
-        // КЛЮЧЕВОЕ: «островок» ровно по контенту и дергает ресайз окна при изменениим
-        .fixedSize(horizontal: false, vertical: true)
+        // окно подстраивается по высоте как и для других панелей
         .overlayAutoResize()
         .animation(.spring(response: 0.35, dampingFraction: 0.86), value: isExpanded)
+        .animation(.spring(response: 0.35, dampingFraction: 0.86), value: selectedTab)
         .onChange(of: overlay.askSolveTrigger) { _ in
             isExpanded = true
             selectedTab = .ask
@@ -114,32 +129,29 @@ struct OverlayRootView: View {
             askFocused = true
 
             let transcriptTail = makeTranscriptTail(seconds: 40, maxChars: 900)
-            Task {
-                await askVM.submitWithoutQuery(transcript: transcriptTail)
-            }
-               // во время анимации — коалесим без анимации
-               OverlayWindowManager.shared.scheduleResize(animate: false)
-               // после — один красивый анимированный ресайз
-               OverlayWindowManager.shared.kickFinalResize(after: 0.38)
+            Task { await askVM.submitWithoutQuery(transcript: transcriptTail) }
+
+            OverlayWindowManager.shared.scheduleResize(animate: false)
+            OverlayWindowManager.shared.kickFinalResize(after: 0.38)
         }
-        .onChange(of: isExpanded) { v in
-            if v && selectedTab == .ask { askFocused = true }
-               OverlayWindowManager.shared.scheduleResize(animate: false)
-               OverlayWindowManager.shared.kickFinalResize(after: 0.38)
+        .onChange(of: isExpanded) { _ in
+            if isExpanded && selectedTab == .ask { askFocused = true }
+            OverlayWindowManager.shared.scheduleResize(animate: false)
+            OverlayWindowManager.shared.kickFinalResize(after: 0.38)
         }
         .onChange(of: selectedTab) { tab in
             if isExpanded && tab == .ask { askFocused = true }
-               OverlayWindowManager.shared.scheduleResize(animate: false)
-               OverlayWindowManager.shared.kickFinalResize(after: 0.38)
+            OverlayWindowManager.shared.scheduleResize(animate: false)
+            OverlayWindowManager.shared.kickFinalResize(after: 0.38)
         }
+
         .onChange(of: showTranscript) { _ in
-               OverlayWindowManager.shared.scheduleResize(animate: false)
-               OverlayWindowManager.shared.kickFinalResize(after: 0.38)
+            OverlayWindowManager.shared.scheduleResize(animate: false)
+            OverlayWindowManager.shared.kickFinalResize(after: 0.38)
         }
         .onAppear {
-            // первичная подгонка окна под стартовую высоту
-               OverlayWindowManager.shared.scheduleResize(animate: false)
-               OverlayWindowManager.shared.kickFinalResize(after: 0.38)
+            OverlayWindowManager.shared.scheduleResize(animate: false)
+            OverlayWindowManager.shared.kickFinalResize(after: 0.38)
         }
     }
 
@@ -247,6 +259,20 @@ struct OverlayRootView: View {
         }
         .frame(maxWidth: 600)
         .padding(.horizontal, 8)
+    }
+    
+    private var settingsShownBinding: Binding<Bool> {
+        Binding(
+            get: { selectedTab == .settings },
+            set: { show in
+                if show {
+                    if selectedTab != .settings { lastNonSettingsTab = selectedTab }
+                    selectedTab = .settings
+                } else {
+                    selectedTab = lastNonSettingsTab
+                }
+            }
+        )
     }
 
     private struct TranscriptChatView: View {

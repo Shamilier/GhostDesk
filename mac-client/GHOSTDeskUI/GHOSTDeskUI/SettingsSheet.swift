@@ -53,19 +53,11 @@ struct SettingsSheet: View {
     private var refString: String   { (auth.referral ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
-        // Прозрачный контейнер окна, чтобы не было «полосы»
-        ZStack {
-            Color.clear
-
-            cardView
-                .frame(maxWidth: ST.width, minHeight: ST.minHeight)
-                .padding(.horizontal, (ST.windowWidth - ST.width) / 2)
-                .padding(.vertical, (ST.windowHeight - ST.minHeight) / 2)
-                .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(SettingsWindowConfigurator())
-        .contentShape(Rectangle())
+        cardView
+            .frame(maxWidth: ST.width, minHeight: ST.minHeight)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+            .background(Color.clear) // окно прозрачное, как у других панелей
     }
 
     // MARK: Card content
@@ -97,33 +89,12 @@ struct SettingsSheet: View {
         }
         .padding(.horizontal, ST.padX)
         .padding(.vertical, ST.padY)
-        .background(cardBackground)
         .overlay(cardBorder)
         .clipShape(RoundedRectangle(cornerRadius: ST.corner, style: .continuous))
         .shadow(color: ST.shadow, radius: 24, x: 0, y: 18)
     }
 
     // MARK: Card visuals
-    private var cardBackground: some View {
-        Group {
-            if reduceTransparency {
-                RoundedRectangle(cornerRadius: ST.corner, style: .continuous)
-                    .fill(Color.black.opacity(0.82))
-            } else {
-                RoundedRectangle(cornerRadius: ST.corner, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: ST.corner, style: .continuous)
-                            .fill(Color.white.opacity(0.06))
-                            .blur(radius: 18)
-                            .blendMode(.plusLighter)
-                            .clipShape(RoundedRectangle(cornerRadius: ST.corner, style: .continuous))
-                    )
-            }
-        }
-        .compositingGroup()
-        .clipped()
-    }
 
     private var cardBorder: some View {
         RoundedRectangle(cornerRadius: ST.corner, style: .continuous)
@@ -378,29 +349,4 @@ private struct CloseButton: View {
         .onHover { hover = $0 }
         .accessibilityLabel("Закрыть")
     }
-}
-
-// MARK: - Transparent, no-shadow window
-struct SettingsWindowConfigurator: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let v = NSView()
-        DispatchQueue.main.async {
-            if let w = v.window {
-                w.isOpaque = false
-                w.backgroundColor = .clear
-                w.hasShadow = false
-                w.titleVisibility = .hidden
-                w.titlebarAppearsTransparent = true
-
-                // фикс размера окна (убери, если не нужно)
-                let size = NSSize(width: ST.windowWidth, height: ST.windowHeight)
-                w.setContentSize(size)
-                w.styleMask.remove(.resizable)
-                w.minSize = size
-                w.maxSize = size
-            }
-        }
-        return v
-    }
-    func updateNSView(_ nsView: NSView, context: Context) {}
 }
