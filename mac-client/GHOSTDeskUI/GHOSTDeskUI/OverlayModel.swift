@@ -74,7 +74,7 @@ final class OverlayModel: ObservableObject {
     // Константы
     let transparencySteps: [CGFloat] = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5]
     let fontScaleSteps: [CGFloat]     = [0.9, 1.0, 1.15, 1.3, 1.5, 1.7]
-    let moveStep: CGFloat = 30.0
+    let moveStep: CGFloat = 70.0
     private weak var authState: AuthState?
 
     // Вычисляемые

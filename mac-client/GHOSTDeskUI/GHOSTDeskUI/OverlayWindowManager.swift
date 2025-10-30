@@ -16,6 +16,7 @@ final class OverlayWindowManager {
     private let snapDistance: CGFloat = 12
     // MARK: - Coalesced resize
     private var resizeWorkItem: DispatchWorkItem?
+    private var didApplyInitialPlacement = false
     
     // MARK: - Coalesced & Suppressed resize
     private var suppressAutoResize = false
@@ -83,12 +84,22 @@ final class OverlayWindowManager {
             panel.makeKeyAndOrderFront(nil)
             panel.setIsVisible(true)
 
-            if let screen = NSScreen.main { center(on: screen) }
             window = panel
             applyFocus(model.isFocusable)
 
-            // ✅ сразу подгоняем размер под фактический контент
+            // 1) стартовая позиция — под меню-баром, по центру экрана (как по ⌘3)
+            centerTop(on: NSScreen.main!, topInset: 12, animate: false)
+
+            // 2) подгоняем размер под контент
             resizeToFitContent(animate: false)
+
+            // 3) один корректирующий шаг после первого layout SwiftUI (на случай, если размер изменится)
+            if !didApplyInitialPlacement {
+                didApplyInitialPlacement = true
+                DispatchQueue.main.async { [weak self] in
+                    self?.centerTop(on: NSScreen.main!, topInset: 12, animate: false)
+                }
+            }
 
         } else {
             window?.alphaValue = model.alpha
@@ -373,30 +384,30 @@ fileprivate struct WindowDragHandle: NSViewRepresentable {
 extension OverlayWindowManager {
     /// Центрирует окно так, чтобы ВЕРХНЯЯ КРОМКА была выровнена по центру экрана.
     /// topInset — если нужно опустить якорь чуть ниже верхней кромки (например, на высоту паддинга тулбара).
-    func centerTop(on screen: NSScreen, topInset: CGFloat = 150, animate: Bool = false) {
+    func centerTop(on screen: NSScreen, topInset: CGFloat = 12, animate: Bool = false) {
         guard let w = window else { return }
-        let rect = screen.visibleFrame
+            // Экран — тот, на котором сейчас окно; fallback на main
+            let screen = w.screen ?? NSScreen.main!
+            let vf = screen.visibleFrame
 
-        var f = w.frame
-        // Берём актуальный размер контента (или текущий фрейм, если ещё не мерили)
-        let size = f.size
+            var f = w.frame
+            let size = f.size // берем фактический размер окна
 
-        f.origin.x = rect.midX / 2
+            // Горизонтальный центр экрана (ровно под «островком»)
+            f.origin.x = vf.midX - size.width / 2
+            // Верх окна — под меню-баром с небольшим отступом
+            f.origin.y = vf.maxY - topInset - size.height
 
-        // Верх окна = top экрана минус отступ
-        f.origin.y = rect.maxY - topInset - size.height
+            f = clamped(f, to: vf)
 
-        // Ограничиваем в видимую область
-        f = clamped(f, to: rect)
-
-        if animate {
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                w.animator().setFrame(f, display: true)
+            if animate {
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.25
+                    ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    w.animator().setFrame(f, display: true)
+                }
+            } else {
+                w.setFrame(f, display: true)
             }
-        } else {
-            w.setFrame(f, display: true)
-        }
     }
 }
