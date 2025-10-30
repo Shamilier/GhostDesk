@@ -64,8 +64,12 @@ final class HotKeyManager {
         // ⌘3 — Сброс (центр + дефолт)
         register(key: kVK_ANSI_3, mods: cmd()) {
             let m = OverlayModel.shared
-            m.resetDefaults()
+//            m.resetDefaults()
             OverlayWindowManager.shared.setAlpha(m.alpha)
+            if let screen = NSScreen.main {
+                // верх окна в центр экрана (тулбар встанет в центр вне зависимости от высоты панелей)
+                OverlayWindowManager.shared.centerTop(on: screen, topInset: 0, animate: true)
+            }
         }
 
         // ⌘O — запись on/off

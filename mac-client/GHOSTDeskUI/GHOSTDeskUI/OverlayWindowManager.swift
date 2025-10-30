@@ -240,14 +240,14 @@ extension OverlayWindowManager {
         }
 
         // Якорим верх окна (чтобы при сжатии не «падало» вниз)
+        // Якорим верх окна (верх остаётся на месте, низ растёт/сжимается)
         var frame = window.frame
         let deltaH = targetH - frame.size.height
-        if abs(deltaH) < hardMaxHeight * 2 {
-            frame.origin.y -= deltaH
-        }
+        frame.origin.y -= deltaH            // ← всегда двигаем origin.y на разницу высот
         frame.size.height = targetH
-        frame.size.width  = max(frame.size.width, targetW) // или = targetW, если нужна автоподгонка ширины
+        frame.size.width  = max(frame.size.width, targetW)
 
+        // выставляем фрейм (лучше через анимационный контекст)
         if animate {
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.25
@@ -367,6 +367,36 @@ fileprivate struct WindowDragHandle: NSViewRepresentable {
                 last = loc
             default: break
             }
+        }
+    }
+}
+extension OverlayWindowManager {
+    /// Центрирует окно так, чтобы ВЕРХНЯЯ КРОМКА была выровнена по центру экрана.
+    /// topInset — если нужно опустить якорь чуть ниже верхней кромки (например, на высоту паддинга тулбара).
+    func centerTop(on screen: NSScreen, topInset: CGFloat = 150, animate: Bool = false) {
+        guard let w = window else { return }
+        let rect = screen.visibleFrame
+
+        var f = w.frame
+        // Берём актуальный размер контента (или текущий фрейм, если ещё не мерили)
+        let size = f.size
+
+        f.origin.x = rect.midX / 2
+
+        // Верх окна = top экрана минус отступ
+        f.origin.y = rect.maxY - topInset - size.height
+
+        // Ограничиваем в видимую область
+        f = clamped(f, to: rect)
+
+        if animate {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                w.animator().setFrame(f, display: true)
+            }
+        } else {
+            w.setFrame(f, display: true)
         }
     }
 }
