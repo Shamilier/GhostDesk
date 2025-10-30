@@ -34,9 +34,10 @@ private enum ST {
 
 // MARK: - SettingsSheet
 struct SettingsSheet: View {
-    @Binding var isShown: Bool
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Binding var isShown: Bool           // ← вот так
     @EnvironmentObject private var auth: AuthState
+    @ObservedObject private var overlay = OverlayModel.shared
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     @State private var isRefreshing = false
 
@@ -53,11 +54,104 @@ struct SettingsSheet: View {
     private var refString: String   { (auth.referral ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
-        cardView
-            .frame(maxWidth: ST.width, minHeight: ST.minHeight)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 12)
-            .background(Color.clear) // окно прозрачное, как у других панелей
+        GlassCard {
+            VStack(spacing: 0) {
+
+                // Header
+                HStack(spacing: 10) {
+                    Label("Настройки", systemImage: "gearshape")
+                        .font(.headline.weight(.semibold))
+                    Spacer()
+                    Button(action: { isShown = false }) {    // ← было isShown.wrappedValue = false
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(MiniIconButton())
+                }
+                .padding(.bottom, 8)
+
+                Divider().overlay(Color.white.opacity(0.10))
+
+                // Content
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+
+                        // === Пример секции с ключом API ===
+                        GlassSection("Аккаунт") {
+                            VStack(alignment: .leading, spacing: 10) {
+                                // Статус
+                                HStack(spacing: 8) {
+                                    if auth.isAuthorized {
+                                        Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                                        Text("Авторизовано").font(.subheadline.weight(.semibold))
+                                    } else {
+                                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+                                        Text("Вход не выполнен").font(.subheadline.weight(.semibold))
+                                    }
+                                }
+
+                                // Базовая информация
+                                if let email = auth.email {
+                                    LabeledContent("Email") { Text(email).monospaced() }
+                                }
+                                if let plan = auth.plan {
+                                    LabeledContent("Тариф") { Text(plan) }
+                                }
+                                if let created = auth.createdAt {
+                                    LabeledContent("Аккаунт с") { Text(created.formatted(date: .abbreviated, time: .omitted)) }
+                                }
+                                if let expires = auth.expiresAt {
+                                    LabeledContent("Сессия истекает") { Text(expires.formatted(date: .abbreviated, time: .shortened)) }
+                                }
+
+                                // Замаскированный access token (нередактируемый)
+                                LabeledContent("Access Token") {
+                                    TextField("", text: .constant(maskedAccessToken))
+                                        .font(.system(size: 14, weight: .medium, design: .monospaced))
+                                        .glassCapsuleField()
+                                        .disabled(true)
+                                        .textSelection(.enabled)
+                                }
+
+                                // Действия
+                                HStack(spacing: 10) {
+                                    if auth.isAuthorized {
+                                        Button("Выйти") { auth.signOut() }
+                                            .buttonStyle(GlassPill(tint: .secondary))
+                                    }
+                                    Spacer()
+                                    Button("Готово") { isShown = false }
+                                        .buttonStyle(GlassPill(tint: .accentColor))
+                                }
+
+                                // Сообщение об ошибке/проблеме
+                                if let issue = auth.authorizationIssue ?? auth.lastError {
+                                    Text(issue).font(.caption).foregroundStyle(.red)
+                                }
+                            }
+                        }
+
+
+                        // === Низ (кнопки действия) ===
+                    }
+                    .padding(.top, 12)
+                }
+                .frame(minHeight: 260, maxHeight: 520)
+            }
+            .padding(12)
+        }
+        .frame(maxWidth: 720)
+    }
+    
+    private var maskedAccessToken: String {
+        guard let t = auth.accessToken, !t.isEmpty else { return "—" }
+        return maskMiddle(t)
+    }
+
+    private func maskMiddle(_ s: String, keep: Int = 6) -> String {
+        guard s.count > keep * 2 else { return s }
+        let start = s.prefix(keep)
+        let end   = s.suffix(keep)
+        return "\(start)••••••••••\(end)"
     }
 
     // MARK: Card content

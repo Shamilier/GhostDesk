@@ -70,6 +70,7 @@ struct OverlayRootView: View {
         SettingsSheet(isShown: settingsShownBinding)
             .environmentObject(auth)
             .padding(.horizontal, 8)
+            .environmentObject(overlay)
     }
 
     private var authorizedOverlay: some View {
@@ -703,34 +704,34 @@ struct OverlayRootView: View {
 }
 
 // MARK: - Универсальная стеклянная карточка
-
-private struct GlassCard<Content: View>: View {
-    @ViewBuilder var content: () -> Content
-
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
-
-        ZStack {
-            Color.clear
-                .background(.ultraThinMaterial, in: shape)
-                .overlay(
-                    shape.stroke(
-                        LinearGradient(
-                            colors: [.white.opacity(0.45), .white.opacity(0.12)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-                )
-
-            VStack(spacing: 0) { content() }
-                .padding(12)
-        }
-        .clipShape(shape)
-        .contentShape(shape)
-        .fixedSize(horizontal: false, vertical: true) // ← самосжатие по высоте
-    }
-}
+//
+//private struct GlassCard<Content: View>: View {
+//    @ViewBuilder var content: () -> Content
+//
+//    var body: some View {
+//        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+//
+//        ZStack {
+//            Color.clear
+//                .background(.ultraThinMaterial, in: shape)
+//                .overlay(
+//                    shape.stroke(
+//                        LinearGradient(
+//                            colors: [.white.opacity(0.45), .white.opacity(0.12)],
+//                            startPoint: .topLeading, endPoint: .bottomTrailing
+//                        ),
+//                        lineWidth: 1
+//                    )
+//                )
+//
+//            VStack(spacing: 0) { content() }
+//                .padding(12)
+//        }
+//        .clipShape(shape)
+//        .contentShape(shape)
+//        .fixedSize(horizontal: false, vertical: true) // ← самосжатие по высоте
+//    }
+//}
 
 // MARK: - HintStrip (без изменений)
 
@@ -1056,19 +1057,19 @@ private struct ResponseCard: View {
     }
 }
 
-private struct MiniIconButton: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 12.5, weight: .semibold))
-            .frame(width: 28, height: 28)
-            .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(.thinMaterial)
-                    .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white.opacity(0.18), lineWidth: 0.75))
-            )
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
-    }
-}
+//private struct MiniIconButton: ButtonStyle {
+//    func makeBody(configuration: Configuration) -> some View {
+//        configuration.label
+//            .font(.system(size: 12.5, weight: .semibold))
+//            .frame(width: 28, height: 28)
+//            .background(
+//                RoundedRectangle(cornerRadius: 7, style: .continuous)
+//                    .fill(.thinMaterial)
+//                    .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white.opacity(0.18), lineWidth: 0.75))
+//            )
+//            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+//    }
+//}
 
 // AskField
 struct AskField: View {

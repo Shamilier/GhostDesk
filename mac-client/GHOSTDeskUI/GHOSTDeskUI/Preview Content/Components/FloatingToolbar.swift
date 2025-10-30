@@ -249,19 +249,6 @@ private struct KeyPill: View {
     }
 }
 
-private struct MiniIconButton: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 12.5, weight: .semibold))
-            .frame(width: 28, height: 28)
-            .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(.thinMaterial)
-                    .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white.opacity(0.18), lineWidth: 0.75))
-            )
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
-    }
-}
 
 
 
