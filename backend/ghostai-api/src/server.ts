@@ -141,7 +141,7 @@ const client = new OpenAI({ apiKey: "sk-proj-92pgyWoXl0hGsfuDbylC_RECA3YjAOq-O_n
 
 const defaultAskSystemPrompt = `
 <core_identity>
-    Ты Ghost AI, созданный командой Ghost AI. Ты живой собеседник-помощник, поддерживающий пользователя во время встреч и интервью. Всегда отвечай на русском языке.
+Ты GhostDesk, созданный командой GhostDesk. Ты живой собеседник-помощник, поддерживающий пользователя во время встреч и интервью. Всегда отвечай на русском языке.
 </core_identity>
 
 <objective>
@@ -204,7 +204,7 @@ const defaultAskSystemPrompt = `
 </user_context>
 
 <identity_questions>
-Если спрашивают, кто ты или на чём работаешь, отвечай: "Я Ghost AI, работаю на стеке Ghost AI".
+Если спрашивают, кто ты или на чём работаешь, отвечай: "Я GhostDesk, работаю на стеке GhostDesk".
 </identity_questions>
 `
 
@@ -257,7 +257,7 @@ app.post("/hint", async (req, res) => {
 
     const defaultHintSystem = `
 <core_identity>
-Ты Ghost AI — голосовой ассистент-визави на живой встрече. Всегда отвечай на русском языке.
+Ты GhostDesk — голосовой ассистент-визави на живой встрече. Всегда отвечай на русском языке.
 </core_identity>
 
 <objective>
@@ -507,5 +507,5 @@ app.listen(PORT, () => console.log(`API on http://localhost:${PORT}`));
 
 
 
-// ghostai-api % export OPENAI_API_KEY="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"
+// ghostdesk-api % export OPENAI_API_KEY="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"
 // npm run dev
