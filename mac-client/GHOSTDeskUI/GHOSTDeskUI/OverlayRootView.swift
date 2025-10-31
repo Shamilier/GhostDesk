@@ -162,27 +162,28 @@ struct OverlayRootView: View {
         GlassCard {
             VStack(alignment: .leading, spacing: 10) {
 
-                // HEADER
+                // HEADER (компактный)
                 HStack(spacing: 12) {
-                    LogoOrb()
+                    LogoOrb().frame(width: 18, height: 18)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(showTranscript ? "Транскрипт" : "Инсайты в реальном времени")
                             .font(.headline.weight(.semibold))
-                        HStack(spacing: 8) {
+                        HStack(spacing: 6) {
                             LiveDot(active: overlay.anyChannelIsTranscribing)
-                            Text(overlay.anyChannelIsTranscribing ? "Идёт запись…" : "Готов к запуску")
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(overlay.anyChannelIsTranscribing ? .green.opacity(0.9) : .secondary)
+                            let isOn = overlay.anyChannelIsTranscribing
+
+                            Text(isOn ? "Идёт запись…" : "Готов к запуску")
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(isOn ? .green : .secondary)
+                                .glow(active: isOn, color: .green) // мягкое свечение только когда запись идёт
+                                .animation(.easeInOut(duration: 0.25), value: isOn)
                         }
                     }
 
-                    Spacer()
+                    Spacer(minLength: 8)
 
-                    let microphonePhase = microphoneChannelState.phase
-                    let microphoneBusy = microphonePhase == .starting || microphonePhase == .stopping
-
-                    Button(showTranscript ? "Показать инсайты" : "Показать транскрипт") {
+                    Button(showTranscript ? "Инсайты" : "Транскрипт") {
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
                             showTranscript.toggle()
                         }
@@ -191,45 +192,38 @@ struct OverlayRootView: View {
                     }
                     .buttonStyle(GlassPill())
 
-                    Button(action: {
+                    let phase = transcriptionCoordinator.overallPhase
+                    let running  = phase == .running
+                    let starting = phase == .starting
+                    let stopping = phase == .stopping
+
+                    Button {
+                        switch phase {
+                        case .idle: transcriptionCoordinator.startRecording()
+                        case .starting, .running, .stopping: transcriptionCoordinator.stopAll()
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if starting || stopping { ProgressView().controlSize(.small) }
+                            Image(systemName: (running || stopping) ? "stop.fill" : "play.fill")
+                            Text(starting ? "Запуск…" : (stopping ? "Остановка…" : (running ? "Стоп" : "Старт")))
+                        }
+                    }
+                    .buttonStyle(GlassPill(tint: (running || stopping) ? .red : .accentColor))
+                    .disabled(starting)
+
+                    Button {
                         transcriptionCoordinator.setMicrophoneArmed(!transcriptionCoordinator.isMicrophoneArmed)
-                    }) {
+                    } label: {
                         Label("Микрофон", systemImage: transcriptionCoordinator.isMicrophoneArmed ? "mic.fill" : "mic")
                     }
                     .buttonStyle(GlassPill(tint: transcriptionCoordinator.isMicrophoneArmed ? .pink : .secondary))
-                    .disabled(microphoneBusy)
-
-                    Button(action: {
-                        switch transcriptionCoordinator.overallPhase {
-                        case .idle:
-                            transcriptionCoordinator.startRecording()
-                        case .starting, .running, .stopping:
-                            transcriptionCoordinator.stopAll()
-                        }
-                    }) {
-                        let phase = transcriptionCoordinator.overallPhase
-                        let running  = phase == .running
-                        let starting = phase == .starting
-                        let stopping = phase == .stopping
-                        Label(
-                            starting ? "Запуск…" : (stopping ? "Остановка…" : (running ? "Стоп" : "Старт")),
-                            systemImage: (running || stopping) ? "stop.fill" : "play.fill"
-                        )
-                    }
-                    .buttonStyle(
-                        GlassPill(
-                            tint: {
-                                let phase = transcriptionCoordinator.overallPhase
-                                return (phase == .running || phase == .stopping) ? .red : .accentColor
-                            }()
-                        )
-                    )
-                    .disabled(transcriptionCoordinator.overallPhase == .starting)
                 }
+                .padding(.vertical, 2)
 
+                // --------- ВАЖНО: дальше — тело панели ---------
                 Divider().overlay(Color.white.opacity(0.10))
 
-                // BODY — единая чатовая лента
                 if showTranscript {
                     TranscriptChatView(
                         systemState: systemChannelState,
@@ -237,16 +231,14 @@ struct OverlayRootView: View {
                         autoScroll: $autoScroll
                     )
                     .transition(.opacity.combined(with: .move(edge: .top)))
-                    .frame(minHeight: 320, maxHeight: 520) // ↑ окно чата
+                    .edgeFade(height: 320)     // фикс высоты + плавное затухание краёв
 
                     HintStrip()
                         .padding(.top, 6)
                 } else {
                     InsightsPanel(
                         hint: hint,
-                        onRequest: { intent in
-                            requestInsight(intent)
-                        },
+                        onRequest: { intent in requestInsight(intent) },
                         onClose: {
                             withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
                                 showTranscript = true
@@ -254,13 +246,15 @@ struct OverlayRootView: View {
                         }
                     )
                     .transition(.opacity.combined(with: .move(edge: .top)))
-                    .frame(minHeight: 260, maxHeight: 480)
+                    .frame(height: 420)        // чтобы окно не «скакало», держим такую же высоту
                 }
             }
         }
         .frame(maxWidth: 600)
         .padding(.horizontal, 8)
     }
+    
+    
     
     private var settingsShownBinding: Binding<Bool> {
         Binding(
@@ -283,6 +277,10 @@ struct OverlayRootView: View {
 
         @State private var hasAppeared = false
 
+        // Автоскроллим только если экран уже появился и авто-скролл включён
+        private var shouldAutoScroll: Bool { hasAppeared && autoScroll }
+
+        // Объединённая лента
         private var mergedMessages: [OverlayModel.TranscriptMessage] {
             (systemState.transcriptLog + microphoneState.transcriptLog)
                 .sorted { lhs, rhs in
@@ -293,14 +291,27 @@ struct OverlayRootView: View {
                 }
         }
 
-        private func partialText(for kind: OverlayModel.AudioSourceKind) -> String? {
-            let text: String
-            switch kind {
-            case .system:
-                text = systemState.partialText
-            case .microphone:
-                text = microphoneState.partialText
+        // Группировка подряд идущих сообщений по source (system / microphone)
+        private struct MessageGroup: Identifiable {
+            let source: OverlayModel.AudioSourceKind
+            var items: [OverlayModel.TranscriptMessage]
+            var id: UUID { items.first?.id ?? UUID() } // стабильный id по первой реплике
+        }
+
+        private func grouped(_ messages: [OverlayModel.TranscriptMessage]) -> [MessageGroup] {
+            var result: [MessageGroup] = []
+            for m in messages {
+                if let i = result.indices.last, result[i].source == m.source {
+                    result[i].items.append(m)
+                } else {
+                    result.append(MessageGroup(source: m.source, items: [m]))
+                }
             }
+            return result
+        }
+
+        private func partialText(for kind: OverlayModel.AudioSourceKind) -> String? {
+            let text: String = (kind == .system) ? systemState.partialText : microphoneState.partialText
             return text.isEmpty ? nil : text
         }
 
@@ -312,8 +323,8 @@ struct OverlayRootView: View {
             if let micPartial = partialText(for: .microphone) {
                 return AnyHashable(partialIdentifier(.microphone) + micPartial)
             }
-            if let systemPartial = partialText(for: .system) {
-                return AnyHashable(partialIdentifier(.system) + systemPartial)
+            if let sysPartial = partialText(for: .system) {
+                return AnyHashable(partialIdentifier(.system) + sysPartial)
             }
             return mergedMessages.last?.id
         }
@@ -326,16 +337,32 @@ struct OverlayRootView: View {
 
                         shape
                             .fill(Color.white.opacity(0.03))
-                            .overlay(
-                                shape.stroke(Color.white.opacity(0), lineWidth: 0)
-                            )
+                            .overlay(shape.stroke(Color.white.opacity(0), lineWidth: 0))
 
                         ScrollView {
-                            LazyVStack(spacing: 12) {
-                                ForEach(mergedMessages) { message in
-                                    let style = TranscriptSourceStyle.for(kind: message.source)
-                                    TranscriptMessageBubble(message: message, style: style)
-                                        .id(message.id)
+                            LazyVStack(spacing: 8) {
+                                ForEach(grouped(mergedMessages)) { group in
+                                    let style = TranscriptSourceStyle.for(kind: group.source)
+
+                                    // первая в группе — с «шапкой»
+                                    if let first = group.items.first {
+                                        TranscriptMessageBubble(
+                                            message: first,
+                                            style: style,
+                                            showHeader: true
+                                        )
+                                        .id(first.id)
+                                    }
+
+                                    // остальные — без «шапки»
+                                    ForEach(group.items.dropFirst()) { msg in
+                                        TranscriptMessageBubble(
+                                            message: msg,
+                                            style: style,
+                                            showHeader: false
+                                        )
+                                        .id(msg.id)
+                                    }
                                 }
 
                                 if let text = partialText(for: .system) {
@@ -348,37 +375,48 @@ struct OverlayRootView: View {
                                         .id(partialIdentifier(.microphone) + text)
                                 }
                             }
-                            .padding(.vertical, 16)
-                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .padding(.horizontal, 12)
                         }
                         .clipShape(shape)
                     }
-                    .frame(minHeight: 320, alignment: .top)
+                    // ВАЖНО: без minHeight — высоту контролирует родитель через .edgeFade(height:)
                     .onAppear {
                         hasAppeared = true
-                        DispatchQueue.main.async {
-                            scrollToBottom(proxy, animated: false)
-                        }
+                        DispatchQueue.main.async { scrollToBottom(proxy, animated: false) }
                     }
                     .onChange(of: systemState.transcriptLog.last?.id) { _ in
-                        guard hasAppeared else { return }
-                        scrollToBottom(proxy)
+                        if shouldAutoScroll { scrollToBottom(proxy) }
                     }
                     .onChange(of: microphoneState.transcriptLog.last?.id) { _ in
-                        guard hasAppeared else { return }
-                        scrollToBottom(proxy)
+                        if shouldAutoScroll { scrollToBottom(proxy) }
                     }
                     .onChange(of: systemState.partialText) { _ in
-                        guard hasAppeared else { return }
-                        scrollToBottom(proxy)
+                        if shouldAutoScroll { scrollToBottom(proxy) }
                     }
                     .onChange(of: microphoneState.partialText) { _ in
-                        guard hasAppeared else { return }
-                        scrollToBottom(proxy)
+                        if shouldAutoScroll { scrollToBottom(proxy) }
                     }
                     .onChange(of: autoScroll) { enabled in
-                        guard enabled, hasAppeared else { return }
-                        scrollToBottom(proxy, animated: false)
+                        if enabled && hasAppeared { scrollToBottom(proxy, animated: false) }
+                    }
+                    // Любой drag по ленте — ставим паузу автоскролла
+                    .gesture(DragGesture().onChanged { _ in
+                        if autoScroll { autoScroll = false }
+                    })
+                    // Кнопка «В конец», если автоскролл выключен
+                    .overlay(alignment: .bottomTrailing) {
+                        if !autoScroll {
+                            Button {
+                                autoScroll = true
+                                scrollToBottom(proxy)
+                            } label: {
+                                Label("В конец", systemImage: "arrow.down.circle.fill")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .buttonStyle(GlassPill(tint: .secondary))
+                            .padding(8)
+                        }
                     }
                 }
             }
@@ -386,10 +424,8 @@ struct OverlayRootView: View {
         }
 
         private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool = true) {
-            guard autoScroll, let anchor = lastAnchorID else { return }
-            let action = {
-                proxy.scrollTo(anchor, anchor: .bottom)
-            }
+            guard let anchor = lastAnchorID else { return }
+            let action = { proxy.scrollTo(anchor, anchor: .bottom) }
             if animated {
                 withAnimation(.easeOut(duration: 0.22)) { action() }
             } else {
@@ -401,45 +437,50 @@ struct OverlayRootView: View {
     private struct TranscriptMessageBubble: View {
         let message: OverlayModel.TranscriptMessage
         let style: TranscriptSourceStyle
+        var showHeader: Bool = true   // ← новое
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Image(systemName: style.icon)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(style.color.opacity(0.85))
-                    Text(style.title)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(style.color.opacity(0.85))
-                    Spacer(minLength: 0)
+            VStack(alignment: .leading, spacing: showHeader ? 6 : 4) {
+                if showHeader {
+                    HStack(spacing: 6) {
+                        Image(systemName: style.icon)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(style.color.opacity(0.85))
+                        Text(style.title)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(style.color.opacity(0.85))
+                        Spacer(minLength: 0)
+                    }
                 }
 
                 Text(message.text)
-                    .font(.system(size: 14))
+                    .font(.system(size: 13)) // чуть компактнее
                     .foregroundStyle(.primary)
                     .textSelection(.enabled)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text(message.timestamp, style: .time)
-                    .font(.caption2)
-                    .foregroundStyle(style.color.opacity(0.8))
+                // Таймстамп можно показывать только у первой в группе (чтоб не шумел)
+                if showHeader {
+                    Text(message.timestamp, style: .time)
+                        .font(.caption2)
+                        .foregroundStyle(style.color.opacity(0.8))
+                }
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 14)
+            .padding(.vertical, showHeader ? 10 : 6)
+            .padding(.horizontal, 12)
             .frame(maxWidth: 320, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(style.color.opacity(0.16))
+                    .fill(style.color.opacity(0.14))
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(style.color.opacity(0.22), lineWidth: 1)
+                            .stroke(style.color.opacity(0.18), lineWidth: 1)
                     )
             )
             .frame(maxWidth: .infinity, alignment: style.bubbleAlignment)
             .transition(.move(edge: .trailing).combined(with: .opacity))
         }
-
     }
 
     private struct PartialTranscriptBubble: View {
@@ -1663,4 +1704,66 @@ private struct OverlayAutoResize: ViewModifier {
 
 extension View {
     func overlayAutoResize() -> some View { modifier(OverlayAutoResize()) }
+}
+
+
+private struct EdgeFade: ViewModifier {
+    var height: CGFloat = 420
+    func body(content: Content) -> some View {
+        content
+            .frame(height: height)
+            .mask(
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: .black,  location: 0.06),
+                        .init(color: .black,  location: 0.94),
+                        .init(color: .clear, location: 1.0)
+                    ],
+                    startPoint: .top, endPoint: .bottom
+                )
+            )
+            .clipped()
+    }
+}
+private extension View {
+    func edgeFade(height: CGFloat = 420) -> some View {
+        modifier(EdgeFade(height: height))
+    }
+}
+private struct Glow: ViewModifier {
+    var active: Bool
+    var color: Color
+    func body(content: Content) -> some View {
+        content
+            .shadow(color: active ? color.opacity(0.45) : .clear, radius: 4)
+            .shadow(color: active ? color.opacity(0.25) : .clear, radius: 8)
+    }
+}
+
+private extension View {
+    func glow(active: Bool, color: Color) -> some View {
+        modifier(Glow(active: active, color: color))
+    }
+}
+private struct TranscriptGroup: Identifiable {
+    let id = UUID()
+    let source: OverlayModel.AudioSourceKind
+    let items: [OverlayModel.TranscriptMessage]
+}
+
+private func grouped(_ messages: [OverlayModel.TranscriptMessage]) -> [TranscriptGroup] {
+    guard !messages.isEmpty else { return [] }
+    var result: [TranscriptGroup] = []
+    var buf: [OverlayModel.TranscriptMessage] = [messages[0]]
+    for m in messages.dropFirst() {
+        if m.source == buf.last?.source {
+            buf.append(m)
+        } else {
+            result.append(.init(source: buf[0].source, items: buf))
+            buf = [m]
+        }
+    }
+    result.append(.init(source: buf[0].source, items: buf))
+    return result
 }

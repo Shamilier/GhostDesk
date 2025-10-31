@@ -199,3 +199,4 @@ struct InsightsPanel: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }
+

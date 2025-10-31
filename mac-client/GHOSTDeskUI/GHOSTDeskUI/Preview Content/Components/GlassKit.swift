@@ -25,7 +25,8 @@ public struct GlassCard<Content: View>: View {
         }
         .clipShape(shape)
         .contentShape(shape)
-        .fixedSize(horizontal: false, vertical: true)
+        .clipShape(shape)
+        .contentShape(shape)
     }
 }
 
