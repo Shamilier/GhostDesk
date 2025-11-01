@@ -665,6 +665,7 @@ app.get('/oauth/profile', async (req, res) => {
     const createdAt = formatAsIso8601(tokenRow.created_at);
 
     return res.json({
+      id: String(tokenRow.user_id),
       email: tokenRow.email,
       plan: tokenRow.plan,
       referral: tokenRow.referral,

@@ -59,6 +59,6 @@ Ghost AI Portal предоставляет публичный OAuth-клиент
 - `GET /oauth/authorize` — принимает параметры `response_type=code`, `client_id`, `redirect_uri`, `code_challenge`, `code_challenge_method=S256`, `state` (опционально). В случае отсутствия активной сессии происходит редирект на `/login` с сохранением параметров.
 - `POST /oauth/token` — поддерживает `grant_type=authorization_code` и `grant_type=refresh_token`. Для первой ветки обязательны `code`, `redirect_uri`, `code_verifier`. Для обновления — `refresh_token`. Ответ возвращает `access_token`, `refresh_token`, `expires_in` (3600 секунд) и `token_type` (`bearer`).
 - `POST /oauth/revoke` — отзывает refresh-токен клиента.
-- `GET /oauth/profile` — требует Bearer-токен и отвечает данными профиля пользователя (`email`, `plan`, `referral`, `created_at`, пользовательский `token`).
+- `GET /oauth/profile` — требует Bearer-токен и отвечает данными профиля пользователя (`id`, `email`, `plan`, `referral`, `created_at`, пользовательский `token`).
 
 Все коды авторизации и токены хранятся в БД в виде SHA-256 хэшей. Access-токен действует 1 час, refresh-токен — 30 дней. Обновление access-токена требует повторной проверки PKCE при обмене authorization code.
