@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import os.log
 
 final class TranscriptionCoordinator: ObservableObject {
     @Published private(set) var overallPhase: OverlayModel.AudioChannelPhase = .idle
@@ -8,8 +9,14 @@ final class TranscriptionCoordinator: ObservableObject {
     private let overlay: OverlayModel
     private let systemTranscriber: SpeechTranscriber
     private let microphoneTranscriber: SpeechTranscriber
+    private let recordingManager = RecordingManager.shared
+    private let audioRecorder = AudioRecorder.shared
+    private let outbox = OutboxService.shared
+    private let logger = Logger(subsystem: "ai.ghost.recorder", category: "TranscriptionCoordinator")
+
     private var cancellables: Set<AnyCancellable> = []
     private var shouldResetMicrophoneAfterStop = false
+    private var activeRecordingId: String?
 
     init(overlay: OverlayModel = .shared) {
         self.overlay = overlay
@@ -29,6 +36,7 @@ final class TranscriptionCoordinator: ObservableObject {
     }
 
     func startRecording() {
+        startLocalRecording()
         systemTranscriber.start()
         if isMicrophoneArmed {
             microphoneTranscriber.start()
@@ -39,6 +47,7 @@ final class TranscriptionCoordinator: ObservableObject {
         systemTranscriber.stop()
         microphoneTranscriber.stop()
         shouldResetMicrophoneAfterStop = true
+        stopLocalRecording()
     }
 
     func setMicrophoneArmed(_ armed: Bool) {
@@ -156,6 +165,45 @@ final class TranscriptionCoordinator: ObservableObject {
                 microphoneTranscriber.stop()
             case .idle, .stopping:
                 break
+            }
+        }
+    }
+}
+
+// MARK: - Local recording lifecycle
+
+private extension TranscriptionCoordinator {
+    func startLocalRecording() {
+        guard activeRecordingId == nil else { return }
+
+        do {
+            let session = try recordingManager.beginSession()
+            do {
+                try audioRecorder.start(at: session.fileURL)
+                activeRecordingId = session.localId
+                logger.log("Recording session started \(session.localId, privacy: .public)")
+            } catch {
+                try? recordingManager.removeSession(localId: session.localId)
+                throw error
+            }
+        } catch {
+            logger.error("Failed to start local recording: \(error.localizedDescription, privacy: .public)")
+            activeRecordingId = nil
+        }
+    }
+
+    func stopLocalRecording() {
+        guard let localId = activeRecordingId else { return }
+        activeRecordingId = nil
+
+        Task {
+            do {
+                try await audioRecorder.stop()
+                let result = try recordingManager.finalizeSession(localId: localId)
+                outbox.enqueue(localId: localId)
+                logger.log("Recording session finalized \(localId, privacy: .public) size=\(result.sizeBytes, privacy: .public)")
+            } catch {
+                logger.error("Failed to finalize recording \(localId, privacy: .public): \(error.localizedDescription, privacy: .public)")
             }
         }
     }
