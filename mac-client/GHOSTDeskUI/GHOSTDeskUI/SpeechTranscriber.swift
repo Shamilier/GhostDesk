@@ -277,6 +277,7 @@ final class SpeechTranscriber: NSObject, ObservableObject {
             }
         }
         provider.pushAudioBuffer(buffer, at: .invalid, speaker: speakerRole)
+        AudioRecorder.shared.append(samples: samples, sampleRate: targetSampleRate, from: .microphone)
     }
 
     private func startSystemAudioStream() async throws {
@@ -309,6 +310,8 @@ final class SpeechTranscriber: NSObject, ObservableObject {
         guard let provider else { return }
         guard CMSampleBufferDataIsReady(sampleBuffer),
               let pcmIn = sampleBuffer.toPCMBuffer() else { return }
+
+        AudioRecorder.shared.append(buffer: pcmIn, from: .system)
 
         if converter == nil || converter?.inputFormat != pcmIn.format {
             converter = AVAudioConverter(from: pcmIn.format, to: targetFormat)

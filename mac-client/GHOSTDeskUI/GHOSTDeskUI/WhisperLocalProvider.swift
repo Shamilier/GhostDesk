@@ -173,6 +173,7 @@ final class WhisperLocalProvider: NSObject, ObservableObject, AudioProcessing, T
     private var whisper: WhisperKit?
     private var transcriber: AudioStreamTranscriber?
     private let noopVideoSink = NoopVideoSink()
+    private let audioRecorder = AudioRecorder.shared
 
     // Sticky partial bookkeeping
     private var lastNonEmptyPartialAt = Date()
@@ -624,6 +625,10 @@ final class WhisperLocalProvider: NSObject, ObservableObject, AudioProcessing, T
     }
 
     private func processIncomingSamples(_ floats: [Float]) {
+        audioRecorder.append(samples: floats,
+                              sampleRate: Double(sampleRate),
+                              from: captureMode == .systemAudio ? .system : .microphone)
+
         let wasInSpeech = vad.inSpeech
         let gated = vad.process(floats)
         let nowInSpeech = vad.inSpeech

@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let oauthCoordinator = OAuthCoordinator.shared
     private let model = OverlayModel.shared
     private let authState = AuthState()
+    private let uploadManager = UploadManager.shared
 
     private var cancellables = Set<AnyCancellable>()  // теперь тип виден
 
@@ -24,6 +25,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         oauthCoordinator.configure(authState: authState)
         model.attachAuth(authState)
+        uploadManager.attachAuthState(authState)
+
+        authState.$session
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.uploadManager.attachAuthState(self.authState)
+            }
+            .store(in: &cancellables)
 
         model.$isOverlayVisible
             .receive(on: RunLoop.main)
@@ -50,6 +60,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls { if handleIncoming(url: url) { break } }
+    }
+
+    func application(_ application: NSApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
+        uploadManager.handleBackgroundEvents(identifier: identifier, completionHandler: completionHandler)
     }
 
     private func handleIncoming(url: URL) -> Bool {
