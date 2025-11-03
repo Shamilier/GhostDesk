@@ -230,9 +230,9 @@
 
   function initRecordingsList(root) {
     const container = root.querySelector('.recordings-container');
-    const skeleton = root.querySelector('[data-recordings-skeleton]');
+    const loader = root.querySelector('[data-recordings-loader]');
     const list = root.querySelector('[data-recordings-items]');
-    const emptyState = root.querySelector('[data-recordings-empty]');
+    let emptyState = root.querySelector('[data-recordings-empty]');
     const errorState = root.querySelector('[data-recordings-error]');
     const retryButton = root.querySelector('[data-recordings-retry]');
     const loadMoreButton = root.querySelector('[data-recordings-load-more]');
@@ -241,6 +241,7 @@
       loading: false,
       nextCursor: undefined,
       initialized: false,
+      recordingIds: new Set(),
     };
 
     function setLoading(isLoading, { initial = false } = {}) {
@@ -249,12 +250,10 @@
         container.setAttribute('aria-busy', String(isLoading));
       }
 
-      if (skeleton) {
-        if (initial && isLoading) {
-          skeleton.hidden = false;
-        } else if (!isLoading) {
-          skeleton.hidden = true;
-        }
+      if (loader) {
+        const shouldShowLoader = isLoading && (initial || !list || list.children.length === 0);
+        loader.hidden = !shouldShowLoader;
+        loader.setAttribute('aria-hidden', shouldShowLoader ? 'false' : 'true');
       }
 
       if (loadMoreButton && !initial) {
@@ -265,6 +264,7 @@
     function showError(message) {
       if (errorState) {
         errorState.hidden = false;
+        errorState.setAttribute('aria-hidden', 'false');
         if (message) {
           const text = errorState.querySelector('span');
           if (text) {
@@ -277,18 +277,28 @@
     function hideError() {
       if (errorState) {
         errorState.hidden = true;
+        errorState.setAttribute('aria-hidden', 'true');
       }
     }
 
     function hideEmpty() {
       if (emptyState) {
         emptyState.hidden = true;
+        emptyState.setAttribute('aria-hidden', 'true');
       }
     }
 
     function showEmpty() {
       if (emptyState) {
         emptyState.hidden = false;
+        emptyState.setAttribute('aria-hidden', 'false');
+      }
+    }
+
+    function removeEmptyState() {
+      if (emptyState) {
+        emptyState.remove();
+        emptyState = null;
       }
     }
 
@@ -346,24 +356,42 @@
 
         if (initial) {
           list.innerHTML = '';
+          state.recordingIds.clear();
         }
 
         const items = Array.isArray(payload.items) ? payload.items : [];
-        if (items.length === 0 && initial) {
+        const newItems = items.filter((item) => {
+          if (!item || !item.id) {
+            return false;
+          }
+          if (state.recordingIds.has(item.id)) {
+            return false;
+          }
+          state.recordingIds.add(item.id);
+          return true;
+        });
+
+        if (newItems.length === 0 && state.recordingIds.size === 0) {
           showEmpty();
           updateLoadMore(null);
           return;
         }
 
-        items.forEach((item) => {
+        if (newItems.length > 0) {
+          removeEmptyState();
+        }
+
+        newItems.forEach((item) => {
           list.appendChild(createRecordingCard(item));
         });
 
         updateLoadMore(payload.nextCursor ?? null);
+        hideError();
       } catch (err) {
         console.error(err);
         if (!state.initialized) {
           list.innerHTML = '';
+          state.recordingIds.clear();
         }
         showError(err.message);
       } finally {

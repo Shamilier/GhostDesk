@@ -676,29 +676,28 @@ body.theme-dark {
   color: var(--text-secondary);
 }
 
-.recordings-skeleton {
+.recordings-loader {
   display: grid;
-  gap: 12px;
+  justify-items: center;
+  gap: 16px;
+  padding: 48px 24px;
+  color: var(--text-secondary);
+  text-align: center;
 }
 
-.recording-card--skeleton {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 20px;
-  padding: 20px 24px;
-  border-radius: 20px;
-  background: rgba(17, 17, 24, 0.6);
-  border: 1px solid rgba(160, 106, 255, 0.12);
+.recordings-loader__spinner {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 3px solid rgba(160, 106, 255, 0.2);
+  border-top-color: rgba(160, 106, 255, 0.85);
+  animation: recordings-spin 0.9s linear infinite;
 }
 
-.recording-card--skeleton .recording-card__avatar,
-.recording-card--skeleton .recording-card__chevron {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.recording-card--skeleton .recording-card__avatar {
-  border-radius: 18px;
+@keyframes recordings-spin {
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .shimmer {
@@ -730,6 +729,11 @@ body.theme-dark {
   display: grid;
   gap: 12px;
   text-align: center;
+}
+
+.recordings-container > .recordings-state {
+  margin: 0 auto;
+  width: min(100%, 540px);
 }
 
 .recordings-state p {
