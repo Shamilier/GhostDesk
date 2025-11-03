@@ -13,35 +13,28 @@
       </header>
 
       <section class="recordings-container" aria-live="polite" aria-busy="true">
-        <div class="recordings-skeleton" data-recordings-skeleton>
-          <% for (let i = 0; i < 6; i += 1) { %>
-          <article class="recording-card recording-card--skeleton" aria-hidden="true">
-            <div class="recording-card__avatar"></div>
-            <div class="recording-card__content">
-              <div class="recording-card__title shimmer"></div>
-              <div class="recording-card__meta shimmer"></div>
-            </div>
-            <div class="recording-card__chevron shimmer"></div>
-          </article>
-          <% } %>
+        <div class="recordings-loader" data-recordings-loader>
+          <div class="recordings-loader__spinner" role="presentation"></div>
+          <p>Загружаем ваши записи…</p>
         </div>
+
         <ul class="recordings-list" data-recordings-items></ul>
-      </section>
 
-      <section class="recordings-state recordings-state--empty" data-recordings-empty hidden>
-        <h2>У вас пока нет записей</h2>
-        <p>Подключите Ghost AI к следующей встрече — запись появится здесь автоматически.</p>
-        <p class="recordings-state__hint">Совет: добавьте расширение в календарь и включите автоматический старт.</p>
-      </section>
+        <section class="recordings-state recordings-state--empty" data-recordings-empty hidden aria-hidden="true">
+          <h2>У вас пока нет записей</h2>
+          <p>Подключите Ghost AI к следующей встрече — запись появится здесь автоматически.</p>
+          <p class="recordings-state__hint">Совет: добавьте расширение в календарь и включите автоматический старт.</p>
+        </section>
 
-      <section class="recordings-state recordings-state--error" data-recordings-error hidden>
-        <div class="alert alert-error" role="alert">
-          <div>
-            <strong>Не удалось загрузить записи.</strong>
-            <span>Проверьте подключение к сети и попробуйте ещё раз.</span>
+        <section class="recordings-state recordings-state--error" data-recordings-error hidden aria-hidden="true">
+          <div class="alert alert-error" role="alert">
+            <div>
+              <strong>Не удалось загрузить записи.</strong>
+              <span>Проверьте подключение к сети и попробуйте ещё раз.</span>
+            </div>
+            <button type="button" class="ghost-button" data-recordings-retry>Повторить</button>
           </div>
-          <button type="button" class="ghost-button" data-recordings-retry>Повторить</button>
-        </div>
+        </section>
       </section>
 
       <div class="recordings-actions">
