@@ -250,26 +250,31 @@ export async function getTranscript(id: string): Promise<string> {
   await simulateLatency(150, 320);
   const recording = sortedRecordings.find((item) => item.id === id);
   if (!recording) {
-    throw new Error('Recording not found');
+    return 'Транскрипт будет доступен после завершения обработки записи.';
   }
 
   if (recording.status !== 'uploaded') {
     return 'Транскрипт будет доступен после завершения обработки записи.';
   }
 
+  const startedAt = recording.started_at
+    ? new Date(recording.started_at).toLocaleString('ru-RU', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      })
+    : null;
+
+  if (!startedAt) {
+    return 'Транскрипт будет доступен позже. Пока мы готовим расшифровку, вы можете попросить ИИ составить резюме или список задач.';
+  }
+
   return `Транскрипт будет доступен позже.\n\n` +
-    `Пока мы готовим расшифровку встречи «${new Date(recording.started_at).toLocaleString('ru-RU', {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    })}», вы можете попросить ИИ составить резюме или список задач.`;
+    `Пока мы готовим расшифровку встречи «${startedAt}», вы можете попросить ИИ составить резюме или список задач.`;
 }
 
 export async function askAi(id: string, prompt: string): Promise<string> {
   await simulateLatency(500, 820);
   const recording = sortedRecordings.find((item) => item.id === id);
-  if (!recording) {
-    throw new Error('Recording not found');
-  }
 
   const cannedResponses = [
     'Это будет доступно после завершения обработки записи. Мы подготовим ключевые моменты и пришлем уведомление.',
@@ -283,7 +288,8 @@ export async function askAi(id: string, prompt: string): Promise<string> {
     return 'Я готов помочь, как только вы сформулируете вопрос или выберете готовую подсказку.';
   }
 
-  const seed = normalizedPrompt.length + recording.id.length;
+  const seedId = recording ? recording.id : id;
+  const seed = normalizedPrompt.length + seedId.length;
   const index = seed % cannedResponses.length;
   return cannedResponses[index];
 }
