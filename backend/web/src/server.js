@@ -1,3 +1,5 @@
+require('ts-node/register/transpile-only');
+
 const path = require('path');
 const express = require('express');
 const session = require('express-session');
@@ -5,6 +7,8 @@ const helmet = require('helmet');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const { customAlphabet } = require('nanoid');
+
+const recordingsService = require('./services/recordings');
 
 const db = require('./db');
 const oauth = require('./oauth');
@@ -223,6 +227,55 @@ const formatAsIso8601 = (value) => {
   }
 
   return null;
+};
+
+const formatDuration = (seconds) => {
+  if (!seconds || Number.isNaN(seconds)) {
+    return '—';
+  }
+
+  const totalSeconds = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const secs = totalSeconds % 60;
+
+  const minutesPart = hours > 0 ? String(minutes).padStart(2, '0') : String(minutes);
+  const secondsPart = String(secs).padStart(2, '0');
+
+  return hours > 0 ? `${hours}:${minutesPart}:${secondsPart}` : `${minutes}:${secondsPart}`;
+};
+
+const formatFileSize = (bytes) => {
+  if (!bytes || Number.isNaN(bytes)) {
+    return '—';
+  }
+
+  const units = ['Б', 'КБ', 'МБ', 'ГБ'];
+  let value = bytes;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  const formatter = new Intl.NumberFormat('ru-RU', {
+    minimumFractionDigits: value < 10 && unitIndex > 0 ? 1 : 0,
+    maximumFractionDigits: value < 10 && unitIndex > 0 ? 1 : 0,
+  });
+
+  return `${formatter.format(value)} ${units[unitIndex]}`;
+};
+
+const formatRecordingTitle = (recording) => {
+  if (!recording || !recording.started_at) {
+    return 'Запись';
+  }
+
+  const started = new Date(recording.started_at);
+  const date = started.toLocaleDateString('ru-RU');
+  const time = started.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  return `Запись от ${date}, ${time}`;
 };
 
 app.get('/', (req, res) => {
@@ -480,6 +533,37 @@ app.get('/dashboard', requireAuth, (req, res) => {
   });
 });
 
+app.get('/recordings', requireAuth, (req, res) => {
+  res.render('recordings/index', {
+    title: 'Мои записи',
+  });
+});
+
+app.get('/recordings/:id', requireAuth, async (req, res) => {
+  try {
+    const recording = await recordingsService.getRecording(req.params.id);
+    const playbackUrl = await recordingsService.getPlaybackUrl(recording.id);
+
+    res.render('recordings/show', {
+      title: formatRecordingTitle(recording),
+      recording,
+      playbackUrl,
+      helpers: {
+        formatDuration,
+        formatFileSize,
+        formatRecordingTitle,
+      },
+    });
+  } catch (err) {
+    if (err && err.message === 'Recording not found') {
+      return res.status(404).render('404', { title: 'Страница не найдена' });
+    }
+
+    console.error('Error rendering recording page', err);
+    return res.status(500).render('500', { title: 'Ошибка сервера' });
+  }
+});
+
 app.get('/oauth/authorize', async (req, res) => {
   const { response_type, client_id, redirect_uri, state, code_challenge, code_challenge_method } = req.query;
 
@@ -675,6 +759,44 @@ app.get('/oauth/profile', async (req, res) => {
   } catch (err) {
     console.error('OAuth profile endpoint error', err);
     return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+app.get('/api/recordings', requireAuth, async (req, res) => {
+  try {
+    const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
+    const payload = await recordingsService.listRecordings(cursor);
+    res.json(payload);
+  } catch (err) {
+    console.error('Failed to list recordings', err);
+    res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+app.get('/api/recordings/:id/transcript', requireAuth, async (req, res) => {
+  try {
+    const transcript = await recordingsService.getTranscript(req.params.id);
+    res.json({ transcript });
+  } catch (err) {
+    if (err && err.message === 'Recording not found') {
+      return res.status(404).json({ error: 'not_found' });
+    }
+    console.error('Failed to load transcript', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+app.post('/api/recordings/:id/ask', requireAuth, async (req, res) => {
+  try {
+    const prompt = typeof req.body.prompt === 'string' ? req.body.prompt : '';
+    const answer = await recordingsService.askAi(req.params.id, prompt);
+    res.json({ answer });
+  } catch (err) {
+    if (err && err.message === 'Recording not found') {
+      return res.status(404).json({ error: 'not_found' });
+    }
+    console.error('Failed to process AI question', err);
+    return res.status(500).json({ error: 'internal_error' });
   }
 });
 
