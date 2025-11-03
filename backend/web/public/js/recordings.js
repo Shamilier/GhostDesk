@@ -56,6 +56,97 @@
     return `${formatter.format(size)} ${units[unitIndex]}`;
   }
 
+  function toFiniteNumber(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const parsed = Number.parseFloat(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+    return undefined;
+  }
+
+  function normalizeRecordingItem(item) {
+    if (!item || typeof item !== 'object') {
+      return null;
+    }
+
+    const id = 'id' in item ? String(item.id) : null;
+    if (!id) {
+      return null;
+    }
+
+    const startedAt = item.started_at || item.startedAt || null;
+    const endedAt = item.ended_at || item.endedAt || null;
+
+    const durationCandidates = [
+      item.duration_s,
+      item.durationSeconds,
+      item.duration_seconds,
+      item.duration,
+      item.duration_sec,
+      item.durationMs,
+      item.duration_ms,
+    ];
+    let durationSeconds;
+    for (const candidate of durationCandidates) {
+      if (candidate == null) {
+        continue;
+      }
+      if (candidate === item.durationMs || candidate === item.duration_ms) {
+        const millis = toFiniteNumber(candidate);
+        if (typeof millis === 'number') {
+          durationSeconds = Math.round(millis / 1000);
+          break;
+        }
+        continue;
+      }
+      const parsed = toFiniteNumber(candidate);
+      if (typeof parsed === 'number') {
+        durationSeconds = parsed;
+        break;
+      }
+    }
+
+    const sizeCandidates = [item.size_bytes, item.sizeBytes, item.size, item.file_size, item.bytes];
+    let sizeBytes;
+    for (const candidate of sizeCandidates) {
+      const parsed = toFiniteNumber(candidate);
+      if (typeof parsed === 'number') {
+        sizeBytes = parsed;
+        break;
+      }
+    }
+
+    const status = typeof item.status === 'string' ? item.status : 'uploaded';
+    const contentType = item.content_type || item.contentType || undefined;
+
+    return {
+      id,
+      started_at: startedAt || null,
+      ended_at: endedAt || null,
+      duration_s: typeof durationSeconds === 'number' ? durationSeconds : undefined,
+      size_bytes: typeof sizeBytes === 'number' ? sizeBytes : undefined,
+      status,
+      content_type: contentType,
+    };
+  }
+
+  function normalizeCursor(value) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      return trimmed ? trimmed : null;
+    }
+    if (value === null || typeof value === 'undefined') {
+      return null;
+    }
+    const stringified = String(value).trim();
+    return stringified ? stringified : null;
+  }
+
   function createStatusBadge(item) {
     const config = STATUS_MAP[item.status] || STATUS_MAP.uploaded;
     const span = document.createElement('span');
@@ -223,7 +314,16 @@
       if (!response.ok) {
         throw new Error('Не удалось загрузить записи');
       }
-      return response.json();
+      const data = await response.json();
+      const rawItems = Array.isArray(data.items) ? data.items : [];
+      const normalizedItems = rawItems
+        .map((item) => normalizeRecordingItem(item))
+        .filter((item) => item !== null);
+      console.log('[recordings] loaded', normalizedItems.length, 'items');
+      return {
+        items: normalizedItems,
+        nextCursor: normalizeCursor(data.next_cursor ?? data.nextCursor ?? null),
+      };
     }
 
     async function load({ initial = false } = {}) {

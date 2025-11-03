@@ -539,10 +539,144 @@ app.get('/recordings', requireAuth, (req, res) => {
   });
 });
 
+const toFiniteNumber = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number.parseFloat(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return undefined;
+};
+
+const normalizeRecordingFromApi = (payload) => {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const id = payload.id ? String(payload.id) : null;
+  if (!id) {
+    return null;
+  }
+
+  const startedAt = payload.started_at || payload.startedAt || null;
+  const endedAt = payload.ended_at || payload.endedAt || null;
+
+  const durationSources = [
+    payload.duration_s,
+    payload.duration_seconds,
+    payload.duration,
+    payload.duration_sec,
+    payload.duration_ms,
+    payload.durationMs,
+  ];
+  let durationSeconds;
+  for (const candidate of durationSources) {
+    if (candidate == null) {
+      continue;
+    }
+    if (candidate === payload.duration_ms || candidate === payload.durationMs) {
+      const millis = toFiniteNumber(candidate);
+      if (typeof millis === 'number') {
+        durationSeconds = Math.round(millis / 1000);
+        break;
+      }
+    }
+    const parsed = toFiniteNumber(candidate);
+    if (typeof parsed === 'number') {
+      durationSeconds = parsed;
+      break;
+    }
+  }
+
+  const sizeSources = [payload.size_bytes, payload.sizeBytes, payload.size, payload.file_size, payload.bytes];
+  let sizeBytes;
+  for (const candidate of sizeSources) {
+    const parsed = toFiniteNumber(candidate);
+    if (typeof parsed === 'number') {
+      sizeBytes = parsed;
+      break;
+    }
+  }
+
+  const status = typeof payload.status === 'string' ? payload.status : 'uploaded';
+  const contentType = payload.content_type || payload.contentType || null;
+
+  return {
+    id,
+    started_at: startedAt || null,
+    ended_at: endedAt || null,
+    duration_s: typeof durationSeconds === 'number' ? durationSeconds : undefined,
+    size_bytes: typeof sizeBytes === 'number' ? sizeBytes : undefined,
+    status,
+    content_type: contentType || undefined,
+  };
+};
+
 app.get('/recordings/:id', requireAuth, async (req, res) => {
+  const user = req.session.user;
+  const recordingId = req.params.id;
+  const apiUrl = `https://api.ghostai.ru/v1/recordings/${encodeURIComponent(recordingId)}?include_url=1`;
+  const authHeader = `Bearer web-user-${user.id}`;
+  const started = Date.now();
+
   try {
-    const recording = await recordingsService.getRecording(req.params.id);
-    const playbackUrl = await recordingsService.getPlaybackUrl(recording.id);
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: authHeader,
+        Accept: 'application/json',
+      },
+    });
+
+    const text = await response.text();
+    console.log(
+      '[recordings] show user=%s rec=%s status=%s in=%dms bodyLen=%d',
+      user.id,
+      recordingId,
+      response.status,
+      Date.now() - started,
+      text.length,
+    );
+
+    if (response.status === 404) {
+      return res.status(404).render('404', { title: 'Страница не найдена' });
+    }
+
+    if (!response.ok) {
+      console.error(
+        '[recordings][error] show user=%s rec=%s err=%s',
+        user.id,
+        recordingId,
+        `Unexpected API status ${response.status}`,
+      );
+      return res.status(502).render('500', { title: 'Ошибка сервера' });
+    }
+
+    let payload;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch (parseErr) {
+      console.error('[recordings][error] show user=%s rec=%s err=%s', user.id, recordingId, parseErr);
+      return res.status(502).render('500', { title: 'Ошибка сервера' });
+    }
+
+    const recording = normalizeRecordingFromApi(payload);
+    if (!recording) {
+      return res.status(404).render('404', { title: 'Страница не найдена' });
+    }
+
+    const playbackUrl =
+      payload.download_url ||
+      payload.playback_url ||
+      payload.audio_url ||
+      payload.url ||
+      null;
 
     res.render('recordings/show', {
       title: formatRecordingTitle(recording),
@@ -555,12 +689,8 @@ app.get('/recordings/:id', requireAuth, async (req, res) => {
       },
     });
   } catch (err) {
-    if (err && err.message === 'Recording not found') {
-      return res.status(404).render('404', { title: 'Страница не найдена' });
-    }
-
-    console.error('Error rendering recording page', err);
-    return res.status(500).render('500', { title: 'Ошибка сервера' });
+    console.error('[recordings][error] show user=%s rec=%s err=%s', user.id, recordingId, err);
+    return res.status(502).render('500', { title: 'Ошибка сервера' });
   }
 });
 
@@ -731,6 +861,21 @@ app.post('/oauth/revoke', async (req, res) => {
 });
 
 app.get('/oauth/profile', async (req, res) => {
+  const auth = req.headers.authorization;
+  if (auth && auth.startsWith('Bearer web-user-')) {
+    const userId = auth.replace('Bearer web-user-', '').trim();
+    if (!userId) {
+      return res.status(400).json({ error: 'invalid_token' });
+    }
+    return res.json({
+      id: userId,
+      email: null,
+      plan: 'free',
+      referral: null,
+      created_at: new Date().toISOString(),
+    });
+  }
+
   const authHeader = req.headers.authorization || '';
   const tokenMatch = authHeader.match(/^Bearer\s+(\S+)$/i);
 
@@ -762,14 +907,88 @@ app.get('/oauth/profile', async (req, res) => {
   }
 });
 
-app.get('/api/recordings', requireAuth, async (req, res) => {
+app.get('/api/recordings', async (req, res) => {
+  const user = req.session.user;
+  if (!user) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+
+  const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
+  const url = new URL('https://api.ghostai.ru/v1/recordings');
+  if (cursor) {
+    url.searchParams.set('cursor', cursor);
+  }
+
+  const authHeader = `Bearer web-user-${user.id}`;
+  const started = Date.now();
+
   try {
-    const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
-    const payload = await recordingsService.listRecordings(cursor);
-    res.json(payload);
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        Authorization: authHeader,
+        Accept: 'application/json',
+      },
+    });
+
+    const text = await response.text();
+    console.log(
+      '[recordings] list user=%s status=%s in=%dms bodyLen=%d',
+      user.id,
+      response.status,
+      Date.now() - started,
+      text.length,
+    );
+
+    if (!response.ok) {
+      return res.status(502).json({ error: 'api_error', status: response.status });
+    }
+
+    return res.type('application/json').send(text);
   } catch (err) {
-    console.error('Failed to list recordings', err);
-    res.status(500).json({ error: 'internal_error' });
+    console.error('[recordings][error] list user=%s err=%s', user.id, err);
+    return res.status(502).json({ error: 'api_unavailable' });
+  }
+});
+
+app.get('/api/recordings/:id', async (req, res) => {
+  const user = req.session.user;
+  if (!user) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+
+  const id = req.params.id;
+  const apiUrl = `https://api.ghostai.ru/v1/recordings/${encodeURIComponent(id)}?include_url=1`;
+  const authHeader = `Bearer web-user-${user.id}`;
+  const started = Date.now();
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: authHeader,
+        Accept: 'application/json',
+      },
+    });
+
+    const text = await response.text();
+    console.log(
+      '[recordings] show user=%s rec=%s status=%s in=%dms bodyLen=%d',
+      user.id,
+      id,
+      response.status,
+      Date.now() - started,
+      text.length,
+    );
+
+    if (!response.ok) {
+      return res.status(502).json({ error: 'api_error', status: response.status });
+    }
+
+    return res.type('application/json').send(text);
+  } catch (err) {
+    console.error('[recordings][error] show user=%s rec=%s err=%s', user.id, id, err);
+    return res.status(502).json({ error: 'api_unavailable' });
   }
 });
 
