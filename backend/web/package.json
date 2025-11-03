@@ -23,7 +23,9 @@
     "express-session": "^1.18.2",
     "helmet": "^8.1.0",
     "nanoid": "^5.1.6",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
