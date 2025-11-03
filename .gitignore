@@ -1,6 +1,7 @@
 # Node.js
 node_modules/
 backend/data/
+backend/web/data/
 
 # Next.js build output
 .next/
