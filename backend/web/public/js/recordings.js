@@ -251,7 +251,8 @@
       }
 
       if (loader) {
-        const shouldShowLoader = isLoading && (initial || !list || list.children.length === 0);
+        const hasItems = Boolean(list && list.children.length > 0);
+        const shouldShowLoader = isLoading && !hasItems;
         loader.hidden = !shouldShowLoader;
         loader.setAttribute('aria-hidden', shouldShowLoader ? 'false' : 'true');
       }
