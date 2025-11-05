@@ -98,6 +98,9 @@ final class AuthState: ObservableObject {
 
         if let access, let refresh, let expiresAt {
             session = AuthSession(accessToken: access, refreshToken: refresh, expiresAt: expiresAt)
+
+            logAccessToken(access, context: "Restored session")
+
         } else {
             session = nil
         }
@@ -127,6 +130,7 @@ final class AuthState: ObservableObject {
     func updateSession(_ session: AuthSession, _ profile: UserProfile) {
         self.session = session
         self.profile = profile
+        logAccessToken(session.accessToken, context: "Updated session")
         isRestoring = false
         lastError = nil
         persistSession(session)
@@ -208,12 +212,22 @@ final class AuthState: ObservableObject {
 
         SecItemDelete(query as CFDictionary)
 
-        guard let value, let data = value.data(using: .utf8) else { return }
+        // Если пришло nil — значит удаляем
+        guard let value, let data = value.data(using: .utf8) else {
+            if account == Keychain.accessAccount {
+                print("ACCESS TOKEN удалён из Keychain")
+            }
+            return
+        }
 
         query[kSecValueData as String] = data
         let status = SecItemAdd(query as CFDictionary, nil)
         if status != errSecSuccess {
             print("Failed to save keychain item: \(status)")
+        } else {
+            if account == Keychain.accessAccount {
+                print("ACCESS TOKEN сохранён в Keychain: \(value)")
+            }
         }
     }
 
@@ -231,6 +245,10 @@ final class AuthState: ObservableObject {
         guard status == errSecSuccess, let data = item as? Data else { return nil }
         return String(data: data, encoding: .utf8)
     }
+    private func logAccessToken(_ token: String, context: String) {
+            guard !token.isEmpty else { return }
+            print("[AuthState] Access Token (\(context)): \(token)")
+        }
 
     private func scheduleRefreshTask() {
         refreshTask?.cancel()
@@ -249,6 +267,7 @@ final class AuthState: ObservableObject {
             }
 
             guard let self else { return }
+            
 
             do {
                 let newSession = try await AuthAPI.shared.refreshTokens(refreshToken: refreshToken)

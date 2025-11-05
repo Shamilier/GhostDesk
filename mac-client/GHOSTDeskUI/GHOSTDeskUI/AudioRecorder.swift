@@ -2,6 +2,60 @@ import Foundation
 import AVFoundation
 import CoreMedia
 import os.log
+import AudioToolbox  // для CMAudio* / CMSampleBuffer*
+
+
+private func makeSampleBuffer(from pcm: AVAudioPCMBuffer,
+                              pts: CMTime) -> CMSampleBuffer? {
+    // 1) ASBD: делаем МУТАБЕЛЬНУЮ копию и передаём &asbd
+    var asbd = pcm.format.streamDescription.pointee
+    var fmtDesc: CMFormatDescription?
+    let statusFD = CMAudioFormatDescriptionCreate(
+        allocator: kCFAllocatorDefault,
+        asbd: &asbd,
+        layoutSize: 0, layout: nil,
+        magicCookieSize: 0, magicCookie: nil,
+        extensions: nil,
+        formatDescriptionOut: &fmtDesc
+    )
+    guard statusFD == noErr, let formatDesc = fmtDesc else { return nil }
+
+    // 2) Тайминг — ок передавать &timing (это наша var)
+    var timing = CMSampleTimingInfo(
+        duration: CMTime(value: 1, timescale: CMTimeScale(pcm.format.sampleRate)),
+        presentationTimeStamp: pts,
+        decodeTimeStamp: .invalid
+    )
+
+    var sbuf: CMSampleBuffer?
+    let statusSB = CMSampleBufferCreate(
+        allocator: kCFAllocatorDefault,
+        dataBuffer: nil,
+        dataReady: true,
+        makeDataReadyCallback: nil,
+        refcon: nil,
+        formatDescription: formatDesc,
+        sampleCount: CMItemCount(pcm.frameLength),
+        sampleTimingEntryCount: 1,
+        sampleTimingArray: &timing,
+        sampleSizeEntryCount: 0,
+        sampleSizeArray: nil,
+        sampleBufferOut: &sbuf
+    )
+    guard statusSB == noErr, let sampleBuffer = sbuf else { return nil }
+
+    // 3) AudioBufferList: НЕ надо &...pointee — просто передай сам pointer
+    let statusSet = CMSampleBufferSetDataBufferFromAudioBufferList(
+        sampleBuffer,
+        blockBufferAllocator: kCFAllocatorDefault,
+        blockBufferMemoryAllocator: kCFAllocatorDefault,
+        flags: 0,
+        bufferList: pcm.audioBufferList
+    )
+    guard statusSet == noErr else { return nil }
+
+    return sampleBuffer
+}
 
 final class AudioRecorder {
     enum Source {
@@ -61,9 +115,7 @@ final class AudioRecorder {
             }
 
             let writer = try AVAssetWriter(outputURL: url, fileType: .m4a)
-            if writer.canApply(outputSettings: nil, forMediaType: .audio) {
-                writer.outputFileTypeProfile = .m4aAudioOnly
-            }
+
 
             let settings: [String: Any] = [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
@@ -118,7 +170,7 @@ final class AudioRecorder {
 
         guard let writer else { return }
 
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             writer.finishWriting {
                 if let error = writer.error {
                     continuation.resume(throwing: error)
@@ -172,9 +224,12 @@ final class AudioRecorder {
         }
 
         guard let (input, time) = context else { return }
-        if !input.append(buffer, withPresentationTime: time) {
-            let message = input.error?.localizedDescription ?? "unknown"
-            logger.error("Failed to append audio sample: \(message, privacy: .public)")
+        if let sbuf = makeSampleBuffer(from: buffer, pts: time) {
+            if !input.append(sbuf) {
+                logger.error("Failed to append CMSampleBuffer (writer status=\(self.assetWriter?.status.rawValue ?? -1))")
+            }
+        } else {
+            logger.error("Failed to make CMSampleBuffer")
         }
     }
 }
@@ -193,15 +248,15 @@ private final class SourceContext {
         node = AVAudioSourceNode { [weak ringBuffer] isSilence, _, frameCount, audioBufferList in
             guard let ringBuffer else {
                 SourceContext.fillSilence(audioBufferList, frameCount: frameCount)
-                isSilence.pointee = true
+                isSilence.pointee = ObjCBool(true)
                 return noErr
             }
             let written = ringBuffer.read(into: audioBufferList, frameCount: Int(frameCount))
             if written < Int(frameCount) {
                 SourceContext.fillSilence(audioBufferList, frameCount: frameCount, startFrame: written)
-                isSilence.pointee = written == 0
+                isSilence.pointee = ObjCBool(written == 0)
             } else {
-                isSilence.pointee = false
+                isSilence.pointee = ObjCBool(false)
             }
             return noErr
         }
@@ -246,7 +301,7 @@ private final class SourceContext {
         }
 
         if let error {
-            logger.error("Audio conversion failed (\(name, privacy: .public)): \(error.localizedDescription, privacy: .public)")
+            logger.error("Audio conversion failed (\(self.name, privacy: .public)): \(error.localizedDescription, privacy: .public)")
             return
         }
 
@@ -254,7 +309,7 @@ private final class SourceContext {
         let length = Int(converted.frameLength)
         if length == 0 {
             if !didLogSilence {
-                logger.warning("Recorder source \(name, privacy: .public) produced empty buffer")
+                logger.warning("Recorder source \(self.name, privacy: .public) produced empty buffer")
                 didLogSilence = true
             }
             return
@@ -270,13 +325,16 @@ private final class SourceContext {
         didLogSilence = false
     }
 
-    private static func fillSilence(_ list: UnsafeMutablePointer<AudioBufferList>, frameCount: AVAudioFrameCount, startFrame: Int = 0) {
+    private static func fillSilence(_ list: UnsafeMutablePointer<AudioBufferList>,
+                                    frameCount: AVAudioFrameCount,
+                                    startFrame: Int = 0) {
         let totalFrames = Int(frameCount)
-        for bufferIndex in 0..<Int(list.pointee.mNumberBuffers) {
-            var buffer = list.pointee.mBuffers[bufferIndex]
+        let abl = UnsafeMutableAudioBufferListPointer(list)
+        for buffer in abl {
             guard let data = buffer.mData else { continue }
             let ptr = data.assumingMemoryBound(to: Float.self)
-            ptr.advanced(by: startFrame).initialize(repeating: 0, count: totalFrames - startFrame)
+            let count = max(0, totalFrames - startFrame)
+            ptr.advanced(by: startFrame).initialize(repeating: 0, count: count)
         }
     }
 }
@@ -298,42 +356,35 @@ private final class AudioRingBuffer {
         lock.unlock()
     }
 
-    func read(into audioBufferList: UnsafeMutablePointer<AudioBufferList>, frameCount: Int) -> Int {
+    func read(into list: UnsafeMutablePointer<AudioBufferList>, frameCount: Int) -> Int {
         lock.lock()
         defer { lock.unlock() }
 
         var written = 0
+        let abl = UnsafeMutableAudioBufferListPointer(list)
+
         while written < frameCount {
-            if head >= queue.count {
-                break
-            }
-            if queue[head].offset >= queue[head].samples.count {
-                head += 1
-                continue
-            }
+            if head >= queue.count { break }
+            if queue[head].offset >= queue[head].samples.count { head += 1; continue }
+
             let available = queue[head].samples.count - queue[head].offset
             let toCopy = min(available, frameCount - written)
 
-            queue[head].samples.withUnsafeBufferPointer { source in
-                for bufferIndex in 0..<Int(audioBufferList.pointee.mNumberBuffers) {
-                    var buffer = audioBufferList.pointee.mBuffers[bufferIndex]
-                    guard let data = buffer.mData else { continue }
-                    let ptr = data.assumingMemoryBound(to: Float.self)
-                    ptr.advanced(by: written).assign(from: source.baseAddress! + queue[head].offset, count: toCopy)
+            queue[head].samples.withUnsafeBufferPointer { src in
+                let srcBase = src.baseAddress! + queue[head].offset
+                for i in 0..<abl.count {
+                    guard let data = abl[i].mData else { continue }
+                    let dst = data.assumingMemoryBound(to: Float.self)
+                    dst.advanced(by: written).assign(from: srcBase, count: toCopy)
                 }
             }
 
             queue[head].offset += toCopy
             written += toCopy
-            if queue[head].offset >= queue[head].samples.count {
-                head += 1
-            }
+            if queue[head].offset >= queue[head].samples.count { head += 1 }
         }
 
-        if head > 8 {
-            queue.removeFirst(head)
-            head = 0
-        }
+        if head > 8 { queue.removeFirst(head); head = 0 }
         return written
     }
 
