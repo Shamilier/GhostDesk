@@ -994,13 +994,13 @@ app.get('/api/recordings/:id', async (req, res) => {
 
 app.get('/api/recordings/:id/transcript', requireAuth, async (req, res) => {
   try {
-    const transcript = await recordingsService.getTranscript(req.params.id);
-    res.json({ transcript });
+    const payload = await recordingsService.getTranscript(req.params.id);
+    return res.json(payload);
   } catch (err) {
     if (err && err.message === 'Recording not found') {
       return res.status(404).json({ error: 'not_found' });
     }
-    console.error('Failed to load transcript', err);
+    console.error('[recordings][error] transcript rec=%s err=%o', req.params.id, err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });

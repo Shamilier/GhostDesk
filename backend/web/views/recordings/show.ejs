@@ -94,9 +94,37 @@
               </button>
             </div>
           </div>
-          <p class="recording-hint">
-            Ghost AI автоматически обрезает лишние паузы и синхронизирует заметки. Скачивание сохранит оригинальный файл.
-          </p>
+          <section class="recording-summary" data-recording-summary aria-live="polite">
+            <div class="recording-summary__skeleton" data-summary-skeleton>
+              <% for (let i = 0; i < 4; i += 1) { %>
+              <div class="recording-summary__line shimmer" aria-hidden="true"></div>
+              <% } %>
+            </div>
+            <div class="recording-summary__content" data-summary-content hidden>
+              <div class="recording-summary__header">
+                <h2>Краткое резюме встречи</h2>
+                <span class="recording-summary__updated" data-summary-updated hidden></span>
+              </div>
+              <p class="recording-summary__intro" data-summary-intro></p>
+              <div class="recording-summary__grid">
+                <div class="recording-summary__section" data-summary-highlights hidden>
+                  <h3>Основные моменты</h3>
+                  <ul data-summary-highlights-list></ul>
+                </div>
+                <div class="recording-summary__section" data-summary-actions hidden>
+                  <h3>Следующие шаги</h3>
+                  <ul data-summary-actions-list></ul>
+                </div>
+                <div class="recording-summary__section" data-summary-decisions hidden>
+                  <h3>Принятые решения</h3>
+                  <ul data-summary-decisions-list></ul>
+                </div>
+              </div>
+            </div>
+            <div class="recording-summary__empty" data-summary-empty hidden>
+              <p>Резюме появится сразу после обработки записи.</p>
+            </div>
+          </section>
         </div>
 
         <div class="recording-layout__secondary" data-tabs>
@@ -130,18 +158,20 @@
             aria-labelledby="tab-transcript"
             data-tab-panel="transcript"
           >
-            <div class="transcript-panel" data-transcript-panel>
+            <div class="transcript-panel" data-transcript-panel aria-live="polite">
               <div class="transcript-panel__skeleton" data-transcript-skeleton>
                 <% for (let i = 0; i < 8; i += 1) { %>
                 <div class="transcript-line shimmer" aria-hidden="true"></div>
                 <% } %>
               </div>
-              <pre class="transcript-panel__content" data-transcript-content hidden></pre>
+              <div class="transcript-panel__content" data-transcript-content hidden>
+                <div class="transcript-timeline" data-transcript-list></div>
+              </div>
               <div class="transcript-panel__empty" data-transcript-empty hidden>
-                <p>Транскрипт будет доступен позже. Мы пришлём уведомление, как только обработка завершится.</p>
+                <p data-transcript-empty-message>Транскрипт будет доступен позже. Мы пришлём уведомление, как только обработка завершится.</p>
               </div>
               <div class="transcript-panel__error" data-transcript-error hidden>
-                <p>Не удалось загрузить транскрипт. Попробуйте обновить страницу.</p>
+                <p data-transcript-error-message>Не удалось загрузить транскрипт. Попробуйте обновить страницу.</p>
               </div>
             </div>
           </section>

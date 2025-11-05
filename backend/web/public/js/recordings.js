@@ -18,6 +18,13 @@
     minute: '2-digit',
   });
 
+  const summaryDateFormatter = new Intl.DateTimeFormat('ru-RU', {
+    day: '2-digit',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
   function formatRecordingTitle(item) {
     if (!item || !item.started_at) {
       return 'Запись';
@@ -145,6 +152,22 @@
     }
     const stringified = String(value).trim();
     return stringified ? stringified : null;
+  }
+
+  function formatTranscriptTime(seconds) {
+    const numeric = Number.parseFloat(String(seconds));
+    if (!Number.isFinite(numeric) || Number.isNaN(numeric)) {
+      return '00:00';
+    }
+    const total = Math.max(0, numeric);
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const secs = total % 60;
+    const minutesPart = hours > 0 ? String(minutes).padStart(2, '0') : String(minutes);
+    const secondsPart = String(secs).padStart(2, '0');
+    return hours > 0
+      ? `${hours}:${minutesPart}:${secondsPart}`
+      : `${minutesPart}:${secondsPart}`;
   }
 
   function createStatusBadge(item) {
@@ -443,16 +466,176 @@
     return { wrapper, bubble, paragraph, meta };
   }
 
-  function initTranscript(root, recordingId, recordingStatus) {
-    const skeleton = root.querySelector('[data-transcript-skeleton]');
-    const content = root.querySelector('[data-transcript-content]');
-    const emptyState = root.querySelector('[data-transcript-empty]');
-    const errorState = root.querySelector('[data-transcript-error]');
+  function prepareSummaryElements(root) {
+    if (!root) {
+      return null;
+    }
+    return {
+      skeleton: root.querySelector('[data-summary-skeleton]'),
+      content: root.querySelector('[data-summary-content]'),
+      empty: root.querySelector('[data-summary-empty]'),
+      intro: root.querySelector('[data-summary-intro]'),
+      updated: root.querySelector('[data-summary-updated]'),
+      highlights: root.querySelector('[data-summary-highlights]'),
+      highlightsList: root.querySelector('[data-summary-highlights-list]'),
+      actions: root.querySelector('[data-summary-actions]'),
+      actionsList: root.querySelector('[data-summary-actions-list]'),
+      decisions: root.querySelector('[data-summary-decisions]'),
+      decisionsList: root.querySelector('[data-summary-decisions-list]'),
+    };
+  }
+
+  function renderSummarySection(section, list, items) {
+    if (!section || !list) {
+      return;
+    }
+    list.innerHTML = '';
+    if (!Array.isArray(items) || items.length === 0) {
+      section.hidden = true;
+      return;
+    }
+    const fragment = document.createDocumentFragment();
+    items.forEach((item) => {
+      const li = document.createElement('li');
+      li.textContent = item;
+      fragment.appendChild(li);
+    });
+    list.appendChild(fragment);
+    section.hidden = false;
+  }
+
+  function renderSummary(elements, status, summary, message) {
+    if (!elements) {
+      return;
+    }
+
+    if (elements.skeleton) {
+      elements.skeleton.hidden = true;
+    }
+
+    if (elements.content) {
+      elements.content.hidden = true;
+    }
+
+    if (elements.empty) {
+      elements.empty.hidden = true;
+    }
+
+    if (status !== 'ready' || !summary) {
+      if (elements.empty) {
+        elements.empty.hidden = false;
+        const paragraph = elements.empty.querySelector('p');
+        if (paragraph) {
+          paragraph.textContent = message || 'Резюме появится сразу после обработки записи.';
+        }
+      }
+      return;
+    }
+
+    if (elements.content) {
+      elements.content.hidden = false;
+    }
+
+    if (elements.intro) {
+      elements.intro.textContent = summary.intro;
+    }
+
+    if (elements.updated) {
+      if (summary.updatedAt) {
+        const parsed = new Date(summary.updatedAt);
+        if (!Number.isNaN(parsed.getTime())) {
+          elements.updated.hidden = false;
+          elements.updated.textContent = `Обновлено ${summaryDateFormatter.format(parsed)}`;
+        } else {
+          elements.updated.hidden = true;
+        }
+      } else {
+        elements.updated.hidden = true;
+      }
+    }
+
+    renderSummarySection(elements.highlights, elements.highlightsList, summary.highlights);
+    renderSummarySection(elements.actions, elements.actionsList, summary.actionItems);
+    renderSummarySection(elements.decisions, elements.decisionsList, summary.decisions);
+  }
+
+  function renderTranscriptEntries(container, entries) {
+    if (!container) {
+      return;
+    }
+
+    container.innerHTML = '';
+
+    const fragment = document.createDocumentFragment();
+    const list = Array.isArray(entries) ? entries : [];
+    list.forEach((entry) => {
+      if (!entry || typeof entry.text !== 'string') {
+        return;
+      }
+
+      const speakerName = entry.speaker || 'Участник';
+
+      const item = document.createElement('article');
+      item.className = 'transcript-entry';
+
+      const time = document.createElement('span');
+      time.className = 'transcript-entry__time';
+      time.textContent = formatTranscriptTime(entry.start);
+      item.appendChild(time);
+
+      const body = document.createElement('div');
+      body.className = 'transcript-entry__body';
+
+      const speaker = document.createElement('div');
+      speaker.className = 'transcript-entry__speaker';
+
+      const name = document.createElement('span');
+      name.className = 'transcript-entry__name';
+      name.textContent = speakerName;
+      speaker.appendChild(name);
+
+      if (entry.role) {
+        const role = document.createElement('span');
+        role.className = 'transcript-entry__role';
+        role.textContent = entry.role;
+        speaker.appendChild(role);
+      }
+
+      body.appendChild(speaker);
+
+      const text = document.createElement('p');
+      text.className = 'transcript-entry__text';
+      text.textContent = entry.text;
+      body.appendChild(text);
+
+      item.appendChild(body);
+      fragment.appendChild(item);
+    });
+
+    container.appendChild(fragment);
+  }
+
+  function initTranscript(root, recordingId) {
+    const panel = root.querySelector('[data-transcript-panel]');
+    if (!panel) {
+      return;
+    }
+
+    const summaryElements = prepareSummaryElements(root.querySelector('[data-recording-summary]'));
+
+    const skeleton = panel.querySelector('[data-transcript-skeleton]');
+    const content = panel.querySelector('[data-transcript-content]');
+    const timeline = panel.querySelector('[data-transcript-list]');
+    const emptyState = panel.querySelector('[data-transcript-empty]');
+    const emptyMessage = emptyState ? emptyState.querySelector('[data-transcript-empty-message]') : null;
+    const errorState = panel.querySelector('[data-transcript-error]');
+    const errorMessage = errorState ? errorState.querySelector('[data-transcript-error-message]') : null;
 
     async function loadTranscript() {
       if (skeleton) {
         skeleton.hidden = false;
       }
+
       if (content) {
         content.hidden = true;
       }
@@ -461,6 +644,10 @@
       }
       if (errorState) {
         errorState.hidden = true;
+      }
+
+      if (summaryElements?.skeleton) {
+        summaryElements.skeleton.hidden = false;
       }
 
       try {
@@ -472,45 +659,62 @@
           return;
         }
         if (!response.ok) {
+          console.error('Не удалось загрузить транскрипт: статус %s', response.status);
           throw new Error('Не удалось загрузить транскрипт');
         }
         const data = await response.json();
-        const transcript = typeof data.transcript === 'string' ? data.transcript.trim() : '';
+        const status = typeof data.status === 'string' ? data.status : 'processing';
+        const summary = data && typeof data.summary === 'object' ? data.summary : null;
+        const entries = data && data.transcript && Array.isArray(data.transcript.entries)
+          ? data.transcript.entries
+          : [];
+        const message = typeof data.message === 'string' ? data.message : '';
+
+        if (summaryElements) {
+          renderSummary(summaryElements, status, summary, message);
+        }
 
         if (skeleton) {
           skeleton.hidden = true;
         }
 
-        if (!transcript) {
-          if (emptyState) {
-            emptyState.hidden = false;
-          }
-          return;
-        }
-
-        const isProcessing = recordingStatus !== 'uploaded' && transcript.toLowerCase().startsWith('транскрипт будет');
-        if (isProcessing) {
-          if (emptyState) {
-            emptyState.hidden = false;
-            const paragraph = emptyState.querySelector('p');
-            if (paragraph) {
-              paragraph.textContent = transcript;
+        if (status === 'failed') {
+          if (errorState) {
+            errorState.hidden = false;
+            if (errorMessage) {
+              errorMessage.textContent = message || 'Не удалось загрузить транскрипт. Попробуйте обновить страницу.';
             }
           }
           return;
         }
 
-        if (content) {
-          content.textContent = transcript;
+        if (status !== 'ready' || entries.length === 0) {
+          if (emptyState) {
+            emptyState.hidden = false;
+            if (emptyMessage) {
+              emptyMessage.textContent = message || 'Транскрипт будет доступен после завершения обработки записи.';
+            }
+          }
+          return;
+        }
+
+        if (content && timeline) {
+          renderTranscriptEntries(timeline, entries);
           content.hidden = false;
         }
       } catch (err) {
-        console.error(err);
+        console.error('Ошибка при загрузке транскрипта', err);
+        if (summaryElements) {
+          renderSummary(summaryElements, 'failed', null, 'Не удалось загрузить резюме встречи. Попробуйте позже.');
+        }
         if (skeleton) {
           skeleton.hidden = true;
         }
         if (errorState) {
           errorState.hidden = false;
+          if (errorMessage) {
+            errorMessage.textContent = 'Не удалось загрузить транскрипт. Попробуйте обновить страницу.';
+          }
         }
       }
     }
@@ -643,13 +847,12 @@
 
   function initRecordingPage(root) {
     const recordingId = root.dataset.recordingId;
-    const recordingStatus = root.dataset.recordingStatus || 'uploaded';
     if (!recordingId) {
       return;
     }
 
     initTabs(root);
-    initTranscript(root, recordingId, recordingStatus);
+    initTranscript(root, recordingId);
     initQaPanel(root, recordingId);
   }
 

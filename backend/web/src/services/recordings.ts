@@ -13,6 +13,35 @@ type ListResult = {
   nextCursor?: string | null;
 };
 
+export type TranscriptEntry = {
+  speaker: string;
+  role?: string;
+  start: number;
+  text: string;
+};
+
+export type TranscriptSummary = {
+  intro: string;
+  highlights: string[];
+  actionItems?: string[];
+  decisions?: string[];
+  updatedAt?: string;
+};
+
+type TranscriptData = {
+  summary: TranscriptSummary;
+  entries: TranscriptEntry[];
+};
+
+export type TranscriptResponse = {
+  status: 'processing' | 'ready' | 'failed';
+  message?: string;
+  summary?: TranscriptSummary;
+  transcript?: {
+    entries: TranscriptEntry[];
+  };
+};
+
 const recordings: RecordingItem[] = [
   {
     id: 'rec-20251002-1245',
@@ -196,6 +225,197 @@ const recordings: RecordingItem[] = [
   },
 ];
 
+const transcriptLibrary: Record<string, TranscriptData> = {
+  'rec-20251002-1245': {
+    summary: {
+      intro:
+        'Команда синхронизировалась по запуску новой версии Ghost AI Assistant, уточнила состав релизного набора и распределила зоны ответственности.',
+      highlights: [
+        'Закрепили релиз 0.9 на 20 октября с ночным окном развертывания.',
+        'Маркетинг запускает превью-кампанию с 9 октября и фокусируется на сегменте founder/PM.',
+        'Поддержка подготовит сценарии ответов и откроет чат в helpdesk за сутки до релиза.',
+      ],
+      actionItems: [
+        'Иван собирает контрольный чек-лист по инфраструктуре и шэрит его до 7 октября.',
+        'Марина готовит демонстрационный сценарий и финализирует ролик с продакшеном.',
+        'Алина согласует бюджет промокампании с финансами и возвращает апдейт к пятнице.',
+      ],
+      decisions: [
+        'Стартовый тариф оставляем на уровне $39 с пересмотром ARPU через месяц после релиза.',
+        'Обратную связь из беты собираем через Notion-борд и обрабатываем раз в два дня.',
+      ],
+      updatedAt: '2025-10-02T14:05:00.000Z',
+    },
+    entries: [
+      {
+        speaker: 'Анна Смирнова',
+        role: 'CEO',
+        start: 0,
+        text: 'Коллеги, давайте ещё раз синхронизируемся по релизу 0.9 Ghost AI Assistant. Хотелось бы подтвердить дату и набор обязательных функций.',
+      },
+      {
+        speaker: 'Иван Трофимов',
+        role: 'CTO',
+        start: 48,
+        text: 'С технической стороны мы готовы к выкладке ночью 20 октября. Осталось пройтись по чек-листу резервирования и сделать финальный нагрузочный прогон.',
+      },
+      {
+        speaker: 'Марина Лебедева',
+        role: 'Marketing Lead',
+        start: 118,
+        text: 'Я подтвердила съёмку демо-ролика на следующую среду. Кампания стартует 9 октября, делаем акцент на фаундерах и продакт-лидах.',
+      },
+      {
+        speaker: 'Дмитрий Ким',
+        role: 'Head of Support',
+        start: 206,
+        text: 'Сценарии FAQ готовы на 70%. Команда поддержки будет на связи с ночи релиза, чат откроем за сутки, чтобы поймать ранние вопросы.',
+      },
+      {
+        speaker: 'Анна Смирнова',
+        role: 'CEO',
+        start: 312,
+        text: 'Тогда фиксируем: Иван закрывает инфраструктурный чек-лист до понедельника, Марина и Алина синхронизируются по бюджету, а поддержка готова к открытию чата.',
+      },
+    ],
+  },
+  'rec-20250928-0900': {
+    summary: {
+      intro:
+        'Встреча была посвящена customer success-показателям: разобрали поведение новых команд и актуализировали план удержания пользователей.',
+      highlights: [
+        'MRR удержался на целевом уровне, но вырос отток среди команд до 10 человек.',
+        'Главные триггеры оттока — медленный онбординг и отсутствие готовых шаблонов для product discovery.',
+        'Support готов протестировать новый сценарий сопровождения с pro-аккаунтами.',
+      ],
+      actionItems: [
+        'Катя готовит серию писем с лайфхаками по первым шагам в продукте.',
+        'Саша запускает пилот по персональному онбордингу для сегмента 5–15 человек.',
+        'Data-команда внедряет дашборд по retention в ежедневный отчёт.',
+      ],
+      decisions: [
+        'Утверждён запуск библиотеки discovery-шаблонов в ноябре.',
+      ],
+      updatedAt: '2025-09-28T10:32:00.000Z',
+    },
+    entries: [
+      {
+        speaker: 'Катя Назарова',
+        role: 'Head of Customer Success',
+        start: 12,
+        text: 'По сентябрю churn в сегменте 5–10 человек вырос до 7%. Пользователи уходят, не разобравшись с первыми шагами.',
+      },
+      {
+        speaker: 'Саша Гончаров',
+        role: 'Product Manager',
+        start: 74,
+        text: 'Я предлагаю добавить персональный welcome-call на первую неделю и упростить подключение календарей — это частая жалоба.',
+      },
+      {
+        speaker: 'Лена Тарасова',
+        role: 'Data Analyst',
+        start: 142,
+        text: 'Дашборд по retention можем вынести в ежедневный отчёт. Ещё видно, что те, кто попробовал шаблоны discovery, остаются в два раза чаще.',
+      },
+      {
+        speaker: 'Катя Назарова',
+        role: 'Head of Customer Success',
+        start: 201,
+        text: 'Тогда собираю серию писем с подсказками и запросим маркетинг помочь с оформлением. Пилот персонального онбординга стартует со следующей недели.',
+      },
+    ],
+  },
+  'rec-20250921-1605': {
+    summary: {
+      intro:
+        'Продакт и инженеры обсудили дорожную карту по модулю транскрибации: выстроили приоритеты и синхронизировали команду по срокам.',
+      highlights: [
+        'Приоритет №1 — ускорить обработку длинных записей за счёт параллельной нарезки.',
+        'Команда договорилась вынести smart-summary в отдельный сервис, чтобы упростить масштабирование.',
+        'Для мобильного клиента нужен офлайн-кеш последних трёх встреч.',
+      ],
+      actionItems: [
+        'Миша прототипирует параллельную обработку и выносит результаты на ревью через два дня.',
+        'Юля описывает API smart-summary до пятницы и согласует контракт с веб-командой.',
+        'QA готовит сценарии нагрузочного теста и синхронизируется с DevOps.',
+      ],
+      updatedAt: '2025-09-21T17:20:00.000Z',
+    },
+    entries: [
+      {
+        speaker: 'Юля Орлова',
+        role: 'Lead Product Manager',
+        start: 6,
+        text: 'Нужно ускорить транскрибацию записей длиннее часа. Сейчас SLA в 15 минут, но клиенты ожидают 5–7.',
+      },
+      {
+        speaker: 'Михаил Кузнецов',
+        role: 'Senior Engineer',
+        start: 58,
+        text: 'Давайте порежем запись на сегменты и запустим параллельную обработку. Нужно проверить, насколько Deepgram потянет пять одновременных потоков.',
+      },
+      {
+        speaker: 'Олег Белов',
+        role: 'Mobile Lead',
+        start: 126,
+        text: 'Для мобильного клиента добавим офлайн-кеш последних трёх встреч, чтобы не ждать сети. Нужен API с инкрементальными обновлениями.',
+      },
+      {
+        speaker: 'Юля Орлова',
+        role: 'Lead Product Manager',
+        start: 214,
+        text: 'Супер, тогда я опишу API smart-summary и вынесу на обсуждение с вебом. Дедлайн — пятница.',
+      },
+    ],
+  },
+  'rec-20250914-1015': {
+    summary: {
+      intro:
+        'Команда продаж и партнёрства обсудила результаты демо-недели и скорректировала стратегию по enterprise-лидам.',
+      highlights: [
+        'Conversion в пилот вырос до 32%, но cycle по крупным лидам всё ещё тянется 6 недель.',
+        'Новые отраслевые истории успеха нужны для финала переговоров.',
+        'Партнёры просят понятный прайсинг на white-label.',
+      ],
+      actionItems: [
+        'Сергей собирает обновлённый pitch deck с примерами из финтеха и edtech.',
+        'Ольга готовит матрицу цен для white-label и синхронизируется с юристами.',
+        'Customer success включает enterprise-лидов в еженедельный health-check.',
+      ],
+      decisions: [
+        'Фокус на отраслях финтех и образование в Q4.',
+      ],
+      updatedAt: '2025-09-14T11:15:00.000Z',
+    },
+    entries: [
+      {
+        speaker: 'Сергей Власов',
+        role: 'Head of Sales',
+        start: 10,
+        text: 'По демо-неделе: 24 демо, 8 перешли в пилот. Конверсия ок, но enterprise-лиды зависают на юридическом блоке.',
+      },
+      {
+        speaker: 'Ольга Егорова',
+        role: 'Partnerships Lead',
+        start: 79,
+        text: 'Партнёры ждут прайс на white-label. Нужна матрица с опциями поддержки и SLA, чтобы можно было быстро считать.',
+      },
+      {
+        speaker: 'Илья Петров',
+        role: 'Customer Success',
+        start: 151,
+        text: 'Добавим enterprise-лидов в еженедельный health-check, чтобы ловить риски раньше. Для них подготовим персональные бейслайны.',
+      },
+      {
+        speaker: 'Сергей Власов',
+        role: 'Head of Sales',
+        start: 228,
+        text: 'Ок, обновляю pitch deck с кейсами из финтеха и edtech. Параллельно дожимаем два лида с юристами.',
+      },
+    ],
+  },
+};
+
 const sortedRecordings = [...recordings].sort((a, b) => {
   return new Date(b.started_at).getTime() - new Date(a.started_at).getTime();
 });
@@ -246,30 +466,45 @@ export async function getPlaybackUrl(id: string): Promise<string> {
   return `https://cdn.ghostai.ru/recordings/${id}.mp4`;
 }
 
-export async function getTranscript(id: string): Promise<string> {
+export async function getTranscript(id: string): Promise<TranscriptResponse> {
   await simulateLatency(150, 320);
   const recording = sortedRecordings.find((item) => item.id === id);
   if (!recording) {
-    return 'Транскрипт будет доступен после завершения обработки записи.';
+    throw new Error('Recording not found');
+  }
+
+  if (recording.status === 'failed') {
+    return {
+      status: 'failed',
+      message:
+        'Обработку записи завершить не удалось. Попробуйте повторно загрузить файл или обратитесь к поддержке.',
+    };
   }
 
   if (recording.status !== 'uploaded') {
-    return 'Транскрипт будет доступен после завершения обработки записи.';
+    return {
+      status: 'processing',
+      message:
+        'Мы ещё готовим транскрипт этой встречи. Загляните позже или воспользуйтесь быстрыми подсказками Ghost AI.',
+    };
   }
 
-  const startedAt = recording.started_at
-    ? new Date(recording.started_at).toLocaleString('ru-RU', {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      })
-    : null;
-
-  if (!startedAt) {
-    return 'Транскрипт будет доступен позже. Пока мы готовим расшифровку, вы можете попросить ИИ составить резюме или список задач.';
+  const stored = transcriptLibrary[id];
+  if (!stored) {
+    return {
+      status: 'processing',
+      message:
+        'Транскрипт ещё формируется. Мы уведомим вас, как только он будет готов.',
+    };
   }
 
-  return `Транскрипт будет доступен позже.\n\n` +
-    `Пока мы готовим расшифровку встречи «${startedAt}», вы можете попросить ИИ составить резюме или список задач.`;
+  return {
+    status: 'ready',
+    summary: stored.summary,
+    transcript: {
+      entries: stored.entries,
+    },
+  };
 }
 
 export async function askAi(id: string, prompt: string): Promise<string> {
