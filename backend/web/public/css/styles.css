@@ -978,31 +978,6 @@ body.theme-dark {
   gap: 18px;
 }
 
-.transcript-panel__summary {
-  display: grid;
-  gap: 8px;
-  padding: 16px 20px;
-  border-radius: 18px;
-  background: rgba(160, 106, 255, 0.12);
-  border: 1px solid rgba(160, 106, 255, 0.2);
-}
-
-.transcript-panel__summary-title {
-  margin: 0;
-  font-size: 0.9rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-primary);
-}
-
-.transcript-panel__summary-text {
-  margin: 0;
-  font-size: 0.95rem;
-  line-height: 1.6;
-  color: var(--text-secondary);
-}
-
 .transcript-panel__content {
   margin: 0;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
@@ -1010,35 +985,6 @@ body.theme-dark {
   line-height: 1.6;
   white-space: pre-wrap;
   color: var(--text-secondary);
-}
-
-.transcript-speakers {
-  display: grid;
-  gap: 16px;
-}
-
-.transcript-speaker {
-  display: grid;
-  gap: 6px;
-  padding: 14px 18px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(160, 106, 255, 0.12);
-}
-
-.transcript-speaker__label {
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--accent-secondary);
-}
-
-.transcript-speaker__text {
-  font-size: 0.95rem;
-  line-height: 1.6;
-  color: var(--text-secondary);
-  white-space: pre-wrap;
 }
 
 .transcript-panel__skeleton {

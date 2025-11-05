@@ -445,10 +445,7 @@
 
   function initTranscript(root, recordingId, recordingStatus) {
     const skeleton = root.querySelector('[data-transcript-skeleton]');
-    const summaryBlock = root.querySelector('[data-transcript-summary]');
-    const summaryText = root.querySelector('[data-transcript-summary-text]');
-    const speakersContainer = root.querySelector('[data-transcript-speakers]');
-    const plainContent = root.querySelector('[data-transcript-plain]');
+    const content = root.querySelector('[data-transcript-content]');
     const emptyState = root.querySelector('[data-transcript-empty]');
     const errorState = root.querySelector('[data-transcript-error]');
 
@@ -462,7 +459,9 @@
       if (skeleton) {
         skeleton.hidden = false;
       }
-      resetContent();
+      if (content) {
+        content.hidden = true;
+      }
       if (emptyState) {
         emptyState.hidden = true;
       }
@@ -539,18 +538,13 @@
             paragraph.textContent = pendingMessage;
           }
         }
-      } catch (error) {
-        console.error('Failed to load transcript', error);
-        resetContent();
+      } catch (err) {
+        console.error(err);
         if (skeleton) {
           skeleton.hidden = true;
         }
         if (errorState) {
           errorState.hidden = false;
-          const paragraph = errorState.querySelector('p');
-          if (paragraph) {
-            paragraph.textContent = 'Не удалось загрузить транскрипт. Попробуйте позже.';
-          }
         }
       }
     }
