@@ -1190,3 +1190,86 @@ body.theme-dark {
     font-size: 2.4rem;
   }
 }
+
+/* —— НОВЫЕ ДОБАВЛЕННЫЕ КЛАССЫ. Ничего не перезатирают —— */
+
+[data-recording-page] .ui-sticky-toolbar {
+  position: sticky;
+  top: 64px;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 16px;
+  margin-bottom: 24px;
+  background: linear-gradient(180deg, rgba(15, 15, 20, 0.9), rgba(15, 15, 20, 0.6));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  backdrop-filter: blur(8px);
+}
+
+[data-recording-page] .ui-toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* 2-колоночный расклад */
+[data-recording-page] .ui-2col {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(260px, 5fr);
+  gap: 24px;
+}
+
+@media (max-width: 960px) {
+  [data-recording-page] .ui-2col {
+    grid-template-columns: 1fr;
+  }
+}
+
+[data-recording-page] .ui-main {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+/* читабельная колонка для транскрипта */
+[data-recording-page] [data-transcript-plain],
+[data-recording-page] [data-transcript-content],
+[data-recording-page] .transcript-body {
+  max-width: 68ch;
+  line-height: 1.7;
+  letter-spacing: 0.1px;
+}
+
+/* callout для summary, если он есть */
+[data-recording-page] [data-transcript-summary] {
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(160, 106, 255, 0.12), rgba(91, 229, 255, 0.1));
+  border: 1px solid rgba(160, 106, 255, 0.35);
+}
+
+/* правая карточка деталей */
+[data-recording-page] .ui-sidecard {
+  position: sticky;
+  top: 124px;
+  height: fit-content;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+/* опционально: слегка улучшить табы визуально, не ломая их селекторы */
+[data-recording-page] [data-tab-target].is-active {
+  background: rgba(160, 106, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+[data-recording-page] .ui-sticky-toolbar.is-sticky {
+  box-shadow: 0 12px 24px rgba(10, 10, 15, 0.45);
+}
+
