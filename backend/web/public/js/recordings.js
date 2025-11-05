@@ -170,227 +170,6 @@
       : `${minutesPart}:${secondsPart}`;
   }
 
-  function normalizeStringArray(value) {
-    if (!value) {
-      return [];
-    }
-
-    if (Array.isArray(value)) {
-      return value
-        .map((item) => {
-          if (typeof item === 'string') {
-            return item.trim();
-          }
-          if (item && typeof item === 'object') {
-            if (typeof item.text === 'string') {
-              return item.text.trim();
-            }
-            if (typeof item.value === 'string') {
-              return item.value.trim();
-            }
-          }
-          return '';
-        })
-        .filter((item) => item.length > 0);
-    }
-
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (!trimmed) {
-        return [];
-      }
-
-      if (trimmed.includes('\n')) {
-        return trimmed
-          .split('\n')
-          .map((part) => part.trim())
-          .filter((part) => part.length > 0);
-      }
-
-      return [trimmed];
-    }
-
-    return [];
-  }
-
-  function pickString(...candidates) {
-    for (const candidate of candidates) {
-      if (typeof candidate === 'string') {
-        const trimmed = candidate.trim();
-        if (trimmed) {
-          return trimmed;
-        }
-      }
-    }
-    return '';
-  }
-
-  function toNumberOrUndefined(value) {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return value;
-    }
-    if (typeof value === 'string') {
-      const normalized = value.replace(',', '.');
-      const parsed = Number.parseFloat(normalized);
-      if (Number.isFinite(parsed)) {
-        return parsed;
-      }
-    }
-    return undefined;
-  }
-
-  function normalizeTranscriptEntries(source) {
-    if (!Array.isArray(source)) {
-      return [];
-    }
-
-    const entries = [];
-    let lastStart = 0;
-
-    source.forEach((item, index) => {
-      if (!item || typeof item !== 'object') {
-        return;
-      }
-
-      const text = pickString(item.text, item.transcript, item.content, item.sentence, item.value);
-      if (!text) {
-        return;
-      }
-
-      const start =
-        toNumberOrUndefined(item.start) ??
-        toNumberOrUndefined(item.start_time) ??
-        toNumberOrUndefined(item.startTime) ??
-        toNumberOrUndefined(item.offset) ??
-        toNumberOrUndefined(item.begin) ??
-        (index === 0 ? 0 : lastStart);
-
-      lastStart = typeof start === 'number' ? start : lastStart;
-
-      const speaker = pickString(item.speaker, item.name, item.speaker_name, item.role, item.channel, item.user) || 'Спикер';
-      const role = pickString(item.role, item.speaker_role, item.type);
-
-      entries.push({
-        speaker,
-        role: role || undefined,
-        start: typeof start === 'number' ? start : lastStart,
-        text,
-      });
-    });
-
-    return entries;
-  }
-
-  function normalizeTranscriptSummary(rawSummary, fallbackMessage, raw) {
-    if (!rawSummary) {
-      return null;
-    }
-
-    if (typeof rawSummary === 'string') {
-      const intro = rawSummary.trim();
-      if (!intro) {
-        return null;
-      }
-      return { intro, highlights: [], actionItems: [], decisions: [] };
-    }
-
-    if (Array.isArray(rawSummary)) {
-      const items = normalizeStringArray(rawSummary);
-      if (items.length === 0) {
-        return null;
-      }
-      return {
-        intro: items[0],
-        highlights: items.slice(1),
-        actionItems: [],
-        decisions: [],
-      };
-    }
-
-    if (typeof rawSummary === 'object') {
-      const highlights = normalizeStringArray(
-        rawSummary.highlights || rawSummary.key_points || rawSummary.points || rawSummary.bullets,
-      );
-      const actionItems = normalizeStringArray(
-        rawSummary.actionItems || rawSummary.action_items || rawSummary.actions || rawSummary.next_steps,
-      );
-      const decisions = normalizeStringArray(rawSummary.decisions || rawSummary.decisions_made);
-
-      const introCandidate = pickString(
-        rawSummary.intro,
-        rawSummary.summary,
-        rawSummary.text,
-        rawSummary.overview,
-        rawSummary.description,
-        fallbackMessage,
-      );
-
-      const updatedAt =
-        pickString(rawSummary.updatedAt, rawSummary.updated_at, raw?.updated_at, raw?.updatedAt) || undefined;
-
-      const intro = introCandidate || (highlights[0] || '');
-      if (!intro && highlights.length === 0 && actionItems.length === 0 && decisions.length === 0) {
-        return null;
-      }
-
-      return {
-        intro,
-        highlights,
-        actionItems,
-        decisions,
-        updatedAt,
-      };
-    }
-
-    return null;
-  }
-
-  function normalizeTranscriptResponse(raw) {
-    if (!raw || typeof raw !== 'object') {
-      return {
-        status: 'processing',
-        message: '',
-        summary: null,
-        entries: [],
-      };
-    }
-
-    const statusRaw = pickString(raw.status, raw.transcript_status, raw.state) || 'processing';
-    const statusLower = statusRaw.toLowerCase();
-    let status = 'processing';
-    if (statusLower === 'ready' || statusLower === 'completed' || statusLower === 'done') {
-      status = 'ready';
-    } else if (statusLower === 'failed' || statusLower === 'error') {
-      status = 'failed';
-    } else if (statusLower === 'queued' || statusLower === 'processing' || statusLower === 'pending') {
-      status = 'processing';
-    }
-    const message = pickString(raw.message, raw.detail, raw.error, raw.hint, raw.note, raw.description);
-
-    const transcriptSource = Array.isArray(raw.entries)
-      ? raw.entries
-      : raw.transcript && Array.isArray(raw.transcript.entries)
-        ? raw.transcript.entries
-        : Array.isArray(raw.timeline)
-          ? raw.timeline
-          : Array.isArray(raw.utterances)
-            ? raw.utterances
-            : [];
-
-    const summary =
-      normalizeTranscriptSummary(raw.summary, message, raw) ||
-      normalizeTranscriptSummary(raw.recording_hint, message, raw) ||
-      normalizeTranscriptSummary(raw.hint, message, raw) ||
-      null;
-
-    return {
-      status,
-      message,
-      summary,
-      entries: normalizeTranscriptEntries(transcriptSource),
-    };
-  }
-
   function createStatusBadge(item) {
     const config = STATUS_MAP[item.status] || STATUS_MAP.uploaded;
     const span = document.createElement('span');
@@ -884,40 +663,43 @@
           throw new Error('Не удалось загрузить транскрипт');
         }
         const data = await response.json();
-        const normalized = normalizeTranscriptResponse(data);
+        const status = typeof data.status === 'string' ? data.status : 'processing';
+        const summary = data && typeof data.summary === 'object' ? data.summary : null;
+        const entries = data && data.transcript && Array.isArray(data.transcript.entries)
+          ? data.transcript.entries
+          : [];
+        const message = typeof data.message === 'string' ? data.message : '';
 
         if (summaryElements) {
-          renderSummary(summaryElements, normalized.status, normalized.summary, normalized.message);
+          renderSummary(summaryElements, status, summary, message);
         }
 
         if (skeleton) {
           skeleton.hidden = true;
         }
 
-        if (normalized.status === 'failed') {
+        if (status === 'failed') {
           if (errorState) {
             errorState.hidden = false;
             if (errorMessage) {
-              errorMessage.textContent =
-                normalized.message || 'Не удалось загрузить транскрипт. Попробуйте обновить страницу.';
+              errorMessage.textContent = message || 'Не удалось загрузить транскрипт. Попробуйте обновить страницу.';
             }
           }
           return;
         }
 
-        if (normalized.status !== 'ready' || normalized.entries.length === 0) {
+        if (status !== 'ready' || entries.length === 0) {
           if (emptyState) {
             emptyState.hidden = false;
             if (emptyMessage) {
-              emptyMessage.textContent =
-                normalized.message || 'Транскрипт будет доступен после завершения обработки записи.';
+              emptyMessage.textContent = message || 'Транскрипт будет доступен после завершения обработки записи.';
             }
           }
           return;
         }
 
         if (content && timeline) {
-          renderTranscriptEntries(timeline, normalized.entries);
+          renderTranscriptEntries(timeline, entries);
           content.hidden = false;
         }
       } catch (err) {

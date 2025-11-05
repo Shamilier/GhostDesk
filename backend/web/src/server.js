@@ -1023,46 +1023,14 @@ app.get('/api/recordings/:id/transcript', requireAuth, async (req, res) => {
   const started = Date.now();
 
   try {
-    const response = await fetch(apiUrl, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${user.token}`,
-        Accept: 'application/json',
-      },
-    });
-
-    const text = await response.text();
-    console.log(
-      '[recordings] transcript user=%s rec=%s status=%s in=%dms bodyLen=%d',
-      user.id,
-      id,
-      response.status,
-      Date.now() - started,
-      text.length,
-    );
-
-    if (response.status === 404) {
+    const payload = await recordingsService.getTranscript(req.params.id);
+    return res.json(payload);
+  } catch (err) {
+    if (err && err.message === 'Recording not found') {
       return res.status(404).json({ error: 'not_found' });
     }
-
-    if (response.status === 401) {
-      return res.status(401).json({ error: 'unauthorized' });
-    }
-
-    if (!response.ok) {
-      return res.status(502).json({ error: 'api_error', status: response.status });
-    }
-
-    try {
-      const payload = JSON.parse(text);
-      return res.json(payload);
-    } catch (parseErr) {
-      console.error('[recordings][error] transcript rec=%s invalid json err=%o', id, parseErr);
-      return res.status(502).json({ error: 'invalid_payload' });
-    }
-  } catch (err) {
-    console.error('[recordings][error] transcript rec=%s err=%o', id, err);
-    return res.status(502).json({ error: 'api_unavailable' });
+    console.error('[recordings][error] transcript rec=%s err=%o', req.params.id, err);
+    return res.status(500).json({ error: 'internal_error' });
   }
 });
 
