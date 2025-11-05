@@ -2,16 +2,10 @@ const API_BASE_URL = process.env.GHOSTAI_API_BASE_URL || 'https://api.ghostai.ru
 
 export type TranscriptStatus = 'none' | 'queued' | 'processing' | 'ready' | 'failed';
 
-export type TranscriptSegment = {
-  speaker: string;
-  text: string;
-};
-
 export type TranscriptResult = {
   status: TranscriptStatus;
   summary: string | null;
   transcript: string | null;
-  segments: TranscriptSegment[] | null;
   error: string | null;
 };
 
@@ -114,109 +108,11 @@ const extractTranscriptText = (payload: any): string => {
   }
 };
 
-const parseTime = (value: any): number | null => {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const parsed = Number.parseFloat(value);
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
-  }
-  return null;
-};
-
-const createSpeakerLabeler = () => {
-  const labels = new Map<string, string>();
-  return (key: string) => {
-    if (!labels.has(key)) {
-      const label = `Спикер ${labels.size + 1}`;
-      labels.set(key, label);
-    }
-    return labels.get(key) as string;
-  };
-};
-
-const extractSpeakerSegments = (payload: any): TranscriptSegment[] => {
-  if (!payload || typeof payload !== 'object') {
-    return [];
-  }
-
-  const utterances = Array.isArray(payload?.results?.utterances) ? payload.results.utterances : [];
-  if (utterances.length === 0) {
-    return [];
-  }
-
-  type InternalSegment = { key: string; text: string; start: number | null };
-  const segments: InternalSegment[] = [];
-
-  for (const utterance of utterances) {
-    if (!utterance || typeof utterance !== 'object') {
-      continue;
-    }
-
-    const transcriptText = typeof utterance?.transcript === 'string' ? utterance.transcript.trim() : '';
-    if (!transcriptText) {
-      continue;
-    }
-
-    const speakerParts: string[] = [];
-
-    if (typeof utterance?.speaker !== 'undefined' && utterance.speaker !== null) {
-      const speakerValue = String(utterance.speaker).trim();
-      if (speakerValue) {
-        speakerParts.push(`speaker:${speakerValue}`);
-      }
-    }
-
-    if (typeof utterance?.channel !== 'undefined' && utterance.channel !== null) {
-      const channelValue = String(utterance.channel).trim();
-      if (channelValue) {
-        speakerParts.push(`channel:${channelValue}`);
-      }
-    }
-
-    const key = speakerParts.length > 0 ? speakerParts.join('|') : 'speaker:default';
-    segments.push({ key, text: transcriptText, start: parseTime(utterance?.start) });
-  }
-
-  if (segments.length === 0) {
-    return [];
-  }
-
-  segments.sort((a, b) => {
-    const aStart = typeof a.start === 'number' ? a.start : Number.POSITIVE_INFINITY;
-    const bStart = typeof b.start === 'number' ? b.start : Number.POSITIVE_INFINITY;
-    return aStart - bStart;
-  });
-
-  const assignLabel = createSpeakerLabeler();
-  const result: TranscriptSegment[] = [];
-
-  for (const segment of segments) {
-    const label = assignLabel(segment.key);
-    const text = segment.text.trim();
-    if (!text) {
-      continue;
-    }
-
-    const last = result[result.length - 1];
-    if (last && last.speaker === label) {
-      last.text = `${last.text} ${text}`.replace(/\s+/g, ' ').trim();
-    } else {
-      result.push({ speaker: label, text });
-    }
-  }
-
-  return result;
-};
-
 const KNOWN_STATUSES: TranscriptStatus[] = ['none', 'queued', 'processing', 'ready', 'failed'];
 
 const parseTranscriptResponse = (body: string | null | undefined): TranscriptResult => {
   if (!body) {
-    return { status: 'none', summary: null, transcript: null, segments: null, error: null };
+    return { status: 'none', summary: null, transcript: null, error: null };
   }
 
   let payload: any = null;
@@ -234,20 +130,15 @@ const parseTranscriptResponse = (body: string | null | undefined): TranscriptRes
   const error = typeof payload?.error === 'string' && payload.error.trim() ? payload.error.trim() : null;
 
   let transcriptText: string | null = null;
-  let speakerSegments: TranscriptSegment[] | null = null;
   if (status === 'ready') {
     const extracted = extractTranscriptText(payload?.transcript);
     transcriptText = extracted ? extracted : null;
-
-    const segments = extractSpeakerSegments(payload?.transcript);
-    speakerSegments = segments.length > 0 ? segments : null;
   }
 
   return {
     status,
     summary,
     transcript: transcriptText,
-    segments: speakerSegments,
     error,
   };
 };
