@@ -880,18 +880,32 @@ body.theme-dark {
 
 .recording-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-  gap: 28px;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.95fr);
+  gap: 32px;
+  align-items: start;
 }
 
 .recording-layout__primary,
 .recording-layout__secondary {
-  background: rgba(21, 21, 29, 0.82);
-  border: 1px solid rgba(160, 106, 255, 0.25);
-  border-radius: 28px;
-  padding: 28px;
+  background: linear-gradient(140deg, rgba(22, 22, 32, 0.92), rgba(34, 26, 46, 0.76));
+  border: 1px solid rgba(160, 106, 255, 0.2);
+  border-radius: 26px;
+  padding: 32px;
   display: grid;
-  gap: 18px;
+  gap: 24px;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 24px 48px rgba(8, 6, 20, 0.38);
+}
+
+@media (max-width: 1080px) {
+  .recording-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .recording-layout__primary,
+  .recording-layout__secondary {
+    padding: 28px;
+  }
 }
 
 .audio-player {
@@ -927,9 +941,115 @@ body.theme-dark {
   cursor: not-allowed;
 }
 
-.recording-hint {
+.recording-summary {
+  display: grid;
+  gap: 20px;
+}
+
+.recording-summary__skeleton {
+  display: grid;
+  gap: 12px;
+}
+
+.recording-summary__line {
+  height: 16px;
+  border-radius: 8px;
+}
+
+.recording-summary__content {
+  display: grid;
+  gap: 18px;
+}
+
+.recording-summary__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.recording-summary__header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.recording-summary__updated {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  background: rgba(160, 106, 255, 0.12);
+  padding: 6px 12px;
+  border-radius: 999px;
+}
+
+.recording-summary__intro {
+  margin: 0;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.recording-summary__grid {
+  display: grid;
+  gap: 18px;
+}
+
+@media (min-width: 960px) {
+  .recording-summary__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .recording-summary__grid > .recording-summary__section:last-child {
+    grid-column: span 2;
+  }
+}
+
+.recording-summary__section {
+  background: rgba(15, 16, 24, 0.72);
+  border: 1px solid rgba(160, 106, 255, 0.16);
+  border-radius: 18px;
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.recording-summary__section h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.recording-summary__section ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+
+.recording-summary__section li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  line-height: 1.55;
+  color: var(--text-primary);
+}
+
+.recording-summary__section li::before {
+  content: '';
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(160, 106, 255, 1), rgba(91, 140, 255, 1));
+  box-shadow: 0 0 0 2px rgba(160, 106, 255, 0.24);
+}
+
+.recording-summary__empty {
   color: var(--text-secondary);
   font-size: 0.95rem;
+  margin: 0;
 }
 
 .tabs {
@@ -969,21 +1089,70 @@ body.theme-dark {
 }
 
 .transcript-panel {
-  min-height: 340px;
-  background: rgba(11, 11, 15, 0.65);
+  min-height: 360px;
+  background: rgba(11, 11, 18, 0.75);
   border-radius: 24px;
   border: 1px solid rgba(160, 106, 255, 0.2);
   padding: 24px;
   display: grid;
-  gap: 18px;
+  gap: 20px;
+  backdrop-filter: blur(12px);
 }
 
 .transcript-panel__content {
-  margin: 0;
+  display: grid;
+  gap: 16px;
+}
+
+.transcript-timeline {
+  display: grid;
+  gap: 14px;
+}
+
+.transcript-entry {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 16px;
+  padding: 16px 18px;
+  background: rgba(18, 19, 28, 0.82);
+  border-radius: 18px;
+  border: 1px solid rgba(160, 106, 255, 0.12);
+}
+
+.transcript-entry__time {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
+  color: var(--accent-secondary);
+  margin-top: 2px;
+}
+
+.transcript-entry__body {
+  display: grid;
+  gap: 10px;
+}
+
+.transcript-entry__speaker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.transcript-entry__name {
+  font-weight: 600;
+}
+
+.transcript-entry__role {
+  font-size: 0.85rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(160, 106, 255, 0.14);
+  color: var(--text-secondary);
+}
+
+.transcript-entry__text {
+  margin: 0;
   line-height: 1.6;
-  white-space: pre-wrap;
   color: var(--text-secondary);
 }
 
