@@ -458,28 +458,11 @@
       processing: 'Транскрипт обрабатывается. Пожалуйста, загляните чуть позже.',
     };
 
-    const clearTranscriptContent = () => {
-      if (summaryBlock) {
-        summaryBlock.hidden = true;
-      }
-      if (summaryText) {
-        summaryText.textContent = '';
-      }
-      if (speakersContainer) {
-        speakersContainer.hidden = true;
-        speakersContainer.innerHTML = '';
-      }
-      if (plainContent) {
-        plainContent.hidden = true;
-        plainContent.textContent = '';
-      }
-    };
-
     async function loadTranscript() {
       if (skeleton) {
         skeleton.hidden = false;
       }
-      clearTranscriptContent();
+      resetContent();
       if (emptyState) {
         emptyState.hidden = true;
       }
@@ -503,69 +486,24 @@
         const transcript = typeof data.transcript === 'string' ? data.transcript.trim() : '';
         const summary = typeof data.summary === 'string' ? data.summary.trim() : '';
         const errorMessage = typeof data.error === 'string' ? data.error.trim() : '';
-        const segments = Array.isArray(data.segments) ? data.segments : [];
 
         if (skeleton) {
           skeleton.hidden = true;
         }
 
         if (status === 'ready') {
-          let hasVisibleContent = false;
-
-          if (summary && summaryBlock && summaryText) {
-            summaryText.textContent = summary;
-            summaryBlock.hidden = false;
-            hasVisibleContent = true;
-          }
-
-          const normalizedSegments = [];
-          segments.forEach((segment, index) => {
-            if (!segment || typeof segment !== 'object') {
-              return;
-            }
-            const text = typeof segment.text === 'string' ? segment.text.trim() : '';
-            if (!text) {
-              return;
-            }
-            const providedSpeaker = typeof segment.speaker === 'string' ? segment.speaker.trim() : '';
-            const speakerLabel = providedSpeaker || `Спикер ${index + 1}`;
-            normalizedSegments.push({ speaker: speakerLabel, text });
-          });
-
-          if (speakersContainer && normalizedSegments.length > 0) {
-            const fragment = document.createDocumentFragment();
-            normalizedSegments.forEach((item) => {
-              const wrapper = document.createElement('article');
-              wrapper.className = 'transcript-speaker';
-
-              if (item.speaker) {
-                const label = document.createElement('div');
-                label.className = 'transcript-speaker__label';
-                label.textContent = item.speaker;
-                wrapper.appendChild(label);
+          if (transcript || summary) {
+            if (content) {
+              const parts = [];
+              if (summary) {
+                parts.push(`Резюме: ${summary}`);
               }
-
-              const textBlock = document.createElement('div');
-              textBlock.className = 'transcript-speaker__text';
-              textBlock.textContent = item.text;
-              wrapper.appendChild(textBlock);
-
-              fragment.appendChild(wrapper);
-            });
-
-            speakersContainer.innerHTML = '';
-            speakersContainer.appendChild(fragment);
-            speakersContainer.hidden = false;
-            hasVisibleContent = true;
-          }
-
-          if ((normalizedSegments.length === 0 || !speakersContainer) && transcript && plainContent) {
-            plainContent.textContent = transcript;
-            plainContent.hidden = false;
-            hasVisibleContent = true;
-          }
-
-          if (hasVisibleContent) {
+              if (transcript) {
+                parts.push(transcript);
+              }
+              content.textContent = parts.join('\n\n');
+              content.hidden = false;
+            }
             return;
           }
 
@@ -581,7 +519,6 @@
         }
 
         if (status === 'failed') {
-          clearTranscriptContent();
           if (errorState) {
             errorState.hidden = false;
             const paragraph = errorState.querySelector('p');
@@ -591,8 +528,6 @@
           }
           return;
         }
-
-        clearTranscriptContent();
 
         const pendingMessage = statusMessages[status] ||
           'Транскрипт будет доступен позже. Мы пришлём уведомление, как только обработка завершится.';
@@ -606,7 +541,7 @@
         }
       } catch (error) {
         console.error('Failed to load transcript', error);
-        clearTranscriptContent();
+        resetContent();
         if (skeleton) {
           skeleton.hidden = true;
         }
