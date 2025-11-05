@@ -622,12 +622,7 @@ app.get('/recordings/:id', requireAuth, async (req, res) => {
   const user = req.session.user;
   const recordingId = req.params.id;
   const apiUrl = `https://api.ghostai.ru/v1/recordings/${encodeURIComponent(recordingId)}?include_url=1`;
-  if (!user.token) {
-    console.warn('[recordings][warn] page user=%s rec=%s missing API token', user.id, recordingId);
-    return res.status(500).render('500', { title: 'Ошибка сервера' });
-  }
-
-  const authHeader = `Bearer ${user.token}`;
+  const authHeader = `Bearer web-user-${user.id}`;
   const started = Date.now();
 
   try {
@@ -924,12 +919,7 @@ app.get('/api/recordings', async (req, res) => {
     url.searchParams.set('cursor', cursor);
   }
 
-  if (!user.token) {
-    console.warn('[recordings][warn] list user=%s missing API token', user.id);
-    return res.status(401).json({ error: 'missing_token' });
-  }
-
-  const authHeader = `Bearer ${user.token}`;
+  const authHeader = `Bearer web-user-${user.id}`;
   const started = Date.now();
 
   try {
@@ -969,12 +959,7 @@ app.get('/api/recordings/:id', async (req, res) => {
 
   const id = req.params.id;
   const apiUrl = `https://api.ghostai.ru/v1/recordings/${encodeURIComponent(id)}?include_url=1`;
-  if (!user.token) {
-    console.warn('[recordings][warn] detail user=%s rec=%s missing API token', user.id, id);
-    return res.status(401).json({ error: 'missing_token' });
-  }
-
-  const authHeader = `Bearer ${user.token}`;
+  const authHeader = `Bearer web-user-${user.id}`;
   const started = Date.now();
 
   try {
@@ -1008,55 +993,15 @@ app.get('/api/recordings/:id', async (req, res) => {
 });
 
 app.get('/api/recordings/:id/transcript', requireAuth, async (req, res) => {
-  const user = req.session.user;
-  if (!user) {
-    return res.status(401).json({ error: 'unauthorized' });
-  }
-
-  if (!user.token) {
-    console.warn('[recordings][warn] transcript user=%s rec=%s missing API token', user.id, req.params.id);
-    return res.status(401).json({ error: 'missing_token' });
-  }
-
-  const id = req.params.id;
-  const apiUrl = `https://api.ghostai.ru/v1/recordings/${encodeURIComponent(id)}/transcript`;
-  const started = Date.now();
-
   try {
-    const response = await fetch(apiUrl, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${user.token}`,
-        Accept: 'application/json',
-      },
-    });
-
-    const text = await response.text();
-    console.log(
-      '[recordings] transcript user=%s rec=%s status=%s in=%dms bodyLen=%d',
-      user.id,
-      id,
-      response.status,
-      Date.now() - started,
-      text.length,
-    );
-
-    if (response.status === 404) {
+    const transcript = await recordingsService.getTranscript(req.params.id);
+    res.json({ transcript });
+  } catch (err) {
+    if (err && err.message === 'Recording not found') {
       return res.status(404).json({ error: 'not_found' });
     }
-
-    if (response.status === 401) {
-      return res.status(401).json({ error: 'unauthorized' });
-    }
-
-    if (!response.ok) {
-      return res.status(502).json({ error: 'api_error', status: response.status });
-    }
-
-    return res.type('application/json').send(text);
-  } catch (err) {
-    console.error('[recordings][error] transcript rec=%s err=%o', req.params.id, err);
-    return res.status(502).json({ error: 'api_unavailable' });
+    console.error('Failed to load transcript', err);
+    return res.status(500).json({ error: 'internal_error' });
   }
 });
 
