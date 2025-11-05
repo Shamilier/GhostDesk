@@ -604,17 +604,98 @@ const normalizeRecordingFromApi = (payload) => {
     }
   }
 
-  const status = typeof payload.status === 'string' ? payload.status : 'uploaded';
+  const rawStatus = typeof payload.status === 'string' ? payload.status.toLowerCase() : '';
   const contentType = payload.content_type || payload.contentType || null;
+
+  const statusMap = {
+    uploaded: { status: 'ready', label: 'Готово' },
+    ready: { status: 'ready', label: 'Готово' },
+    processing: { status: 'processing', label: 'Обработка' },
+    queued: { status: 'processing', label: 'Обработка' },
+    failed: { status: 'failed', label: 'Ошибка' },
+    uploading: { status: 'uploading', label: 'Загрузка' },
+  };
+
+  const statusMeta = statusMap[rawStatus] || null;
+  const status = statusMeta ? statusMeta.status : rawStatus || 'processing';
+  const explicitStatusLabel =
+    typeof payload.status_label === 'string' && payload.status_label.trim()
+      ? payload.status_label.trim()
+      : typeof payload.statusLabel === 'string' && payload.statusLabel.trim()
+        ? payload.statusLabel.trim()
+        : null;
+  const statusLabel = explicitStatusLabel || (statusMeta ? statusMeta.label : 'Статус');
+
+  const titleSource =
+    typeof payload.title === 'string' && payload.title.trim()
+      ? payload.title.trim()
+      : typeof payload.name === 'string' && payload.name.trim()
+        ? payload.name.trim()
+        : null;
+
+  const summary = typeof payload.summary === 'string' && payload.summary.trim() ? payload.summary.trim() : null;
+  const notes = typeof payload.notes === 'string' && payload.notes.trim() ? payload.notes : '';
+  const transcriptHtml =
+    typeof payload.transcript_html === 'string' && payload.transcript_html.trim()
+      ? payload.transcript_html
+      : typeof payload.transcriptHtml === 'string' && payload.transcriptHtml.trim()
+        ? payload.transcriptHtml
+        : '';
+
+  const audioUrl =
+    payload.audio_url ||
+    payload.playback_url ||
+    payload.download_url ||
+    payload.url ||
+    payload.audioUrl ||
+    payload.playbackUrl ||
+    payload.downloadUrl ||
+    null;
+  const downloadUrl =
+    payload.download_url ||
+    payload.downloadUrl ||
+    payload.audio_url ||
+    payload.audioUrl ||
+    payload.playback_url ||
+    payload.playbackUrl ||
+    payload.url ||
+    null;
+
+  let durationText = '—';
+  if (typeof payload.duration_text === 'string' && payload.duration_text.trim()) {
+    durationText = payload.duration_text.trim();
+  } else if (typeof payload.durationText === 'string' && payload.durationText.trim()) {
+    durationText = payload.durationText.trim();
+  } else if (typeof durationSeconds === 'number') {
+    durationText = formatDuration(durationSeconds);
+  }
+
+  let sizeText = '—';
+  if (typeof payload.size_text === 'string' && payload.size_text.trim()) {
+    sizeText = payload.size_text.trim();
+  } else if (typeof payload.sizeText === 'string' && payload.sizeText.trim()) {
+    sizeText = payload.sizeText.trim();
+  } else if (typeof sizeBytes === 'number') {
+    sizeText = formatFileSize(sizeBytes);
+  }
 
   return {
     id,
+    title: titleSource || null,
     started_at: startedAt || null,
     ended_at: endedAt || null,
     duration_s: typeof durationSeconds === 'number' ? durationSeconds : undefined,
+    duration_text: durationText,
     size_bytes: typeof sizeBytes === 'number' ? sizeBytes : undefined,
+    size_text: sizeText,
     status,
+    status_label: statusLabel,
     content_type: contentType || undefined,
+    audio_url: audioUrl || null,
+    download_url: downloadUrl || null,
+    summary,
+    transcript_html: transcriptHtml,
+    notes,
   };
 };
 
@@ -679,14 +760,9 @@ app.get('/recordings/:id', requireAuth, async (req, res) => {
       null;
 
     res.render('recordings/show', {
-      title: formatRecordingTitle(recording),
+      title: recording.title || formatRecordingTitle(recording),
       recording,
       playbackUrl,
-      helpers: {
-        formatDuration,
-        formatFileSize,
-        formatRecordingTitle,
-      },
     });
   } catch (err) {
     console.error('[recordings][error] show user=%s rec=%s err=%s', user.id, recordingId, err);
