@@ -622,7 +622,12 @@ app.get('/recordings/:id', requireAuth, async (req, res) => {
   const user = req.session.user;
   const recordingId = req.params.id;
   const apiUrl = `https://api.ghostai.ru/v1/recordings/${encodeURIComponent(recordingId)}?include_url=1`;
-  const authHeader = `Bearer web-user-${user.id}`;
+  if (!user.token) {
+    console.warn('[recordings][warn] page user=%s rec=%s missing API token', user.id, recordingId);
+    return res.status(500).render('500', { title: 'Ошибка сервера' });
+  }
+
+  const authHeader = `Bearer ${user.token}`;
   const started = Date.now();
 
   try {
@@ -919,7 +924,12 @@ app.get('/api/recordings', async (req, res) => {
     url.searchParams.set('cursor', cursor);
   }
 
-  const authHeader = `Bearer web-user-${user.id}`;
+  if (!user.token) {
+    console.warn('[recordings][warn] list user=%s missing API token', user.id);
+    return res.status(401).json({ error: 'missing_token' });
+  }
+
+  const authHeader = `Bearer ${user.token}`;
   const started = Date.now();
 
   try {
@@ -959,7 +969,12 @@ app.get('/api/recordings/:id', async (req, res) => {
 
   const id = req.params.id;
   const apiUrl = `https://api.ghostai.ru/v1/recordings/${encodeURIComponent(id)}?include_url=1`;
-  const authHeader = `Bearer web-user-${user.id}`;
+  if (!user.token) {
+    console.warn('[recordings][warn] detail user=%s rec=%s missing API token', user.id, id);
+    return res.status(401).json({ error: 'missing_token' });
+  }
+
+  const authHeader = `Bearer ${user.token}`;
   const started = Date.now();
 
   try {
@@ -993,6 +1008,20 @@ app.get('/api/recordings/:id', async (req, res) => {
 });
 
 app.get('/api/recordings/:id/transcript', requireAuth, async (req, res) => {
+  const user = req.session.user;
+  if (!user) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+
+  if (!user.token) {
+    console.warn('[recordings][warn] transcript user=%s rec=%s missing API token', user.id, req.params.id);
+    return res.status(401).json({ error: 'missing_token' });
+  }
+
+  const id = req.params.id;
+  const apiUrl = `https://api.ghostai.ru/v1/recordings/${encodeURIComponent(id)}/transcript`;
+  const started = Date.now();
+
   try {
     const payload = await recordingsService.getTranscript(req.params.id);
     return res.json(payload);
