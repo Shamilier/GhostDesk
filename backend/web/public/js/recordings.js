@@ -449,6 +449,12 @@
     const emptyState = root.querySelector('[data-transcript-empty]');
     const errorState = root.querySelector('[data-transcript-error]');
 
+    const statusMessages = {
+      none: 'Транскрипт пока не запланирован. Мы уведомим вас, как только начнём обработку.',
+      queued: 'Запись поставлена в очередь на расшифровку. Это займёт несколько минут.',
+      processing: 'Транскрипт обрабатывается. Пожалуйста, загляните чуть позже.',
+    };
+
     async function loadTranscript() {
       if (skeleton) {
         skeleton.hidden = false;
@@ -475,34 +481,62 @@
           throw new Error('Не удалось загрузить транскрипт');
         }
         const data = await response.json();
+        const status = typeof data.status === 'string' ? data.status : 'none';
         const transcript = typeof data.transcript === 'string' ? data.transcript.trim() : '';
+        const summary = typeof data.summary === 'string' ? data.summary.trim() : '';
+        const errorMessage = typeof data.error === 'string' ? data.error.trim() : '';
 
         if (skeleton) {
           skeleton.hidden = true;
         }
 
-        if (!transcript) {
-          if (emptyState) {
-            emptyState.hidden = false;
+        if (status === 'ready') {
+          if (transcript || summary) {
+            if (content) {
+              const parts = [];
+              if (summary) {
+                parts.push(`Резюме: ${summary}`);
+              }
+              if (transcript) {
+                parts.push(transcript);
+              }
+              content.textContent = parts.join('\n\n');
+              content.hidden = false;
+            }
+            return;
           }
-          return;
-        }
 
-        const isProcessing = recordingStatus !== 'uploaded' && transcript.toLowerCase().startsWith('транскрипт будет');
-        if (isProcessing) {
           if (emptyState) {
             emptyState.hidden = false;
             const paragraph = emptyState.querySelector('p');
             if (paragraph) {
-              paragraph.textContent = transcript;
+              paragraph.textContent =
+                'Транскрипт готов, но текст временно недоступен. Попробуйте обновить страницу чуть позже.';
             }
           }
           return;
         }
 
-        if (content) {
-          content.textContent = transcript;
-          content.hidden = false;
+        if (status === 'failed') {
+          if (errorState) {
+            errorState.hidden = false;
+            const paragraph = errorState.querySelector('p');
+            if (paragraph) {
+              paragraph.textContent = errorMessage || 'Не удалось загрузить транскрипт. Попробуйте позже.';
+            }
+          }
+          return;
+        }
+
+        const pendingMessage = statusMessages[status] ||
+          'Транскрипт будет доступен позже. Мы пришлём уведомление, как только обработка завершится.';
+
+        if (emptyState) {
+          emptyState.hidden = false;
+          const paragraph = emptyState.querySelector('p');
+          if (paragraph) {
+            paragraph.textContent = pendingMessage;
+          }
         }
       } catch (err) {
         console.error(err);
