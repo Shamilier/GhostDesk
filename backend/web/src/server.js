@@ -993,14 +993,34 @@ app.get('/api/recordings/:id', async (req, res) => {
 });
 
 app.get('/api/recordings/:id/transcript', requireAuth, async (req, res) => {
+  const user = req.session.user;
+  if (!user) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+
+  const recordingId = req.params.id;
+
   try {
-    const transcript = await recordingsService.getTranscript(req.params.id);
-    res.json({ transcript });
+    const result = await recordingsService.getTranscript(user.id, recordingId);
+    return res.json(result);
   } catch (err) {
     if (err && err.message === 'Recording not found') {
       return res.status(404).json({ error: 'not_found' });
     }
-    console.error('Failed to load transcript', err);
+    if (err && err.code === 'invalid_payload') {
+      console.error('[recordings][error] transcript invalid-payload user=%s rec=%s', user.id, recordingId);
+      return res.status(502).json({ error: 'invalid_transcript_payload' });
+    }
+    if (err && err.code === 'upstream_error') {
+      console.error(
+        '[recordings][error] transcript upstream user=%s rec=%s status=%s',
+        user.id,
+        recordingId,
+        err.status,
+      );
+      return res.status(502).json({ error: 'api_error', status: err.status || null });
+    }
+    console.error('[recordings][error] transcript user=%s rec=%s err=%s', user.id, recordingId, err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });
