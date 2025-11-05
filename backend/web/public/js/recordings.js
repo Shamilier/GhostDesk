@@ -445,17 +445,41 @@
 
   function initTranscript(root, recordingId, recordingStatus) {
     const skeleton = root.querySelector('[data-transcript-skeleton]');
-    const content = root.querySelector('[data-transcript-content]');
+    const summaryBlock = root.querySelector('[data-transcript-summary]');
+    const summaryText = root.querySelector('[data-transcript-summary-text]');
+    const speakersContainer = root.querySelector('[data-transcript-speakers]');
+    const plainContent = root.querySelector('[data-transcript-plain]');
     const emptyState = root.querySelector('[data-transcript-empty]');
     const errorState = root.querySelector('[data-transcript-error]');
+
+    const statusMessages = {
+      none: 'Транскрипт пока не запланирован. Мы уведомим вас, как только начнём обработку.',
+      queued: 'Запись поставлена в очередь на расшифровку. Это займёт несколько минут.',
+      processing: 'Транскрипт обрабатывается. Пожалуйста, загляните чуть позже.',
+    };
+
+    function resetContent() {
+      if (summaryBlock) {
+        summaryBlock.hidden = true;
+      }
+      if (summaryText) {
+        summaryText.textContent = '';
+      }
+      if (speakersContainer) {
+        speakersContainer.hidden = true;
+        speakersContainer.innerHTML = '';
+      }
+      if (plainContent) {
+        plainContent.hidden = true;
+        plainContent.textContent = '';
+      }
+    }
 
     async function loadTranscript() {
       if (skeleton) {
         skeleton.hidden = false;
       }
-      if (content) {
-        content.hidden = true;
-      }
+      resetContent();
       if (emptyState) {
         emptyState.hidden = true;
       }
@@ -475,42 +499,123 @@
           throw new Error('Не удалось загрузить транскрипт');
         }
         const data = await response.json();
+        const status = typeof data.status === 'string' ? data.status : 'none';
         const transcript = typeof data.transcript === 'string' ? data.transcript.trim() : '';
+        const summary = typeof data.summary === 'string' ? data.summary.trim() : '';
+        const errorMessage = typeof data.error === 'string' ? data.error.trim() : '';
+        const segments = Array.isArray(data.segments) ? data.segments : [];
 
         if (skeleton) {
           skeleton.hidden = true;
         }
 
-        if (!transcript) {
-          if (emptyState) {
-            emptyState.hidden = false;
-          }
-          return;
-        }
+        if (status === 'ready') {
+          let hasVisibleContent = false;
 
-        const isProcessing = recordingStatus !== 'uploaded' && transcript.toLowerCase().startsWith('транскрипт будет');
-        if (isProcessing) {
+          if (summary && summaryBlock && summaryText) {
+            summaryText.textContent = summary;
+            summaryBlock.hidden = false;
+            hasVisibleContent = true;
+          }
+
+          const normalizedSegments = [];
+          segments.forEach((segment, index) => {
+            if (!segment || typeof segment !== 'object') {
+              return;
+            }
+            const text = typeof segment.text === 'string' ? segment.text.trim() : '';
+            if (!text) {
+              return;
+            }
+            const providedSpeaker = typeof segment.speaker === 'string' ? segment.speaker.trim() : '';
+            const speakerLabel = providedSpeaker || `Спикер ${index + 1}`;
+            normalizedSegments.push({ speaker: speakerLabel, text });
+          });
+
+          if (speakersContainer && normalizedSegments.length > 0) {
+            const fragment = document.createDocumentFragment();
+            normalizedSegments.forEach((item) => {
+              const wrapper = document.createElement('article');
+              wrapper.className = 'transcript-speaker';
+
+              if (item.speaker) {
+                const label = document.createElement('div');
+                label.className = 'transcript-speaker__label';
+                label.textContent = item.speaker;
+                wrapper.appendChild(label);
+              }
+
+              const textBlock = document.createElement('div');
+              textBlock.className = 'transcript-speaker__text';
+              textBlock.textContent = item.text;
+              wrapper.appendChild(textBlock);
+
+              fragment.appendChild(wrapper);
+            });
+
+            speakersContainer.innerHTML = '';
+            speakersContainer.appendChild(fragment);
+            speakersContainer.hidden = false;
+            hasVisibleContent = true;
+          }
+
+          if ((normalizedSegments.length === 0 || !speakersContainer) && transcript && plainContent) {
+            plainContent.textContent = transcript;
+            plainContent.hidden = false;
+            hasVisibleContent = true;
+          }
+
+          if (hasVisibleContent) {
+            return;
+          }
+
           if (emptyState) {
             emptyState.hidden = false;
             const paragraph = emptyState.querySelector('p');
             if (paragraph) {
-              paragraph.textContent = transcript;
+              paragraph.textContent =
+                'Транскрипт готов, но текст временно недоступен. Попробуйте обновить страницу чуть позже.';
             }
           }
           return;
         }
 
-        if (content) {
-          content.textContent = transcript;
-          content.hidden = false;
+        if (status === 'failed') {
+          resetContent();
+          if (errorState) {
+            errorState.hidden = false;
+            const paragraph = errorState.querySelector('p');
+            if (paragraph) {
+              paragraph.textContent = errorMessage || 'Не удалось загрузить транскрипт. Попробуйте позже.';
+            }
+          }
+          return;
         }
-      } catch (err) {
-        console.error(err);
+
+        resetContent();
+
+        const pendingMessage = statusMessages[status] ||
+          'Транскрипт будет доступен позже. Мы пришлём уведомление, как только обработка завершится.';
+
+        if (emptyState) {
+          emptyState.hidden = false;
+          const paragraph = emptyState.querySelector('p');
+          if (paragraph) {
+            paragraph.textContent = pendingMessage;
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load transcript', error);
+        resetContent();
         if (skeleton) {
           skeleton.hidden = true;
         }
         if (errorState) {
           errorState.hidden = false;
+          const paragraph = errorState.querySelector('p');
+          if (paragraph) {
+            paragraph.textContent = 'Не удалось загрузить транскрипт. Попробуйте позже.';
+          }
         }
       }
     }
