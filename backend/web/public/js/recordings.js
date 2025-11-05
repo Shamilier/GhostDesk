@@ -1,4 +1,27 @@
 (function () {
+  const API_BASE_URL = 'https://api.ghostai.ru';
+  const API_VERSION_PREFIX = '/v1';
+
+  function buildApiUrl(path) {
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    return new URL(`${API_VERSION_PREFIX}${normalizedPath}`, API_BASE_URL);
+  }
+
+  function apiFetch(path, { searchParams, ...options } = {}) {
+    const url = buildApiUrl(path);
+    if (searchParams) {
+      Object.entries(searchParams).forEach(([key, value]) => {
+        if (value != null && value !== '') {
+          url.searchParams.set(key, value);
+        }
+      });
+    }
+    return fetch(url.toString(), {
+      credentials: 'include',
+      ...options,
+    });
+  }
+
   const STATUS_MAP = {
     uploaded: { label: 'Готово', badgeClass: 'status-badge status-badge--success' },
     uploading: { label: 'Загружается', badgeClass: 'status-badge status-badge--warning' },
@@ -334,12 +357,9 @@
     }
 
     async function fetchRecordings(cursor) {
-      const url = new URL('/api/recordings', window.location.origin);
-      if (cursor) {
-        url.searchParams.set('cursor', cursor);
-      }
-      const response = await fetch(url.toString(), {
+      const response = await apiFetch('/recordings', {
         headers: { Accept: 'application/json' },
+        searchParams: cursor ? { cursor } : undefined,
       });
       if (response.status === 401) {
         window.location.href = '/login';
@@ -651,7 +671,7 @@
       }
 
       try {
-        const response = await fetch(`/api/recordings/${encodeURIComponent(recordingId)}/transcript`, {
+        const response = await apiFetch(`/recordings/${encodeURIComponent(recordingId)}/transcript`, {
           headers: { Accept: 'application/json' },
         });
         if (response.status === 401) {
@@ -760,7 +780,7 @@
       input.value = '';
 
       try {
-        const response = await fetch(`/api/recordings/${encodeURIComponent(recordingId)}/ask`, {
+        const response = await apiFetch(`/recordings/${encodeURIComponent(recordingId)}/ask`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
