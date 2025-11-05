@@ -167,6 +167,172 @@
     return wrapper;
   }
 
+  function createDeleteButton(id, title) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'recording-card__delete';
+    button.setAttribute('aria-label', `Удалить запись «${title}»`);
+    button.dataset.recordingDelete = 'true';
+    button.dataset.recordingId = id;
+    button.dataset.recordingTitle = title;
+    button.innerHTML = `
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M5 7h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+        <path
+          d="M10 3h4a1 1 0 0 1 1 1v2H9V4a1 1 0 0 1 1-1Zm8 4v13a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V7h12Z"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          fill="none"
+        ></path>
+      </svg>
+    `;
+    return button;
+  }
+
+  function createConfirmationDialog() {
+    const container = document.createElement('div');
+    container.className = 'confirm-dialog';
+    container.hidden = true;
+    container.setAttribute('aria-hidden', 'true');
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'confirm-dialog__backdrop';
+
+    const panel = document.createElement('div');
+    panel.className = 'confirm-dialog__panel';
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-modal', 'true');
+
+    const titleId = `confirm-dialog-title-${Math.random().toString(36).slice(2)}`;
+    const messageId = `confirm-dialog-message-${Math.random().toString(36).slice(2)}`;
+    panel.setAttribute('aria-labelledby', titleId);
+    panel.setAttribute('aria-describedby', messageId);
+
+    const title = document.createElement('h2');
+    title.id = titleId;
+    title.className = 'confirm-dialog__title';
+
+    const message = document.createElement('p');
+    message.id = messageId;
+    message.className = 'confirm-dialog__message';
+
+    const actions = document.createElement('div');
+    actions.className = 'confirm-dialog__actions';
+
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'ghost-button';
+    cancelButton.textContent = 'Отмена';
+
+    const confirmButton = document.createElement('button');
+    confirmButton.type = 'button';
+    confirmButton.className = 'ghost-button ghost-button--danger';
+    confirmButton.textContent = 'Удалить';
+
+    actions.appendChild(cancelButton);
+    actions.appendChild(confirmButton);
+
+    panel.appendChild(title);
+    panel.appendChild(message);
+    panel.appendChild(actions);
+
+    container.appendChild(backdrop);
+    container.appendChild(panel);
+    document.body.appendChild(container);
+
+    let resolver = null;
+    let previousActiveElement = null;
+
+    function close(result) {
+      container.classList.remove('is-visible');
+      container.setAttribute('aria-hidden', 'true');
+      container.hidden = true;
+      document.removeEventListener('keydown', handleKeydown);
+      backdrop.removeEventListener('click', handleBackdropClick);
+      cancelButton.removeEventListener('click', handleCancel);
+      confirmButton.removeEventListener('click', handleConfirm);
+      if (previousActiveElement && typeof previousActiveElement.focus === 'function') {
+        previousActiveElement.focus();
+      }
+      const currentResolver = resolver;
+      resolver = null;
+      previousActiveElement = null;
+      if (currentResolver) {
+        currentResolver(result);
+      }
+    }
+
+    function handleKeydown(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close(false);
+      }
+    }
+
+    function handleCancel(event) {
+      event.preventDefault();
+      close(false);
+    }
+
+    function handleConfirm(event) {
+      event.preventDefault();
+      close(true);
+    }
+
+    function handleBackdropClick(event) {
+      if (event.target === backdrop) {
+        close(false);
+      }
+    }
+
+    return {
+      async confirm({ title: titleText, message: messageText, confirmLabel, cancelLabel }) {
+        if (resolver) {
+          return false;
+        }
+
+        if (typeof titleText === 'string') {
+          title.textContent = titleText;
+        }
+        if (typeof messageText === 'string') {
+          message.textContent = messageText;
+        }
+        if (typeof confirmLabel === 'string') {
+          confirmButton.textContent = confirmLabel;
+        } else {
+          confirmButton.textContent = 'Удалить';
+        }
+        if (typeof cancelLabel === 'string') {
+          cancelButton.textContent = cancelLabel;
+        } else {
+          cancelButton.textContent = 'Отмена';
+        }
+
+        container.hidden = false;
+        // Force reflow to allow CSS transitions when toggling the class.
+        // eslint-disable-next-line no-unused-expressions
+        container.offsetWidth;
+        container.classList.add('is-visible');
+        container.setAttribute('aria-hidden', 'false');
+
+        previousActiveElement = document.activeElement;
+        resolver = null;
+
+        document.addEventListener('keydown', handleKeydown);
+        backdrop.addEventListener('click', handleBackdropClick);
+        cancelButton.addEventListener('click', handleCancel);
+        confirmButton.addEventListener('click', handleConfirm);
+
+        return new Promise((resolve) => {
+          resolver = resolve;
+          confirmButton.focus();
+        });
+      },
+    };
+  }
+
   function createAvatar() {
     const avatar = document.createElement('div');
     avatar.className = 'recording-card__avatar';
@@ -190,11 +356,18 @@
   function createRecordingCard(item) {
     const listItem = document.createElement('li');
     listItem.className = 'recordings-list__item';
+    listItem.dataset.recordingId = item.id;
+
+    const card = document.createElement('article');
+    card.className = 'recording-card';
+    card.dataset.recordingId = item.id;
+
+    const titleText = formatRecordingTitle(item);
 
     const anchor = document.createElement('a');
-    anchor.className = 'recording-card';
+    anchor.className = 'recording-card__main';
     anchor.href = `/recordings/${encodeURIComponent(item.id)}`;
-    anchor.setAttribute('aria-label', `${formatRecordingTitle(item)}. Открыть детальную страницу`);
+    anchor.setAttribute('aria-label', `${titleText}. Открыть детальную страницу`);
 
     const avatar = createAvatar();
     const content = document.createElement('div');
@@ -202,7 +375,7 @@
 
     const title = document.createElement('h3');
     title.className = 'recording-card__title';
-    title.textContent = formatRecordingTitle(item);
+    title.textContent = titleText;
 
     const meta = document.createElement('div');
     meta.className = 'recording-card__meta';
@@ -223,7 +396,14 @@
     anchor.appendChild(content);
     anchor.appendChild(createChevron());
 
-    listItem.appendChild(anchor);
+    const actions = document.createElement('div');
+    actions.className = 'recording-card__actions';
+    actions.appendChild(createDeleteButton(item.id, titleText));
+
+    card.appendChild(anchor);
+    card.appendChild(actions);
+
+    listItem.appendChild(card);
 
     return listItem;
   }
@@ -236,6 +416,8 @@
     const errorState = root.querySelector('[data-recordings-error]');
     const retryButton = root.querySelector('[data-recordings-retry]');
     const loadMoreButton = root.querySelector('[data-recordings-load-more]');
+    const confirmDialog = createConfirmationDialog();
+    const emptyStateTemplate = emptyState ? emptyState.cloneNode(true) : null;
 
     const state = {
       loading: false,
@@ -243,6 +425,15 @@
       initialized: false,
       recordingIds: new Set(),
     };
+
+    function ensureEmptyState() {
+      if (!emptyState && emptyStateTemplate && container) {
+        emptyState = emptyStateTemplate.cloneNode(true);
+        emptyState.hidden = true;
+        emptyState.setAttribute('aria-hidden', 'true');
+        container.appendChild(emptyState);
+      }
+    }
 
     function setLoading(isLoading, { initial = false } = {}) {
       state.loading = isLoading;
@@ -298,8 +489,8 @@
 
     function removeEmptyState() {
       if (emptyState) {
-        emptyState.remove();
-        emptyState = null;
+        emptyState.hidden = true;
+        emptyState.setAttribute('aria-hidden', 'true');
       }
     }
 
@@ -335,6 +526,65 @@
         items: normalizedItems,
         nextCursor: normalizeCursor(data.next_cursor ?? data.nextCursor ?? null),
       };
+    }
+
+    async function deleteRecording(recordingId) {
+      if (!recordingId) {
+        return { ok: false, status: 400 };
+      }
+
+      try {
+        const response = await fetch(`/api/recordings/${encodeURIComponent(recordingId)}`, {
+          method: 'DELETE',
+          headers: { Accept: 'application/json' },
+        });
+
+        if (response.status === 401) {
+          window.location.href = '/login';
+          return { ok: false, status: 401 };
+        }
+
+        const text = await response.text();
+        if (!response.ok && response.status !== 404) {
+          let errorCode = null;
+          if (text) {
+            try {
+              const payload = JSON.parse(text);
+              if (payload && typeof payload.error === 'string') {
+                errorCode = payload.error;
+              }
+            } catch (parseError) {
+              errorCode = null;
+            }
+          }
+          return { ok: false, status: response.status, error: errorCode };
+        }
+
+        return { ok: true, status: response.status };
+      } catch (err) {
+        console.error('[recordings] delete request failed', err);
+        return { ok: false, status: 0, error: err && err.message ? err.message : 'network_error' };
+      }
+    }
+
+    function removeRecordingFromList(recordingId) {
+      if (!list || !recordingId) {
+        return;
+      }
+
+      const items = Array.from(list.children);
+      const target = items.find((element) => element.dataset && element.dataset.recordingId === recordingId);
+      if (!target) {
+        return;
+      }
+
+      target.remove();
+      state.recordingIds.delete(recordingId);
+
+      if (list.children.length === 0) {
+        ensureEmptyState();
+        showEmpty();
+      }
     }
 
     async function load({ initial = false } = {}) {
@@ -409,6 +659,61 @@
     if (loadMoreButton) {
       loadMoreButton.addEventListener('click', () => {
         load({ initial: false });
+      });
+    }
+
+    if (list) {
+      list.addEventListener('click', async (event) => {
+        const button = event.target.closest('[data-recording-delete]');
+        if (!button) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const recordingId = button.dataset.recordingId || null;
+        if (!recordingId || button.dataset.loading === 'true') {
+          return;
+        }
+
+        const recordingTitle = button.dataset.recordingTitle || 'эту запись';
+
+        const confirmed = await confirmDialog.confirm({
+          title: 'Удалить запись?',
+          message: `Запись «${recordingTitle}» будет удалена без возможности восстановления.`,
+          confirmLabel: 'Удалить',
+          cancelLabel: 'Отмена',
+        });
+
+        if (!confirmed) {
+          return;
+        }
+
+        button.dataset.loading = 'true';
+        button.disabled = true;
+        button.classList.add('is-busy');
+        button.setAttribute('aria-busy', 'true');
+
+        const result = await deleteRecording(recordingId);
+
+        if (!result.ok && result.status !== 404) {
+          console.error('[recordings] failed to delete recording', recordingId, result);
+          showError('Не удалось удалить запись. Попробуйте ещё раз.');
+          delete button.dataset.loading;
+          button.disabled = false;
+          button.classList.remove('is-busy');
+          button.removeAttribute('aria-busy');
+          return;
+        }
+
+        delete button.dataset.loading;
+        button.classList.remove('is-busy');
+        button.removeAttribute('aria-busy');
+        button.disabled = false;
+
+        removeRecordingFromList(recordingId);
+        hideError();
       });
     }
 

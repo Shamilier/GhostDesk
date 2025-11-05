@@ -992,6 +992,66 @@ app.get('/api/recordings/:id', async (req, res) => {
   }
 });
 
+app.delete('/api/recordings/:id', requireAuth, async (req, res) => {
+  const user = req.session.user;
+  if (!user) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+
+  const id = req.params.id;
+  if (!id) {
+    return res.status(400).json({ error: 'invalid_id' });
+  }
+
+  const apiUrl = `https://api.ghostai.ru/v1/recordings/${encodeURIComponent(id)}`;
+  const authHeader = `Bearer web-user-${user.id}`;
+  const started = Date.now();
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'DELETE',
+      headers: {
+        Authorization: authHeader,
+        Accept: 'application/json',
+      },
+    });
+
+    const text = await response.text();
+    console.log(
+      '[recordings] delete user=%s rec=%s status=%s in=%dms bodyLen=%d',
+      user.id,
+      id,
+      response.status,
+      Date.now() - started,
+      text.length,
+    );
+
+    if (response.status === 404) {
+      return res.status(404).json({ error: 'not_found' });
+    }
+
+    if (!response.ok) {
+      return res.status(502).json({ error: 'api_error', status: response.status });
+    }
+
+    if (text) {
+      try {
+        const payload = JSON.parse(text);
+        if (payload && typeof payload === 'object') {
+          return res.json(payload);
+        }
+      } catch (parseErr) {
+        console.warn('[recordings] delete response parse failed user=%s rec=%s err=%s', user.id, id, parseErr);
+      }
+    }
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[recordings][error] delete user=%s rec=%s err=%s', user.id, id, err);
+    return res.status(502).json({ error: 'api_unavailable' });
+  }
+});
+
 app.get('/api/recordings/:id/transcript', requireAuth, async (req, res) => {
   const user = req.session.user;
   if (!user) {
