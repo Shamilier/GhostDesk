@@ -14,6 +14,8 @@ const db = require('./db');
 const oauth = require('./oauth');
 
 const app = express();
+const GHOSTAI_API_BASE = 'https://api.ghostai.ru';
+const ASK_TIMEOUT_MS = 60_000;
 const PORT = process.env.PORT || 3000;
 const SESSION_SECRET = process.env.SESSION_SECRET || 'ghostai_super_secret';
 const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 32);
@@ -191,6 +193,30 @@ const requireAuth = (req, res, next) => {
     return res.redirect('/login');
   }
   return next();
+};
+
+const buildGhostAiAuthHeader = (user) => {
+  if (!user) {
+    return null;
+  }
+
+  if (process.env.GHOSTAI_AUTH_MODE === 'user-token') {
+    if (user.token) {
+      return `Bearer ${user.token}`;
+    }
+    return null;
+  }
+
+  if (!user.id) {
+    return null;
+  }
+
+  return `Bearer web-user-${user.id}`;
+};
+
+const respondUnauthorized = (res) => {
+  res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
+  return res.status(401).json({ error: 'unauthorized' });
 };
 
 const formatAsIso8601 = (value) => {
@@ -1025,139 +1051,144 @@ app.get('/api/recordings/:id/transcript', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/recordings/:id/ask', requireAuth, async (req, res) => {
+app.post('/api/recordings/:id/ask', async (req, res) => {
   const user = req.session.user;
-  if (!user || !user.token) {
-    return res.status(401).json({ error: 'unauthorized' });
+  if (!user) {
+    return respondUnauthorized(res);
   }
 
-  const recordingId = String(req.params.id || '').trim();
-  const prompt = typeof req.body.prompt === 'string' ? req.body.prompt.trim() : '';
-  const conversationIdRaw = typeof req.body.conversationId === 'string' ? req.body.conversationId.trim() : null;
-  const conversationId = conversationIdRaw ? conversationIdRaw : null;
-
-  if (!recordingId) {
-    return res.status(400).json({ error: 'invalid_recording_id' });
+  const authHeader = buildGhostAiAuthHeader(user);
+  if (!authHeader) {
+    return respondUnauthorized(res);
   }
 
-  if (!prompt) {
-    return res.status(400).json({ error: 'invalid_prompt' });
-  }
-
-  const upstreamUrl = 'https://api.ghostai.ru/v1/ask';
-  const startedAt = Date.now();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ASK_TIMEOUT_MS);
 
   try {
-    const upstreamResponse = await fetch(upstreamUrl, {
+    const upstream = await fetch(`${GHOSTAI_API_BASE}/v1/ask`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${user.token}`,
+        Authorization: authHeader,
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
       body: JSON.stringify({
-        recording_id: recordingId,
-        question: prompt,
-        conversation_id: conversationId,
+        recording_id: req.params.id,
+        question: req.body?.prompt,
+        conversation_id: req.body?.conversation_id ?? null,
         mode: 'auto',
       }),
+      signal: controller.signal,
     });
 
-    const responseBody = await upstreamResponse.text();
-
-    console.log(
-      '[recordings][ask] user=%s rec=%s status=%s in=%dms bodyLen=%d',
-      user.id || 'unknown',
-      recordingId,
-      upstreamResponse.status,
-      Date.now() - startedAt,
-      responseBody.length,
-    );
-
-    const upstreamContentType = upstreamResponse.headers.get('content-type') || 'application/json';
-
-    if (!upstreamResponse.ok) {
-      const status = upstreamResponse.status;
-      if (!responseBody) {
-        return res.status(status).json({ error: 'upstream_error' });
-      }
-      res.status(status);
-      res.setHeader('Content-Type', upstreamContentType);
-      return res.send(responseBody);
+    if (upstream.status === 401) {
+      res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
     }
 
-    res.status(200);
-    res.setHeader('Content-Type', upstreamContentType);
-    return res.send(responseBody);
+    res.status(upstream.status);
+
+    const contentType = upstream.headers.get('content-type');
+    if (contentType && !upstream.ok) {
+      res.set('Content-Type', contentType);
+    }
+
+    if (!upstream.ok) {
+      const body = await upstream.text();
+      return res.send(body);
+    }
+
+    const payload = await upstream.json();
+    return res.json(payload);
   } catch (err) {
-    console.error('[recordings][ask][error] user=%s rec=%s err=%o', user.id || 'unknown', recordingId, err);
-    return res.status(502).json({ error: 'upstream_unavailable' });
+    if (err && err.name === 'AbortError') {
+      return res.status(504).json({ error: 'gateway_timeout' });
+    }
+    console.error('[recordings][ask][error] user=%s rec=%s err=%o', user?.id || 'unknown', req.params.id, err);
+    return res.status(502).json({ error: 'bad_gateway' });
+  } finally {
+    clearTimeout(timeoutId);
   }
 });
 
-app.post('/api/recordings/:id/ask/stream', requireAuth, async (req, res) => {
+app.post('/api/recordings/:id/ask/stream', async (req, res) => {
   const user = req.session.user;
-  if (!user || !user.token) {
-    return res.status(401).json({ error: 'unauthorized' });
+  if (!user) {
+    return respondUnauthorized(res);
   }
 
-  const recordingId = String(req.params.id || '').trim();
-  const prompt = typeof req.body.prompt === 'string' ? req.body.prompt.trim() : '';
-  const conversationIdRaw = typeof req.body.conversationId === 'string' ? req.body.conversationId.trim() : null;
-  const conversationId = conversationIdRaw ? conversationIdRaw : null;
-
-  if (!recordingId) {
-    return res.status(400).json({ error: 'invalid_recording_id' });
+  const authHeader = buildGhostAiAuthHeader(user);
+  if (!authHeader) {
+    return respondUnauthorized(res);
   }
 
-  if (!prompt) {
-    return res.status(400).json({ error: 'invalid_prompt' });
-  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ASK_TIMEOUT_MS);
 
-  const upstreamUrl = 'https://api.ghostai.ru/v1/ask/stream';
+  const handleUnauthorized = (status) => {
+    if (status === 401) {
+      res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
+    }
+  };
 
   try {
-    const upstreamResponse = await fetch(upstreamUrl, {
+    const upstream = await fetch(`${GHOSTAI_API_BASE}/v1/ask/stream`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${user.token}`,
+        Authorization: authHeader,
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
       },
       body: JSON.stringify({
-        recording_id: recordingId,
-        question: prompt,
-        conversation_id: conversationId,
+        recording_id: req.params.id,
+        question: req.body?.prompt,
+        conversation_id: req.body?.conversation_id ?? null,
         mode: 'auto',
       }),
+      signal: controller.signal,
     });
 
-    if (!upstreamResponse.ok || !upstreamResponse.body) {
-      const responseBody = await upstreamResponse.text();
-      const status = upstreamResponse.status || 502;
-      if (!responseBody) {
-        return res.status(status).json({ error: 'upstream_error' });
+    if (!upstream.ok || !upstream.body) {
+      handleUnauthorized(upstream.status);
+      res.status(upstream.status || 502);
+      const contentType = upstream.headers.get('content-type');
+      if (contentType) {
+        res.set('Content-Type', contentType);
       }
-      res.status(status);
-      res.setHeader('Content-Type', upstreamResponse.headers.get('content-type') || 'application/json');
-      return res.send(responseBody);
+      const text = await upstream.text();
+      return res.send(text);
     }
 
     res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
+    if (typeof res.flushHeaders === 'function') {
+      res.flushHeaders();
+    }
 
-    for await (const chunk of upstreamResponse.body) {
+    req.on('close', () => {
+      controller.abort();
+    });
+
+    for await (const chunk of upstream.body) {
       res.write(chunk);
     }
     res.end();
   } catch (err) {
-    console.error('[recordings][ask_stream][error] user=%s rec=%s err=%o', user.id || 'unknown', recordingId, err);
+    if (err && err.name === 'AbortError') {
+      if (!res.headersSent) {
+        res.status(504).json({ error: 'gateway_timeout' });
+      }
+      return;
+    }
+    console.error('[recordings][ask_stream][error] user=%s rec=%s err=%o', user?.id || 'unknown', req.params.id, err);
     if (!res.headersSent) {
-      res.status(502).json({ error: 'upstream_unavailable' });
+      res.status(502).json({ error: 'bad_gateway' });
     } else {
       res.end();
     }
+  } finally {
+    clearTimeout(timeoutId);
   }
 });
 

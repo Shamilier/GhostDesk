@@ -1131,36 +1131,39 @@ body.theme-dark {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
   border-radius: 999px;
-  padding: 4px 10px;
+  padding: 3px 8px;
   align-self: start;
 }
 
 .qa-badge--speculative {
-  background: rgba(255, 214, 102, 0.18);
-  color: #ffd766;
-  border: 1px solid rgba(255, 214, 102, 0.35);
+  background: rgba(255, 214, 102, 0.16);
+  color: #ffda70;
+  border: 1px solid rgba(255, 214, 102, 0.3);
 }
 
 .qa-sources {
   display: grid;
-  gap: 6px;
-  margin: 0;
+  gap: 4px;
+  margin: 12px 0 0;
   padding: 0;
   list-style: none;
 }
 
 .qa-sources__item {
-  font-size: 0.82rem;
+  font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 0.8rem;
+  line-height: 1.4;
 }
 
 .qa-sources__link {
   color: var(--accent-primary);
   text-decoration: none;
+  word-break: break-word;
 }
 
 .qa-sources__link:hover,
