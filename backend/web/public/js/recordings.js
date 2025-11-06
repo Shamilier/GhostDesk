@@ -443,7 +443,7 @@
     return { wrapper, bubble, paragraph, meta };
   }
 
-  function formatSecondsToClock(seconds) {
+  function formatHMS(seconds) {
     const numeric = Number.isFinite(seconds) ? seconds : Number.parseFloat(seconds);
     if (!Number.isFinite(numeric) || numeric < 0) {
       return '00:00:00';
@@ -497,7 +497,10 @@
       const link = document.createElement('a');
       link.className = 'qa-sources__link';
       link.href = `${playerUrl}?t=${seekSeconds}`;
-      link.textContent = `[S#${Number.isFinite(chunkId) ? chunkId : '—'}, ${formatSecondsToClock(startSeconds)}-${formatSecondsToClock(endSeconds)}]`;
+      const labelChunkId = Number.isFinite(chunkId) ? chunkId : '—';
+      const startLabel = formatHMS(startSeconds);
+      const endLabel = formatHMS(endSeconds);
+      link.textContent = `[S#${labelChunkId}, ${startLabel}-${endLabel}]`;
       link.rel = 'noopener noreferrer';
 
       item.appendChild(link);
@@ -525,10 +528,10 @@
         return 'Нужен вход.';
       case 429:
         return 'Слишком много запросов, попробуйте позже.';
-      case 500:
-      case 502:
-        return 'Внутренняя ошибка, повторите попытку.';
       default:
+        if (typeof status === 'number' && status >= 500) {
+          return 'Внутренняя ошибка, повторите попытку.';
+        }
         return 'Ghost AI временно недоступен. Попробуйте позже.';
     }
   }
@@ -657,7 +660,7 @@
       return;
     }
 
-    const playerUrl = panel.getAttribute('data-player-url') || '';
+    const playerUrl = panel.dataset.playerUrl || '';
     let conversationId = null;
 
     function setDisabled(disabled) {
@@ -696,9 +699,8 @@
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Accept: 'application/json',
           },
-          body: JSON.stringify({ prompt: text, conversationId }),
+          body: JSON.stringify({ prompt: text, conversation_id: conversationId }),
         });
         const status = response.status;
 
@@ -717,13 +719,14 @@
         }
 
         let payload = null;
-        const textBody = await response.text();
-        if (textBody) {
+        if (response.ok) {
           try {
-            payload = JSON.parse(textBody);
+            payload = await response.json();
           } catch (parseError) {
-            // Ignore JSON parse errors, handled below
+            payload = null;
           }
+        } else {
+          await response.text();
         }
 
         if (!response.ok) {
@@ -748,7 +751,7 @@
         assistantMessage.paragraph.textContent = answer || 'Ответ появится после завершения обработки записи.';
         assistantMessage.meta.textContent = `Ghost AI • ${timeFormatter.format(new Date())}`;
         ensureSpeculativeBadge(assistantMessage.bubble, speculative);
-        renderSourcesList(assistantMessage.bubble, speculative ? [] : sources, playerUrl);
+        renderSourcesList(assistantMessage.bubble, sources, playerUrl);
 
         if (typeof payload?.conversation_id === 'string' && payload.conversation_id.trim()) {
           conversationId = payload.conversation_id.trim();
@@ -760,6 +763,7 @@
           speculative,
           sources: Array.isArray(sources) ? sources.length : 0,
           latency_ms: latencyMs,
+          stream: false,
         });
       } catch (err) {
         console.error(err);
