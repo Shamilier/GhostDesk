@@ -1026,16 +1026,138 @@ app.get('/api/recordings/:id/transcript', requireAuth, async (req, res) => {
 });
 
 app.post('/api/recordings/:id/ask', requireAuth, async (req, res) => {
+  const user = req.session.user;
+  if (!user || !user.token) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+
+  const recordingId = String(req.params.id || '').trim();
+  const prompt = typeof req.body.prompt === 'string' ? req.body.prompt.trim() : '';
+  const conversationIdRaw = typeof req.body.conversationId === 'string' ? req.body.conversationId.trim() : null;
+  const conversationId = conversationIdRaw ? conversationIdRaw : null;
+
+  if (!recordingId) {
+    return res.status(400).json({ error: 'invalid_recording_id' });
+  }
+
+  if (!prompt) {
+    return res.status(400).json({ error: 'invalid_prompt' });
+  }
+
+  const upstreamUrl = 'https://api.ghostai.ru/v1/ask';
+  const startedAt = Date.now();
+
   try {
-    const prompt = typeof req.body.prompt === 'string' ? req.body.prompt : '';
-    const answer = await recordingsService.askAi(req.params.id, prompt);
-    res.json({ answer });
-  } catch (err) {
-    if (err && err.message === 'Recording not found') {
-      return res.status(404).json({ error: 'not_found' });
+    const upstreamResponse = await fetch(upstreamUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${user.token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        recording_id: recordingId,
+        question: prompt,
+        conversation_id: conversationId,
+        mode: 'auto',
+      }),
+    });
+
+    const responseBody = await upstreamResponse.text();
+
+    console.log(
+      '[recordings][ask] user=%s rec=%s status=%s in=%dms bodyLen=%d',
+      user.id || 'unknown',
+      recordingId,
+      upstreamResponse.status,
+      Date.now() - startedAt,
+      responseBody.length,
+    );
+
+    const upstreamContentType = upstreamResponse.headers.get('content-type') || 'application/json';
+
+    if (!upstreamResponse.ok) {
+      const status = upstreamResponse.status;
+      if (!responseBody) {
+        return res.status(status).json({ error: 'upstream_error' });
+      }
+      res.status(status);
+      res.setHeader('Content-Type', upstreamContentType);
+      return res.send(responseBody);
     }
-    console.error('Failed to process AI question', err);
-    return res.status(500).json({ error: 'internal_error' });
+
+    res.status(200);
+    res.setHeader('Content-Type', upstreamContentType);
+    return res.send(responseBody);
+  } catch (err) {
+    console.error('[recordings][ask][error] user=%s rec=%s err=%o', user.id || 'unknown', recordingId, err);
+    return res.status(502).json({ error: 'upstream_unavailable' });
+  }
+});
+
+app.post('/api/recordings/:id/ask/stream', requireAuth, async (req, res) => {
+  const user = req.session.user;
+  if (!user || !user.token) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+
+  const recordingId = String(req.params.id || '').trim();
+  const prompt = typeof req.body.prompt === 'string' ? req.body.prompt.trim() : '';
+  const conversationIdRaw = typeof req.body.conversationId === 'string' ? req.body.conversationId.trim() : null;
+  const conversationId = conversationIdRaw ? conversationIdRaw : null;
+
+  if (!recordingId) {
+    return res.status(400).json({ error: 'invalid_recording_id' });
+  }
+
+  if (!prompt) {
+    return res.status(400).json({ error: 'invalid_prompt' });
+  }
+
+  const upstreamUrl = 'https://api.ghostai.ru/v1/ask/stream';
+
+  try {
+    const upstreamResponse = await fetch(upstreamUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${user.token}`,
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+      },
+      body: JSON.stringify({
+        recording_id: recordingId,
+        question: prompt,
+        conversation_id: conversationId,
+        mode: 'auto',
+      }),
+    });
+
+    if (!upstreamResponse.ok || !upstreamResponse.body) {
+      const responseBody = await upstreamResponse.text();
+      const status = upstreamResponse.status || 502;
+      if (!responseBody) {
+        return res.status(status).json({ error: 'upstream_error' });
+      }
+      res.status(status);
+      res.setHeader('Content-Type', upstreamResponse.headers.get('content-type') || 'application/json');
+      return res.send(responseBody);
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    for await (const chunk of upstreamResponse.body) {
+      res.write(chunk);
+    }
+    res.end();
+  } catch (err) {
+    console.error('[recordings][ask_stream][error] user=%s rec=%s err=%o', user.id || 'unknown', recordingId, err);
+    if (!res.headersSent) {
+      res.status(502).json({ error: 'upstream_unavailable' });
+    } else {
+      res.end();
+    }
   }
 });
 

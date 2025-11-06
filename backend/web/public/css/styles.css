@@ -1032,6 +1032,9 @@ body.theme-dark {
   padding: 14px 18px;
   border-radius: 18px;
   line-height: 1.5;
+  display: grid;
+  gap: 10px;
+  align-content: start;
 }
 
 .qa-message__meta {
@@ -1122,6 +1125,47 @@ body.theme-dark {
 
 .qa-message__bubble p {
   margin: 0;
+}
+
+.qa-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 4px 10px;
+  align-self: start;
+}
+
+.qa-badge--speculative {
+  background: rgba(255, 214, 102, 0.18);
+  color: #ffd766;
+  border: 1px solid rgba(255, 214, 102, 0.35);
+}
+
+.qa-sources {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.qa-sources__item {
+  font-size: 0.82rem;
+}
+
+.qa-sources__link {
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+
+.qa-sources__link:hover,
+.qa-sources__link:focus-visible {
+  text-decoration: underline;
 }
 
 .qa-message__bubble.is-typing::after {
