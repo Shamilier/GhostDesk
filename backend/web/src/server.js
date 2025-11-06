@@ -200,18 +200,12 @@ const buildGhostAiAuthHeader = (user) => {
     return null;
   }
 
-  if (process.env.GHOSTAI_AUTH_MODE === 'user-token') {
-    if (user.token) {
-      return `Bearer ${user.token}`;
-    }
+  const token = typeof user.token === 'string' ? user.token.trim() : '';
+  if (!token) {
     return null;
   }
 
-  if (!user.id) {
-    return null;
-  }
-
-  return `Bearer web-user-${user.id}`;
+  return `Bearer ${token}`;
 };
 
 const respondUnauthorized = (res) => {
@@ -648,7 +642,13 @@ app.get('/recordings/:id', requireAuth, async (req, res) => {
   const user = req.session.user;
   const recordingId = req.params.id;
   const apiUrl = `https://api.ghostai.ru/v1/recordings/${encodeURIComponent(recordingId)}?include_url=1`;
-  const authHeader = `Bearer web-user-${user.id}`;
+  const authHeader = buildGhostAiAuthHeader(user);
+  if (!authHeader) {
+    console.warn('[recordings] missing token for user=%s', user?.id);
+    req.session.flash = { type: 'error', message: 'Требуется повторная авторизация.' };
+    req.session.user = null;
+    return res.redirect('/login');
+  }
   const started = Date.now();
 
   try {
@@ -887,21 +887,6 @@ app.post('/oauth/revoke', async (req, res) => {
 });
 
 app.get('/oauth/profile', async (req, res) => {
-  const auth = req.headers.authorization;
-  if (auth && auth.startsWith('Bearer web-user-')) {
-    const userId = auth.replace('Bearer web-user-', '').trim();
-    if (!userId) {
-      return res.status(400).json({ error: 'invalid_token' });
-    }
-    return res.json({
-      id: userId,
-      email: null,
-      plan: 'free',
-      referral: null,
-      created_at: new Date().toISOString(),
-    });
-  }
-
   const authHeader = req.headers.authorization || '';
   const tokenMatch = authHeader.match(/^Bearer\s+(\S+)$/i);
 
@@ -945,7 +930,11 @@ app.get('/api/recordings', async (req, res) => {
     url.searchParams.set('cursor', cursor);
   }
 
-  const authHeader = `Bearer web-user-${user.id}`;
+  const authHeader = buildGhostAiAuthHeader(user);
+  if (!authHeader) {
+    console.warn('[recordings] list missing token for user=%s', user?.id);
+    return respondUnauthorized(res);
+  }
   const started = Date.now();
 
   try {
@@ -985,7 +974,11 @@ app.get('/api/recordings/:id', async (req, res) => {
 
   const id = req.params.id;
   const apiUrl = `https://api.ghostai.ru/v1/recordings/${encodeURIComponent(id)}?include_url=1`;
-  const authHeader = `Bearer web-user-${user.id}`;
+  const authHeader = buildGhostAiAuthHeader(user);
+  if (!authHeader) {
+    console.warn('[recordings] show missing token for user=%s', user?.id);
+    return respondUnauthorized(res);
+  }
   const started = Date.now();
 
   try {
@@ -1024,10 +1017,18 @@ app.get('/api/recordings/:id/transcript', requireAuth, async (req, res) => {
     return res.status(401).json({ error: 'unauthorized' });
   }
 
+  if (!user.token) {
+    console.warn('[recordings] transcript missing token for user=%s', user?.id);
+    return respondUnauthorized(res);
+  }
+
   const recordingId = req.params.id;
 
   try {
-    const result = await recordingsService.getTranscript(user.id, recordingId);
+    const result = await recordingsService.getTranscript(
+      { id: String(user.id), token: user.token },
+      recordingId,
+    );
     return res.json(result);
   } catch (err) {
     if (err && err.message === 'Recording not found') {
