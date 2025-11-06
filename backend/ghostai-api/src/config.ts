@@ -27,6 +27,7 @@ const envSchema = z.object({
   AUTH_PROFILE_URL: z.string().optional(),
   AUTH_TIMEOUT_MS: z.coerce.number().default(3000),
   AUTH_CACHE_TTL_MS: z.coerce.number().default(5 * 60 * 1000),
+  AUTH_ALLOWED_API_KEYS: z.string().optional(),
   S3_ENDPOINT: z.string(),
   S3_REGION: z.string(),
   S3_BUCKET: z.string(),
@@ -65,6 +66,11 @@ export function loadConfig() {
     process.exit(1);
   }
 
+  const allowedApiKeys = (cfg.AUTH_ALLOWED_API_KEYS ?? "")
+    .split(/[\s,]+/)
+    .map((key) => key.trim())
+    .filter((key) => key.length > 0);
+
   if (!cfg.DATABASE_URL && cfg.NODE_ENV !== "test") {
     throw new Error("DATABASE_URL is required outside of test environment");
   }
@@ -86,6 +92,7 @@ export function loadConfig() {
       profileUrl: cfg.AUTH_PROFILE_URL,
       timeoutMs: cfg.AUTH_TIMEOUT_MS,
       cacheTtlMs: cfg.AUTH_CACHE_TTL_MS,
+      allowedApiKeys,
     },
     s3: {
       endpoint: cfg.S3_ENDPOINT,
