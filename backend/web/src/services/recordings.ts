@@ -20,7 +20,12 @@ const buildApiUrl = (path: string) => {
   return new URL(path, API_BASE_URL).toString();
 };
 
-const buildAuthHeader = (userId: string) => `Bearer web-user-${userId}`;
+type TranscriptUserContext = {
+  id: string;
+  token: string;
+};
+
+const buildAuthHeader = (token: string) => `Bearer ${token}`;
 
 const collectAlternatives = (transcript: any): string[] => {
   if (!transcript || typeof transcript !== 'object') {
@@ -143,9 +148,12 @@ const parseTranscriptResponse = (body: string | null | undefined): TranscriptRes
   };
 };
 
-export async function getTranscript(userId: string, recordingId: string): Promise<TranscriptResult> {
-  if (!userId) {
+export async function getTranscript(user: TranscriptUserContext, recordingId: string): Promise<TranscriptResult> {
+  if (!user || !user.id) {
     throw new Error('User ID is required to load transcript');
+  }
+  if (!user.token || typeof user.token !== 'string' || !user.token.trim()) {
+    throw new Error('User token is required to load transcript');
   }
   if (!recordingId) {
     throw new Error('Recording ID is required to load transcript');
@@ -155,11 +163,12 @@ export async function getTranscript(userId: string, recordingId: string): Promis
 
   const url = buildApiUrl(`/v1/recordings/${encodeURIComponent(recordingId)}/transcript`);
   const startedAt = Date.now();
+  const authHeader = buildAuthHeader(user.token.trim());
 
   const response = await fetch(url, {
     method: 'GET',
     headers: {
-      Authorization: buildAuthHeader(userId),
+      Authorization: authHeader,
       Accept: 'application/json',
     },
   });
@@ -168,7 +177,7 @@ export async function getTranscript(userId: string, recordingId: string): Promis
 
   console.log(
     '[recordings] transcript user=%s rec=%s status=%s in=%dms bodyLen=%d',
-    userId,
+    user.id,
     recordingId,
     response.status,
     Date.now() - startedAt,
