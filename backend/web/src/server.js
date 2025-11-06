@@ -1,6 +1,8 @@
 require('ts-node/register/transpile-only');
 
 const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '..', '.env.local') });
+require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const helmet = require('helmet');
@@ -12,6 +14,7 @@ const recordingsService = require('./services/recordings');
 
 const db = require('./db');
 const oauth = require('./oauth');
+const { store: sessionStore, shutdownSessionStore } = require('./sessionStore');
 
 const app = express();
 const GHOSTAI_API_BASE = 'https://api.ghostai.ru';
@@ -22,6 +25,7 @@ const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklm
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, '..', 'views'));
+app.set('trust proxy', 1);
 
 app.use(
   helmet({
@@ -43,15 +47,28 @@ app.use(
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
+const sessionCookie = {
+  httpOnly: true,
+  maxAge: 1000 * 60 * 60 * 24, // 1 day
+  sameSite: 'lax',
+};
+
+const sessionCookieDomain = process.env.SESSION_COOKIE_DOMAIN;
+if (sessionCookieDomain) {
+  sessionCookie.domain = sessionCookieDomain;
+}
+
+if (process.env.NODE_ENV === 'production') {
+  sessionCookie.secure = true;
+}
+
 app.use(
   session({
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      maxAge: 1000 * 60 * 60 * 24, // 1 day
-    },
+    store: sessionStore,
+    cookie: sessionCookie,
   })
 );
 
@@ -1201,6 +1218,31 @@ app.use((err, req, res, next) => {
   res.status(500).render('500', { title: 'Ошибка сервера' });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Ghost AI portal is running on http://localhost:${PORT}`);
+});
+
+const shutdownSignals = ['SIGTERM', 'SIGINT', 'SIGQUIT'];
+
+const shutdown = async (signal) => {
+  console.log(`Received ${signal}, shutting down gracefully...`);
+  server.close(() => {
+    console.log('HTTP server closed');
+  });
+
+  try {
+    await shutdownSessionStore();
+    console.log('Session store connection closed');
+  } catch (err) {
+    console.error('Error while closing session store', err);
+  }
+};
+
+shutdownSignals.forEach((signal) => {
+  process.on(signal, () => {
+    shutdown(signal).catch((err) => {
+      console.error('Unexpected error during shutdown', err);
+      process.exitCode = 1;
+    });
+  });
 });
