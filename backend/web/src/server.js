@@ -3,6 +3,7 @@ require('ts-node/register/transpile-only');
 const path = require('path');
 const express = require('express');
 const session = require('express-session');
+const SQLiteStore = require('connect-sqlite3')(session);
 const helmet = require('helmet');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
@@ -13,11 +14,52 @@ const recordingsService = require('./services/recordings');
 const db = require('./db');
 const oauth = require('./oauth');
 
-const app = express();
 const GHOSTAI_API_BASE = 'https://api.ghostai.ru';
 const ASK_TIMEOUT_MS = 60_000;
 const PORT = process.env.PORT || 3000;
-const SESSION_SECRET = process.env.SESSION_SECRET || 'ghostai_super_secret';
+const SESSION_SECRET = process.env.SESSION_SECRET;
+
+if (!SESSION_SECRET) {
+  throw new Error('SESSION_SECRET environment variable is required');
+}
+
+const isProd = process.env.NODE_ENV === 'production';
+const shouldTrustProxy = ['1', 'true', 'yes'].includes(String(process.env.TRUST_PROXY || '').toLowerCase());
+const rawSessionMaxAgeDays = parseInt(process.env.SESSION_MAX_AGE_DAYS, 10);
+const sessionMaxAgeDays = Number.isFinite(rawSessionMaxAgeDays) && rawSessionMaxAgeDays > 0 ? rawSessionMaxAgeDays : 30;
+const sessionMaxAgeMs = sessionMaxAgeDays * 24 * 60 * 60 * 1000;
+const sessionSameSite = process.env.SESSION_SAME_SITE === 'none' ? 'none' : 'lax';
+const sessionStoreOptions = {
+  db: 'ghostai.db',
+  dir: path.join(__dirname, '..', 'data'),
+  table: 'sessions',
+  concurrentDB: true,
+  cleanupInterval: 30 * 60 * 1000,
+};
+const sessionStore = new SQLiteStore(sessionStoreOptions);
+const sessionStorePath = path.join(sessionStoreOptions.dir, sessionStoreOptions.db);
+
+console.log(
+  `[session] SQLite store initialized path=${sessionStorePath} table=${sessionStoreOptions.table}`
+);
+
+sessionStore.on('disconnect', (err) => {
+  if (err) {
+    console.error('[session] SQLite store disconnect', err);
+  } else {
+    console.error('[session] SQLite store disconnect');
+  }
+});
+
+sessionStore.on('error', (err) => {
+  console.error('[session] SQLite store error', err);
+});
+
+const app = express();
+if (shouldTrustProxy) {
+  app.set('trust proxy', 1);
+  console.log('[session] trust proxy enabled');
+}
 const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 32);
 
 app.set('view engine', 'ejs');
@@ -45,12 +87,17 @@ app.use(express.json());
 
 app.use(
   session({
+    store: sessionStore,
     secret: SESSION_SECRET,
+    name: process.env.SESSION_NAME || 'sid',
     resave: false,
     saveUninitialized: false,
+    rolling: false,
     cookie: {
       httpOnly: true,
-      maxAge: 1000 * 60 * 60 * 24, // 1 day
+      secure: isProd,
+      sameSite: sessionSameSite,
+      maxAge: sessionMaxAgeMs,
     },
   })
 );
