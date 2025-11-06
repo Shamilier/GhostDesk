@@ -3,7 +3,6 @@ require('ts-node/register/transpile-only');
 const path = require('path');
 const express = require('express');
 const session = require('express-session');
-const SQLiteStore = require('connect-sqlite3')(session);
 const helmet = require('helmet');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
@@ -13,63 +12,12 @@ const recordingsService = require('./services/recordings');
 
 const db = require('./db');
 const oauth = require('./oauth');
-const logger = require('./logger');
 
+const app = express();
 const GHOSTAI_API_BASE = 'https://api.ghostai.ru';
 const ASK_TIMEOUT_MS = 60_000;
 const PORT = process.env.PORT || 3000;
-const SESSION_SECRET = process.env.SESSION_SECRET;
-
-if (!SESSION_SECRET) {
-  throw new Error('SESSION_SECRET environment variable is required');
-}
-
-const isProd = process.env.NODE_ENV === 'production';
-const shouldTrustProxy = ['1', 'true', 'yes'].includes(String(process.env.TRUST_PROXY || '').toLowerCase());
-const rawSessionMaxAgeDays = parseInt(process.env.SESSION_MAX_AGE_DAYS, 10);
-const sessionMaxAgeDays = Number.isFinite(rawSessionMaxAgeDays) && rawSessionMaxAgeDays > 0 ? rawSessionMaxAgeDays : 30;
-const sessionMaxAgeMs = sessionMaxAgeDays * 24 * 60 * 60 * 1000;
-const sessionSameSiteEnv = String(process.env.SESSION_SAME_SITE || '').trim().toLowerCase();
-const sessionSameSite = sessionSameSiteEnv === 'none' ? 'none' : 'lax';
-const isCrossSiteSessionCookies = sessionSameSite === 'none';
-const shouldUseSecureCookies = isProd || isCrossSiteSessionCookies;
-const sessionStoreOptions = {
-  db: 'ghostai.db',
-  dir: path.join(__dirname, '..', 'data'),
-  table: 'sessions',
-  concurrentDB: true,
-  cleanupInterval: 30 * 60 * 1000,
-};
-const sessionStore = new SQLiteStore(sessionStoreOptions);
-const sessionStorePath = path.join(sessionStoreOptions.dir, sessionStoreOptions.db);
-
-logger.info(
-  `[session] SQLite store initialized path=${sessionStorePath} table=${sessionStoreOptions.table}`
-);
-
-if (isCrossSiteSessionCookies && !isProd) {
-  logger.warn(
-    '[session] sameSite=none configured outside production; ensure HTTPS is used so cookies are accepted.'
-  );
-}
-
-sessionStore.on('disconnect', (err) => {
-  if (err) {
-    logger.error('[session] SQLite store disconnect', err);
-  } else {
-    logger.error('[session] SQLite store disconnect');
-  }
-});
-
-sessionStore.on('error', (err) => {
-  logger.error('[session] SQLite store error', err);
-});
-
-const app = express();
-if (shouldTrustProxy) {
-  app.set('trust proxy', 1);
-  logger.info('[session] trust proxy enabled');
-}
+const SESSION_SECRET = process.env.SESSION_SECRET || 'ghostai_super_secret';
 const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 32);
 
 app.set('view engine', 'ejs');
@@ -97,17 +45,12 @@ app.use(express.json());
 
 app.use(
   session({
-    store: sessionStore,
     secret: SESSION_SECRET,
-    name: process.env.SESSION_NAME || 'sid',
     resave: false,
     saveUninitialized: false,
-    rolling: false,
     cookie: {
       httpOnly: true,
-      secure: shouldUseSecureCookies,
-      sameSite: sessionSameSite,
-      maxAge: sessionMaxAgeMs,
+      maxAge: 1000 * 60 * 60 * 24, // 1 day
     },
   })
 );
@@ -237,7 +180,7 @@ const finalizeOAuthIfNeeded = async (req, user) => {
       state: pending.state,
     });
   } catch (err) {
-    logger.error('Error creating authorization code', err);
+    console.error('Error creating authorization code', err);
     req.session.oauthRequest = null;
     req.session.oauthReturnTo = null;
     throw err;
@@ -252,19 +195,23 @@ const requireAuth = (req, res, next) => {
   return next();
 };
 
-const buildGhostAiAuthHeader = (token) => `Bearer ${token}`;
-
-const resolveGhostAiTokenCandidates = (user) => {
+const buildGhostAiAuthHeader = (user) => {
   if (!user) {
-    return [];
-  }
-
-  const token = typeof user.token === 'string' ? user.token.trim() : '';
-  if (!token) {
     return null;
   }
 
-  return `Bearer ${token}`;
+  if (process.env.GHOSTAI_AUTH_MODE === 'user-token') {
+    if (user.token) {
+      return `Bearer ${user.token}`;
+    }
+    return null;
+  }
+
+  if (!user.id) {
+    return null;
+  }
+
+  return `Bearer web-user-${user.id}`;
 };
 
 const respondUnauthorized = (res) => {
@@ -438,7 +385,7 @@ app.post('/register', async (req, res) => {
 
   db.get('SELECT id FROM users WHERE email = ?', [email.toLowerCase()], async (err, row) => {
     if (err) {
-      logger.error('Error checking user', err);
+      console.error('Error checking user', err);
       req.session.flash = { type: 'error', message: 'Не удалось создать аккаунт. Попробуйте позже.' };
       return res.redirect('/register');
     }
@@ -456,7 +403,7 @@ app.post('/register', async (req, res) => {
         [email.toLowerCase(), passwordHash, token, 'free', referral || null],
         function (insertErr) {
           if (insertErr) {
-            logger.error('Error inserting user', insertErr);
+            console.error('Error inserting user', insertErr);
             req.session.flash = { type: 'error', message: 'Не удалось создать аккаунт. Попробуйте позже.' };
             return res.redirect('/register');
           }
@@ -493,7 +440,7 @@ app.post('/register', async (req, res) => {
         }
       );
     } catch (hashErr) {
-      logger.error('Error hashing password', hashErr);
+      console.error('Error hashing password', hashErr);
       req.session.flash = { type: 'error', message: 'Не удалось создать аккаунт. Попробуйте позже.' };
       return res.redirect('/register');
     }
@@ -544,7 +491,7 @@ app.post('/login', (req, res) => {
 
   db.get('SELECT * FROM users WHERE email = ?', [email.toLowerCase()], async (err, user) => {
     if (err) {
-      logger.error('Error fetching user', err);
+      console.error('Error fetching user', err);
       req.session.flash = { type: 'error', message: 'Не удалось войти. Попробуйте позже.' };
       return res.redirect('/login');
     }
@@ -701,16 +648,10 @@ app.get('/recordings/:id', requireAuth, async (req, res) => {
   const user = req.session.user;
   const recordingId = req.params.id;
   const apiUrl = `https://api.ghostai.ru/v1/recordings/${encodeURIComponent(recordingId)}?include_url=1`;
-  const authHeader = buildGhostAiAuthHeader(user);
-  if (!authHeader) {
-    logger.warn('[recordings] missing token for user=%s', user?.id);
-    req.session.flash = { type: 'error', message: 'Требуется повторная авторизация.' };
-    req.session.user = null;
-    return res.redirect('/login');
-  }
+  const authHeader = `Bearer web-user-${user.id}`;
   const started = Date.now();
 
-  const result = await withGhostAiToken(user, async ({ authHeader, attempt }) => {
+  try {
     const response = await fetch(apiUrl, {
       method: 'GET',
       headers: {
@@ -720,87 +661,63 @@ app.get('/recordings/:id', requireAuth, async (req, res) => {
     });
 
     const text = await response.text();
-    logger.info(
-      '[recordings] show user=%s rec=%s status=%s in=%dms bodyLen=%d attempt=%d',
+    console.log(
+      '[recordings] show user=%s rec=%s status=%s in=%dms bodyLen=%d',
       user.id,
       recordingId,
       response.status,
       Date.now() - started,
       text.length,
-      attempt,
     );
 
-    return {
-      response,
-      body: text,
-    };
-  });
+    if (response.status === 404) {
+      return res.status(404).render('404', { title: 'Страница не найдена' });
+    }
 
-  if (result.type === 'error' && result.reason === 'missing_token') {
-    logger.warn('[recordings] missing token for user=%s', user?.id);
-    req.session.flash = { type: 'error', message: 'Требуется повторная авторизация.' };
-    req.session.user = null;
-    return res.redirect('/login');
-  }
+    if (!response.ok) {
+      console.error(
+        '[recordings][error] show user=%s rec=%s err=%s',
+        user.id,
+        recordingId,
+        `Unexpected API status ${response.status}`,
+      );
+      return res.status(502).render('500', { title: 'Ошибка сервера' });
+    }
 
-  if (!result || result.type !== 'success') {
-    logger.error('[recordings][error] show user=%s rec=%s err=token_handling_failed', user.id, recordingId);
+    let payload;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch (parseErr) {
+      console.error('[recordings][error] show user=%s rec=%s err=%s', user.id, recordingId, parseErr);
+      return res.status(502).render('500', { title: 'Ошибка сервера' });
+    }
+
+    const recording = normalizeRecordingFromApi(payload);
+    if (!recording) {
+      return res.status(404).render('404', { title: 'Страница не найдена' });
+    }
+
+    const playbackUrl =
+      payload.download_url ||
+      payload.playback_url ||
+      payload.audio_url ||
+      payload.url ||
+      null;
+
+    res.render('recordings/show', {
+      title: formatRecordingTitle(recording),
+      recording,
+      playbackUrl,
+      helpers: {
+        formatDuration,
+        formatFileSize,
+        formatRecordingTitle,
+      },
+    });
+  } catch (err) {
+    console.error('[recordings][error] show user=%s rec=%s err=%s', user.id, recordingId, err);
     return res.status(502).render('500', { title: 'Ошибка сервера' });
   }
-
-  const { response, body } = result;
-
-  if (response.status === 404) {
-    return res.status(404).render('404', { title: 'Страница не найдена' });
-  }
-
-  if (shouldRetryWithFallback(response.status)) {
-    logger.warn('[recordings] unauthorized after retries user=%s rec=%s status=%s', user.id, recordingId, response.status);
-    req.session.flash = { type: 'error', message: 'Требуется повторная авторизация.' };
-    req.session.user = null;
-    return res.redirect('/login');
-  }
-
-  if (!response.ok) {
-    logger.error(
-      '[recordings][error] show user=%s rec=%s err=%s',
-      user.id,
-      recordingId,
-      `Unexpected API status ${response.status}`,
-    );
-    return res.status(502).render('500', { title: 'Ошибка сервера' });
-  }
-
-  let payload;
-  try {
-    payload = body ? JSON.parse(body) : null;
-  } catch (parseErr) {
-    logger.error('[recordings][error] show user=%s rec=%s err=%s', user.id, recordingId, parseErr);
-    return res.status(502).render('500', { title: 'Ошибка сервера' });
-  }
-
-  const recording = normalizeRecordingFromApi(payload);
-  if (!recording) {
-    return res.status(404).render('404', { title: 'Страница не найдена' });
-  }
-
-  const playbackUrl =
-    payload.download_url ||
-    payload.playback_url ||
-    payload.audio_url ||
-    payload.url ||
-    null;
-
-  res.render('recordings/show', {
-    title: formatRecordingTitle(recording),
-    recording,
-    playbackUrl,
-    helpers: {
-      formatDuration,
-      formatFileSize,
-      formatRecordingTitle,
-    },
-  });
 });
 
 app.get('/oauth/authorize', async (req, res) => {
@@ -873,7 +790,7 @@ app.get('/oauth/authorize', async (req, res) => {
       fallbackUrl: '/dashboard',
     });
   } catch (err) {
-    logger.error('Error issuing authorization code', err);
+    console.error('Error issuing authorization code', err);
     return res.status(500).json({ error: 'server_error' });
   }
 });
@@ -941,7 +858,7 @@ app.post('/oauth/token', async (req, res) => {
 
     return res.status(400).json({ error: 'unsupported_grant_type' });
   } catch (err) {
-    logger.error('OAuth token endpoint error', err);
+    console.error('OAuth token endpoint error', err);
     return res.status(500).json({ error: 'server_error' });
   }
 });
@@ -964,12 +881,27 @@ app.post('/oauth/revoke', async (req, res) => {
     }
     return res.status(200).json({ revoked: true });
   } catch (err) {
-    logger.error('OAuth revoke endpoint error', err);
+    console.error('OAuth revoke endpoint error', err);
     return res.status(500).json({ error: 'server_error' });
   }
 });
 
 app.get('/oauth/profile', async (req, res) => {
+  const auth = req.headers.authorization;
+  if (auth && auth.startsWith('Bearer web-user-')) {
+    const userId = auth.replace('Bearer web-user-', '').trim();
+    if (!userId) {
+      return res.status(400).json({ error: 'invalid_token' });
+    }
+    return res.json({
+      id: userId,
+      email: null,
+      plan: 'free',
+      referral: null,
+      created_at: new Date().toISOString(),
+    });
+  }
+
   const authHeader = req.headers.authorization || '';
   const tokenMatch = authHeader.match(/^Bearer\s+(\S+)$/i);
 
@@ -996,7 +928,7 @@ app.get('/oauth/profile', async (req, res) => {
       token: tokenRow.user_token,
     });
   } catch (err) {
-    logger.error('OAuth profile endpoint error', err);
+    console.error('OAuth profile endpoint error', err);
     return res.status(500).json({ error: 'server_error' });
   }
 });
@@ -1013,62 +945,34 @@ app.get('/api/recordings', async (req, res) => {
     url.searchParams.set('cursor', cursor);
   }
 
-  const authHeader = buildGhostAiAuthHeader(user);
-  if (!authHeader) {
-    logger.warn('[recordings] list missing token for user=%s', user?.id);
-    return respondUnauthorized(res);
-  }
+  const authHeader = `Bearer web-user-${user.id}`;
   const started = Date.now();
 
   try {
-    const result = await withGhostAiToken(user, async ({ authHeader, attempt }) => {
-      const response = await fetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          Authorization: authHeader,
-          Accept: 'application/json',
-        },
-      });
-
-      const text = await response.text();
-      logger.info(
-        '[recordings] list user=%s status=%s in=%dms bodyLen=%d attempt=%d',
-        user.id,
-        response.status,
-        Date.now() - started,
-        text.length,
-        attempt,
-      );
-
-      return {
-        response,
-        body: text,
-      };
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        Authorization: authHeader,
+        Accept: 'application/json',
+      },
     });
 
-    if (result.type === 'error' && result.reason === 'missing_token') {
-      logger.warn('[recordings] list missing token for user=%s', user?.id);
-      return respondUnauthorized(res);
-    }
-
-    if (!result || result.type !== 'success') {
-      logger.error('[recordings][error] list user=%s err=token_handling_failed', user.id);
-      return res.status(502).json({ error: 'api_unavailable' });
-    }
-
-    const { response, body } = result;
-
-    if (shouldRetryWithFallback(response.status)) {
-      return respondUnauthorized(res);
-    }
+    const text = await response.text();
+    console.log(
+      '[recordings] list user=%s status=%s in=%dms bodyLen=%d',
+      user.id,
+      response.status,
+      Date.now() - started,
+      text.length,
+    );
 
     if (!response.ok) {
       return res.status(502).json({ error: 'api_error', status: response.status });
     }
 
-    return res.type('application/json').send(body);
+    return res.type('application/json').send(text);
   } catch (err) {
-    logger.error('[recordings][error] list user=%s err=%s', user.id, err);
+    console.error('[recordings][error] list user=%s err=%s', user.id, err);
     return res.status(502).json({ error: 'api_unavailable' });
   }
 });
@@ -1081,63 +985,35 @@ app.get('/api/recordings/:id', async (req, res) => {
 
   const id = req.params.id;
   const apiUrl = `https://api.ghostai.ru/v1/recordings/${encodeURIComponent(id)}?include_url=1`;
-  const authHeader = buildGhostAiAuthHeader(user);
-  if (!authHeader) {
-    logger.warn('[recordings] show missing token for user=%s', user?.id);
-    return respondUnauthorized(res);
-  }
+  const authHeader = `Bearer web-user-${user.id}`;
   const started = Date.now();
 
   try {
-    const result = await withGhostAiToken(user, async ({ authHeader, attempt }) => {
-      const response = await fetch(apiUrl, {
-        method: 'GET',
-        headers: {
-          Authorization: authHeader,
-          Accept: 'application/json',
-        },
-      });
-
-      const text = await response.text();
-      logger.info(
-        '[recordings] show user=%s rec=%s status=%s in=%dms bodyLen=%d attempt=%d',
-        user.id,
-        id,
-        response.status,
-        Date.now() - started,
-        text.length,
-        attempt,
-      );
-
-      return {
-        response,
-        body: text,
-      };
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: authHeader,
+        Accept: 'application/json',
+      },
     });
 
-    if (result.type === 'error' && result.reason === 'missing_token') {
-      logger.warn('[recordings] show missing token for user=%s', user?.id);
-      return respondUnauthorized(res);
-    }
-
-    if (!result || result.type !== 'success') {
-      logger.error('[recordings][error] show user=%s rec=%s err=token_handling_failed', user.id, id);
-      return res.status(502).json({ error: 'api_unavailable' });
-    }
-
-    const { response, body } = result;
-
-    if (shouldRetryWithFallback(response.status)) {
-      return respondUnauthorized(res);
-    }
+    const text = await response.text();
+    console.log(
+      '[recordings] show user=%s rec=%s status=%s in=%dms bodyLen=%d',
+      user.id,
+      id,
+      response.status,
+      Date.now() - started,
+      text.length,
+    );
 
     if (!response.ok) {
       return res.status(502).json({ error: 'api_error', status: response.status });
     }
 
-    return res.type('application/json').send(body);
+    return res.type('application/json').send(text);
   } catch (err) {
-    logger.error('[recordings][error] show user=%s rec=%s err=%s', user.id, id, err);
+    console.error('[recordings][error] show user=%s rec=%s err=%s', user.id, id, err);
     return res.status(502).json({ error: 'api_unavailable' });
   }
 });
@@ -1148,32 +1024,21 @@ app.get('/api/recordings/:id/transcript', requireAuth, async (req, res) => {
     return res.status(401).json({ error: 'unauthorized' });
   }
 
-  if (!user.token) {
-    logger.warn('[recordings] transcript missing token for user=%s', user?.id);
-    return respondUnauthorized(res);
-  }
-
   const recordingId = req.params.id;
 
   try {
-    const result = await recordingsService.getTranscript(
-      { id: String(user.id), token: user.token },
-      recordingId,
-    );
+    const result = await recordingsService.getTranscript(user.id, recordingId);
     return res.json(result);
   } catch (err) {
     if (err && err.message === 'Recording not found') {
       return res.status(404).json({ error: 'not_found' });
     }
     if (err && err.code === 'invalid_payload') {
-      logger.error('[recordings][error] transcript invalid-payload user=%s rec=%s', user.id, recordingId);
+      console.error('[recordings][error] transcript invalid-payload user=%s rec=%s', user.id, recordingId);
       return res.status(502).json({ error: 'invalid_transcript_payload' });
     }
-    if (err && err.code === 'unauthorized') {
-      return respondUnauthorized(res);
-    }
     if (err && err.code === 'upstream_error') {
-      logger.error(
+      console.error(
         '[recordings][error] transcript upstream user=%s rec=%s status=%s',
         user.id,
         recordingId,
@@ -1181,7 +1046,7 @@ app.get('/api/recordings/:id/transcript', requireAuth, async (req, res) => {
       );
       return res.status(502).json({ error: 'api_error', status: err.status || null });
     }
-    logger.error('[recordings][error] transcript user=%s rec=%s err=%s', user.id, recordingId, err);
+    console.error('[recordings][error] transcript user=%s rec=%s err=%s', user.id, recordingId, err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });
@@ -1192,79 +1057,54 @@ app.post('/api/recordings/:id/ask', async (req, res) => {
     return respondUnauthorized(res);
   }
 
+  const authHeader = buildGhostAiAuthHeader(user);
+  if (!authHeader) {
+    return respondUnauthorized(res);
+  }
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), ASK_TIMEOUT_MS);
 
   try {
-    const result = await withGhostAiToken(user, async ({ authHeader, attempt }) => {
-      const response = await fetch(`${GHOSTAI_API_BASE}/v1/ask`, {
-        method: 'POST',
-        headers: {
-          Authorization: authHeader,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          recording_id: req.params.id,
-          question: req.body?.prompt,
-          conversation_id: req.body?.conversation_id ?? null,
-          mode: 'auto',
-        }),
-        signal: controller.signal,
-      });
-
-      const body = await response.text();
-      logger.info(
-        '[recordings][ask] user=%s rec=%s status=%s attempt=%d',
-        user?.id || 'unknown',
-        req.params.id,
-        response.status,
-        attempt,
-      );
-
-      return {
-        response,
-        body,
-      };
+    const upstream = await fetch(`${GHOSTAI_API_BASE}/v1/ask`, {
+      method: 'POST',
+      headers: {
+        Authorization: authHeader,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        recording_id: req.params.id,
+        question: req.body?.prompt,
+        conversation_id: req.body?.conversation_id ?? null,
+        mode: 'auto',
+      }),
+      signal: controller.signal,
     });
 
-    if (result.type === 'error' && result.reason === 'missing_token') {
-      return respondUnauthorized(res);
-    }
-
-    if (!result || result.type !== 'success') {
-      return res.status(502).json({ error: 'bad_gateway' });
-    }
-
-    const { response, body } = result;
-
-    if (response.status === 401) {
+    if (upstream.status === 401) {
       res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
     }
 
-    res.status(response.status);
+    res.status(upstream.status);
 
-    const contentType = response.headers.get('content-type');
-    if (contentType && !response.ok) {
+    const contentType = upstream.headers.get('content-type');
+    if (contentType && !upstream.ok) {
       res.set('Content-Type', contentType);
     }
 
-    if (!response.ok) {
+    if (!upstream.ok) {
+      const body = await upstream.text();
       return res.send(body);
     }
 
-    try {
-      const payload = body ? JSON.parse(body) : {};
-      return res.json(payload);
-    } catch (parseErr) {
-      logger.error('[recordings][ask][error] user=%s rec=%s err=%o', user?.id || 'unknown', req.params.id, parseErr);
-      return res.status(502).json({ error: 'invalid_response' });
-    }
+    const payload = await upstream.json();
+    return res.json(payload);
   } catch (err) {
     if (err && err.name === 'AbortError') {
       return res.status(504).json({ error: 'gateway_timeout' });
     }
-    logger.error('[recordings][ask][error] user=%s rec=%s err=%o', user?.id || 'unknown', req.params.id, err);
+    console.error('[recordings][ask][error] user=%s rec=%s err=%o', user?.id || 'unknown', req.params.id, err);
     return res.status(502).json({ error: 'bad_gateway' });
   } finally {
     clearTimeout(timeoutId);
@@ -1274,6 +1114,11 @@ app.post('/api/recordings/:id/ask', async (req, res) => {
 app.post('/api/recordings/:id/ask/stream', async (req, res) => {
   const user = req.session.user;
   if (!user) {
+    return respondUnauthorized(res);
+  }
+
+  const authHeader = buildGhostAiAuthHeader(user);
+  if (!authHeader) {
     return respondUnauthorized(res);
   }
 
@@ -1287,81 +1132,30 @@ app.post('/api/recordings/:id/ask/stream', async (req, res) => {
   };
 
   try {
-    const result = await withGhostAiToken(user, async ({ authHeader, attempt, hasMore }) => {
-      const response = await fetch(`${GHOSTAI_API_BASE}/v1/ask/stream`, {
-        method: 'POST',
-        headers: {
-          Authorization: authHeader,
-          'Content-Type': 'application/json',
-          Accept: 'text/event-stream',
-        },
-        body: JSON.stringify({
-          recording_id: req.params.id,
-          question: req.body?.prompt,
-          conversation_id: req.body?.conversation_id ?? null,
-          mode: 'auto',
-        }),
-        signal: controller.signal,
-      });
-
-      logger.info(
-        '[recordings][ask_stream] user=%s rec=%s status=%s attempt=%d',
-        user?.id || 'unknown',
-        req.params.id,
-        response.status,
-        attempt,
-      );
-
-      return {
-        response,
-        onRetry: hasMore
-          ? async () => {
-              if (response.body && typeof response.body.cancel === 'function') {
-                try {
-                  await response.body.cancel();
-                } catch (cancelErr) {
-                  logger.warn(
-                    '[recordings][ask_stream] failed to cancel upstream body user=%s rec=%s err=%o',
-                    user?.id || 'unknown',
-                    req.params.id,
-                    cancelErr,
-                  );
-                }
-              } else {
-                try {
-                  await response.text();
-                } catch (consumeErr) {
-                  logger.warn(
-                    '[recordings][ask_stream] failed to drain upstream body user=%s rec=%s err=%o',
-                    user?.id || 'unknown',
-                    req.params.id,
-                    consumeErr,
-                  );
-                }
-              }
-            }
-          : undefined,
-      };
+    const upstream = await fetch(`${GHOSTAI_API_BASE}/v1/ask/stream`, {
+      method: 'POST',
+      headers: {
+        Authorization: authHeader,
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+      },
+      body: JSON.stringify({
+        recording_id: req.params.id,
+        question: req.body?.prompt,
+        conversation_id: req.body?.conversation_id ?? null,
+        mode: 'auto',
+      }),
+      signal: controller.signal,
     });
 
-    if (result.type === 'error' && result.reason === 'missing_token') {
-      return respondUnauthorized(res);
-    }
-
-    if (!result || result.type !== 'success') {
-      return res.status(502).json({ error: 'bad_gateway' });
-    }
-
-    const { response } = result;
-
-    if (!response.ok || !response.body) {
-      handleUnauthorized(response.status);
-      res.status(response.status || 502);
-      const contentType = response.headers.get('content-type');
+    if (!upstream.ok || !upstream.body) {
+      handleUnauthorized(upstream.status);
+      res.status(upstream.status || 502);
+      const contentType = upstream.headers.get('content-type');
       if (contentType) {
         res.set('Content-Type', contentType);
       }
-      const text = await response.text();
+      const text = await upstream.text();
       return res.send(text);
     }
 
@@ -1376,7 +1170,7 @@ app.post('/api/recordings/:id/ask/stream', async (req, res) => {
       controller.abort();
     });
 
-    for await (const chunk of response.body) {
+    for await (const chunk of upstream.body) {
       res.write(chunk);
     }
     res.end();
@@ -1387,7 +1181,7 @@ app.post('/api/recordings/:id/ask/stream', async (req, res) => {
       }
       return;
     }
-    logger.error('[recordings][ask_stream][error] user=%s rec=%s err=%o', user?.id || 'unknown', req.params.id, err);
+    console.error('[recordings][ask_stream][error] user=%s rec=%s err=%o', user?.id || 'unknown', req.params.id, err);
     if (!res.headersSent) {
       res.status(502).json({ error: 'bad_gateway' });
     } else {
@@ -1403,10 +1197,10 @@ app.use((req, res) => {
 });
 
 app.use((err, req, res, next) => {
-  logger.error(err);
+  console.error(err);
   res.status(500).render('500', { title: 'Ошибка сервера' });
 });
 
 app.listen(PORT, () => {
-  logger.info(`Ghost AI portal is running on http://localhost:${PORT}`);
+  console.log(`Ghost AI portal is running on http://localhost:${PORT}`);
 });

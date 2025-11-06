@@ -30,18 +30,6 @@ db.serialize(() => {
   db.run(
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)`
   );
-
-  db.run(
-    `CREATE TABLE IF NOT EXISTS sessions (
-      sid TEXT PRIMARY KEY NOT NULL,
-      sess TEXT NOT NULL,
-      expire INTEGER NOT NULL
-    )`
-  );
-
-  db.run(
-    `CREATE INDEX IF NOT EXISTS sessions_expire_idx ON sessions(expire)`
-  );
 });
 
 module.exports = db;
