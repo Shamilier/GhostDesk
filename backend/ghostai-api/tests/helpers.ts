@@ -38,7 +38,6 @@ export function createTestConfig(): AppConfig {
       profileUrl: "https://auth.example.com/oauth/profile",
       timeoutMs: 3000,
       cacheTtlMs: 5 * 60 * 1000,
-      allowedApiKeys: [],
     },
     s3: {
       endpoint: "https://example.com",
