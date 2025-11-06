@@ -20,7 +20,24 @@ const buildApiUrl = (path: string) => {
   return new URL(path, API_BASE_URL).toString();
 };
 
-const buildAuthHeader = (userId: string) => `Bearer web-user-${userId}`;
+type TranscriptUserContext = {
+  id: string;
+  tokens: string[];
+};
+
+const buildAuthHeader = (token: string) => `Bearer ${token}`;
+
+const normalizeTokens = (tokens: string[] | undefined | null): string[] => {
+  if (!Array.isArray(tokens)) {
+    return [];
+  }
+
+  const normalized = tokens
+    .map((token) => (typeof token === 'string' ? token.trim() : ''))
+    .filter((token) => token.length > 0);
+
+  return Array.from(new Set(normalized));
+};
 
 const collectAlternatives = (transcript: any): string[] => {
   if (!transcript || typeof transcript !== 'object') {
@@ -143,9 +160,13 @@ const parseTranscriptResponse = (body: string | null | undefined): TranscriptRes
   };
 };
 
-export async function getTranscript(userId: string, recordingId: string): Promise<TranscriptResult> {
-  if (!userId) {
+export async function getTranscript(user: TranscriptUserContext, recordingId: string): Promise<TranscriptResult> {
+  if (!user || !user.id) {
     throw new Error('User ID is required to load transcript');
+  }
+  const tokens = normalizeTokens(user.tokens);
+  if (tokens.length === 0) {
+    throw new Error('User token is required to load transcript');
   }
   if (!recordingId) {
     throw new Error('Recording ID is required to load transcript');
@@ -155,39 +176,67 @@ export async function getTranscript(userId: string, recordingId: string): Promis
 
   const url = buildApiUrl(`/v1/recordings/${encodeURIComponent(recordingId)}/transcript`);
   const startedAt = Date.now();
+  let lastBody = '';
+  let lastStatus = 0;
 
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      Authorization: buildAuthHeader(userId),
-      Accept: 'application/json',
-    },
-  });
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    const authHeader = buildAuthHeader(token);
 
-  const rawBody = await response.text();
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: authHeader,
+        Accept: 'application/json',
+      },
+    });
 
-  console.log(
-    '[recordings] transcript user=%s rec=%s status=%s in=%dms bodyLen=%d',
-    userId,
-    recordingId,
-    response.status,
-    Date.now() - startedAt,
-    rawBody.length,
-  );
+    const rawBody = await response.text();
+    lastBody = rawBody;
+    lastStatus = response.status;
 
-  if (response.status === 404) {
-    throw new Error('Recording not found');
-  }
+    console.log(
+      '[recordings] transcript user=%s rec=%s status=%s in=%dms bodyLen=%d attempt=%d',
+      user.id,
+      recordingId,
+      response.status,
+      Date.now() - startedAt,
+      rawBody.length,
+      index + 1,
+    );
 
-  if (!response.ok) {
+    if (response.ok) {
+      return parseTranscriptResponse(rawBody);
+    }
+
+    if (response.status === 404) {
+      throw new Error('Recording not found');
+    }
+
+    const shouldRetry = (response.status === 401 || response.status === 403) && index < tokens.length - 1;
+    if (shouldRetry) {
+      console.warn(
+        '[recordings] transcript retrying with fallback token user=%s rec=%s status=%s attempt=%d',
+        user.id,
+        recordingId,
+        response.status,
+        index + 1,
+      );
+      continue;
+    }
+
     const err = new Error('Failed to load transcript from upstream API');
-    (err as any).code = 'upstream_error';
+    (err as any).code = response.status === 401 || response.status === 403 ? 'unauthorized' : 'upstream_error';
     (err as any).status = response.status;
     (err as any).body = rawBody;
     throw err;
   }
 
-  return parseTranscriptResponse(rawBody);
+  const err = new Error('Failed to load transcript from upstream API');
+  (err as any).code = lastStatus === 401 || lastStatus === 403 ? 'unauthorized' : 'upstream_error';
+  (err as any).status = lastStatus;
+  (err as any).body = lastBody;
+  throw err;
 }
 
 export async function askAi(id: string, prompt: string): Promise<string> {
