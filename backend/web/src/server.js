@@ -202,66 +202,12 @@ const resolveGhostAiTokenCandidates = (user) => {
     return [];
   }
 
-  const candidates = new Set();
-  const primaryToken = typeof user.token === 'string' ? user.token.trim() : '';
-  if (primaryToken) {
-    candidates.add(primaryToken);
+  const token = typeof user.token === 'string' ? user.token.trim() : '';
+  if (!token) {
+    return null;
   }
 
-  if (user.id != null) {
-    candidates.add(`web-user-${user.id}`);
-  }
-
-  return Array.from(candidates);
-};
-
-const shouldRetryWithFallback = (status) => status === 401 || status === 403;
-
-const withGhostAiToken = async (user, executor) => {
-  const tokens = resolveGhostAiTokenCandidates(user);
-  if (tokens.length === 0) {
-    return { type: 'error', reason: 'missing_token' };
-  }
-
-  let lastAttempt = null;
-
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-    const authHeader = buildGhostAiAuthHeader(token);
-    const attempt = await executor({
-      authHeader,
-      token,
-      attempt: index + 1,
-      hasMore: index < tokens.length - 1,
-    });
-
-    if (!attempt || !attempt.response) {
-      return { type: 'error', reason: 'invalid_executor' };
-    }
-
-    lastAttempt = { ...attempt, token, attempt: index + 1 };
-
-    if (shouldRetryWithFallback(attempt.response.status) && index < tokens.length - 1) {
-      if (typeof attempt.onRetry === 'function') {
-        try {
-          await attempt.onRetry();
-        } catch (retryErr) {
-          console.warn('[ghostai] failed to drain response before retry user=%s err=%o', user?.id || 'unknown', retryErr);
-        }
-      }
-      console.warn(
-        '[ghostai] retrying with fallback token user=%s status=%s attempt=%d',
-        user?.id || 'unknown',
-        attempt.response.status,
-        index + 1,
-      );
-      continue;
-    }
-
-    break;
-  }
-
-  return { type: 'success', ...lastAttempt };
+  return `Bearer ${token}`;
 };
 
 const respondUnauthorized = (res) => {
@@ -698,6 +644,13 @@ app.get('/recordings/:id', requireAuth, async (req, res) => {
   const user = req.session.user;
   const recordingId = req.params.id;
   const apiUrl = `https://api.ghostai.ru/v1/recordings/${encodeURIComponent(recordingId)}?include_url=1`;
+  const authHeader = buildGhostAiAuthHeader(user);
+  if (!authHeader) {
+    console.warn('[recordings] missing token for user=%s', user?.id);
+    req.session.flash = { type: 'error', message: 'Требуется повторная авторизация.' };
+    req.session.user = null;
+    return res.redirect('/login');
+  }
   const started = Date.now();
 
   const result = await withGhostAiToken(user, async ({ authHeader, attempt }) => {
@@ -1003,6 +956,11 @@ app.get('/api/recordings', async (req, res) => {
     url.searchParams.set('cursor', cursor);
   }
 
+  const authHeader = buildGhostAiAuthHeader(user);
+  if (!authHeader) {
+    console.warn('[recordings] list missing token for user=%s', user?.id);
+    return respondUnauthorized(res);
+  }
   const started = Date.now();
 
   try {
@@ -1066,6 +1024,11 @@ app.get('/api/recordings/:id', async (req, res) => {
 
   const id = req.params.id;
   const apiUrl = `https://api.ghostai.ru/v1/recordings/${encodeURIComponent(id)}?include_url=1`;
+  const authHeader = buildGhostAiAuthHeader(user);
+  if (!authHeader) {
+    console.warn('[recordings] show missing token for user=%s', user?.id);
+    return respondUnauthorized(res);
+  }
   const started = Date.now();
 
   try {
@@ -1128,8 +1091,7 @@ app.get('/api/recordings/:id/transcript', requireAuth, async (req, res) => {
     return res.status(401).json({ error: 'unauthorized' });
   }
 
-  const tokenCandidates = resolveGhostAiTokenCandidates(user);
-  if (tokenCandidates.length === 0) {
+  if (!user.token) {
     console.warn('[recordings] transcript missing token for user=%s', user?.id);
     return respondUnauthorized(res);
   }
@@ -1138,7 +1100,7 @@ app.get('/api/recordings/:id/transcript', requireAuth, async (req, res) => {
 
   try {
     const result = await recordingsService.getTranscript(
-      { id: String(user.id), tokens: tokenCandidates },
+      { id: String(user.id), token: user.token },
       recordingId,
     );
     return res.json(result);

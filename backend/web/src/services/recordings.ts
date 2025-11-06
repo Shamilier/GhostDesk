@@ -22,22 +22,10 @@ const buildApiUrl = (path: string) => {
 
 type TranscriptUserContext = {
   id: string;
-  tokens: string[];
+  token: string;
 };
 
 const buildAuthHeader = (token: string) => `Bearer ${token}`;
-
-const normalizeTokens = (tokens: string[] | undefined | null): string[] => {
-  if (!Array.isArray(tokens)) {
-    return [];
-  }
-
-  const normalized = tokens
-    .map((token) => (typeof token === 'string' ? token.trim() : ''))
-    .filter((token) => token.length > 0);
-
-  return Array.from(new Set(normalized));
-};
 
 const collectAlternatives = (transcript: any): string[] => {
   if (!transcript || typeof transcript !== 'object') {
@@ -164,8 +152,7 @@ export async function getTranscript(user: TranscriptUserContext, recordingId: st
   if (!user || !user.id) {
     throw new Error('User ID is required to load transcript');
   }
-  const tokens = normalizeTokens(user.tokens);
-  if (tokens.length === 0) {
+  if (!user.token || typeof user.token !== 'string' || !user.token.trim()) {
     throw new Error('User token is required to load transcript');
   }
   if (!recordingId) {
@@ -176,42 +163,26 @@ export async function getTranscript(user: TranscriptUserContext, recordingId: st
 
   const url = buildApiUrl(`/v1/recordings/${encodeURIComponent(recordingId)}/transcript`);
   const startedAt = Date.now();
-  let lastBody = '';
-  let lastStatus = 0;
+  const authHeader = buildAuthHeader(user.token.trim());
 
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-    const authHeader = buildAuthHeader(token);
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: authHeader,
+      Accept: 'application/json',
+    },
+  });
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Authorization: authHeader,
-        Accept: 'application/json',
-      },
-    });
+  const rawBody = await response.text();
 
-    const rawBody = await response.text();
-    lastBody = rawBody;
-    lastStatus = response.status;
-
-    console.log(
-      '[recordings] transcript user=%s rec=%s status=%s in=%dms bodyLen=%d attempt=%d',
-      user.id,
-      recordingId,
-      response.status,
-      Date.now() - startedAt,
-      rawBody.length,
-      index + 1,
-    );
-
-    if (response.ok) {
-      return parseTranscriptResponse(rawBody);
-    }
-
-    if (response.status === 404) {
-      throw new Error('Recording not found');
-    }
+  console.log(
+    '[recordings] transcript user=%s rec=%s status=%s in=%dms bodyLen=%d',
+    user.id,
+    recordingId,
+    response.status,
+    Date.now() - startedAt,
+    rawBody.length,
+  );
 
     const shouldRetry = (response.status === 401 || response.status === 403) && index < tokens.length - 1;
     if (shouldRetry) {
