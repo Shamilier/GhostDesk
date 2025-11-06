@@ -184,19 +184,30 @@ export async function getTranscript(user: TranscriptUserContext, recordingId: st
     rawBody.length,
   );
 
-  if (response.status === 404) {
-    throw new Error('Recording not found');
-  }
+    const shouldRetry = (response.status === 401 || response.status === 403) && index < tokens.length - 1;
+    if (shouldRetry) {
+      console.warn(
+        '[recordings] transcript retrying with fallback token user=%s rec=%s status=%s attempt=%d',
+        user.id,
+        recordingId,
+        response.status,
+        index + 1,
+      );
+      continue;
+    }
 
-  if (!response.ok) {
     const err = new Error('Failed to load transcript from upstream API');
-    (err as any).code = 'upstream_error';
+    (err as any).code = response.status === 401 || response.status === 403 ? 'unauthorized' : 'upstream_error';
     (err as any).status = response.status;
     (err as any).body = rawBody;
     throw err;
   }
 
-  return parseTranscriptResponse(rawBody);
+  const err = new Error('Failed to load transcript from upstream API');
+  (err as any).code = lastStatus === 401 || lastStatus === 403 ? 'unauthorized' : 'upstream_error';
+  (err as any).status = lastStatus;
+  (err as any).body = lastBody;
+  throw err;
 }
 
 export async function askAi(id: string, prompt: string): Promise<string> {
