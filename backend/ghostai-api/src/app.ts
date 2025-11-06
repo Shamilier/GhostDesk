@@ -71,6 +71,45 @@ function logAuthUsage(endpoint: string, token: string | null) {
   logger.info("auth.usage", { endpoint, token: masked });
 }
 
+function createEndpointAuth({
+  endpoint,
+  allowedApiKeys,
+  fallback,
+}: {
+  endpoint: string;
+  allowedApiKeys: readonly string[];
+  fallback: express.RequestHandler;
+}): express.RequestHandler {
+  const sanitized = Array.from(
+    new Set(
+      (allowedApiKeys ?? [])
+        .map((key) => key.trim())
+        .filter((key) => key.length > 0)
+    )
+  );
+
+  if (sanitized.length === 0) {
+    return (req, res, next) => {
+      const token = readAuthKey(req);
+      logAuthUsage(endpoint, token);
+      return fallback(req, res, next);
+    };
+  }
+
+  const allowed = new Set(sanitized);
+
+  return (req, res, next) => {
+    const token = readAuthKey(req);
+    logAuthUsage(endpoint, token);
+
+    if (!token || !allowed.has(token)) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    return next();
+  };
+}
+
 function formatSmartText(text: string, smart: boolean): string {
   const trimmed = text.trim();
   if (!trimmed) return trimmed;
@@ -310,6 +349,9 @@ export function createApp({ config, db, s3Client }: AppDependencies) {
   const auth = requireUser({ config, cache: profileCache });
   const recordingsRateLimit = createRateLimiter({ windowMs: 60_000, limit: 120 });
   const qaRateLimit = createRateLimiter({ windowMs: 60_000, limit: 60 });
+  const hintRateLimit = createRateLimiter({ windowMs: 60_000, limit: 60 });
+  const askRateLimit = createRateLimiter({ windowMs: 60_000, limit: 60 });
+  const askWithoutQueryRateLimit = createRateLimiter({ windowMs: 60_000, limit: 60 });
 
   const embeddingQueue = new EmbeddingIngestQueue({
     config,
@@ -345,15 +387,28 @@ export function createApp({ config, db, s3Client }: AppDependencies) {
 
   app.use("/v1/ask", qaRateLimit, auth, createQaRouter({ db, config, openAiClient: client }));
 
-  app.post("/hint", async (req, res) => {
+  const hintAuth = createEndpointAuth({
+    endpoint: "/hint",
+    allowedApiKeys: config.auth.allowedApiKeys,
+    fallback: auth,
+  });
+  const askAuth = createEndpointAuth({
+    endpoint: "/ask",
+    allowedApiKeys: config.auth.allowedApiKeys,
+    fallback: auth,
+  });
+  const askWithoutQueryAuth = createEndpointAuth({
+    endpoint: "/ask_without_query",
+    allowedApiKeys: config.auth.allowedApiKeys,
+    fallback: auth,
+  });
+
+  app.post("/hint", hintRateLimit, hintAuth, async (req, res) => {
     if (!client) {
       return res.status(500).json({ error: "OpenAI client is not configured" });
     }
 
     try {
-      const token = readAuthKey(req);
-      logAuthUsage("/hint", token);
-
       const sessionId = String(req.body?.sessionId ?? "default");
       const instruction = String(req.body?.instruction ?? "").trim();
       const context = String(req.body?.context ?? "").trim();
@@ -450,15 +505,12 @@ export function createApp({ config, db, s3Client }: AppDependencies) {
     }
   });
 
-  app.post("/ask", upload.single("image"), async (req, res) => {
+  app.post("/ask", askRateLimit, askAuth, upload.single("image"), async (req, res) => {
     if (!client) {
       return res.status(500).json({ error: "OpenAI client is not configured" });
     }
 
     try {
-      const token = readAuthKey(req);
-      logAuthUsage("/ask", token);
-
       const question = String(req.body.question ?? "").trim();
       const smart = String(req.body.smart ?? "false") === "true";
       const sessionId = String(req.body.sessionId ?? "default");
@@ -507,62 +559,65 @@ export function createApp({ config, db, s3Client }: AppDependencies) {
     }
   });
 
-  app.post("/ask_without_query", upload.single("image"), async (req, res) => {
-    if (!client) {
-      return res.status(500).json({ error: "OpenAI client is not configured" });
-    }
-
-    try {
-      const token = readAuthKey(req);
-      logAuthUsage("/ask_without_query", token);
-
-      const smart = String(req.body.smart ?? "false") === "true";
-      const sessionId = String(req.body.sessionId ?? "default");
-      const question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
-      const transcript = typeof req.body?.transcript === "string" ? req.body.transcript.trim() : "";
-
-      if (!req.file) return res.status(400).json({ error: "No image" });
-      if (!question && !transcript) {
-        return res.status(400).json({ error: "Empty transcript" });
+  app.post(
+    "/ask_without_query",
+    askWithoutQueryRateLimit,
+    askWithoutQueryAuth,
+    upload.single("image"),
+    async (req, res) => {
+      if (!client) {
+        return res.status(500).json({ error: "OpenAI client is not configured" });
       }
 
-      const b64 = req.file.buffer.toString("base64");
-      const dataUrl = `data:image/png;base64,${b64}`;
-
-      const content: ChatMsg["content"] = [];
-      if (question) {
-        content.push({ type: "text", text: formatSmartText(question, smart) });
-      }
-      if (transcript) {
-        content.push({ type: "text", text: buildTranscriptBlock(transcript) });
-      }
-      content.push({ type: "image_url", image_url: { url: dataUrl } });
-
-      const user: ChatMsg = {
-        role: "user",
-        content,
-      };
-
-      await streamAskLikeResponse({
-        res,
-        sessionId,
-        user,
-        debugLabel: "/ask_without_query",
-        maxTokens: 500,
-        temperature: 0.2,
-        client,
-      });
-    } catch (e: any) {
-      if (!res.headersSent) {
-        return res.status(500).json({ error: e?.message ?? "Internal error" });
-      }
       try {
-        res.write(`data: ${JSON.stringify({ type: "error", message: String(e?.message ?? e) })}\n\n`);
-      } finally {
-        res.end();
+        const smart = String(req.body.smart ?? "false") === "true";
+        const sessionId = String(req.body.sessionId ?? "default");
+        const question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
+        const transcript = typeof req.body?.transcript === "string" ? req.body.transcript.trim() : "";
+
+        if (!req.file) return res.status(400).json({ error: "No image" });
+        if (!question && !transcript) {
+          return res.status(400).json({ error: "Empty transcript" });
+        }
+
+        const b64 = req.file.buffer.toString("base64");
+        const dataUrl = `data:image/png;base64,${b64}`;
+
+        const content: ChatMsg["content"] = [];
+        if (question) {
+          content.push({ type: "text", text: formatSmartText(question, smart) });
+        }
+        if (transcript) {
+          content.push({ type: "text", text: buildTranscriptBlock(transcript) });
+        }
+        content.push({ type: "image_url", image_url: { url: dataUrl } });
+
+        const user: ChatMsg = {
+          role: "user",
+          content,
+        };
+
+        await streamAskLikeResponse({
+          res,
+          sessionId,
+          user,
+          debugLabel: "/ask_without_query",
+          maxTokens: 500,
+          temperature: 0.2,
+          client,
+        });
+      } catch (e: any) {
+        if (!res.headersSent) {
+          return res.status(500).json({ error: e?.message ?? "Internal error" });
+        }
+        try {
+          res.write(`data: ${JSON.stringify({ type: "error", message: String(e?.message ?? e) })}\n\n`);
+        } finally {
+          res.end();
+        }
       }
     }
-  });
+  );
 
   return app;
 }

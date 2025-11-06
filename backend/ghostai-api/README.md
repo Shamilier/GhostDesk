@@ -26,6 +26,7 @@ Copy `.env.example` and adjust the values:
 - `AUTH_PROFILE_URL` – absolute URL of the Web portal endpoint (`GET /oauth/profile`). Requests are proxied with the same Bearer token.
 - `AUTH_TIMEOUT_MS` – timeout for profile lookups (default `3000`).
 - `AUTH_CACHE_TTL_MS` – LRU cache TTL for successful profiles in milliseconds (default `300000`).
+- `AUTH_ALLOWED_API_KEYS` – optional comma/whitespace separated list of API keys that can call the streaming endpoints (`POST /hint`, `POST /ask`, `POST /ask_without_query`). When set, those routes require `Authorization: Bearer <api_key>` and skip the OAuth profile lookup.
 
 ## Authentication pipeline
 
@@ -38,6 +39,10 @@ Protected routes (currently `/v1/recordings/*`) no longer trust `X-User-Id` or o
 5. Attaches `{ id, email, plan }` to `req.user` and processes the handler.
 
 If the Web auth backend returns `401/403`, the API replies with `401`. Network errors or `5xx` responses surface as `503 { "error": "auth backend unavailable" }`. Rate limiting (120 req/min per IP) protects `/v1/recordings/*`. All S3 keys are derived from sanitized user IDs: `user_<safeId>/rec_<recordingId>/audio.m4a` where non `[A-Za-z0-9._-]` characters are replaced with `_`.
+
+### Streaming assistants
+
+The `/hint`, `/ask` and `/ask_without_query` streaming endpoints are protected by Bearer auth and their own rate limiter (`60 req/min` per IP). Provide either a valid access token that passes the OAuth profile lookup, or configure `AUTH_ALLOWED_API_KEYS` and send one of the whitelisted API keys via `Authorization: Bearer <api_key>` (query parameters `key` / `apiKey` are also accepted). Requests without a valid token receive `401 Unauthorized`.
 
 ## Database migrations
 
