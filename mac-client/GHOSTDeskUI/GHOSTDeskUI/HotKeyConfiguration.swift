@@ -34,14 +34,23 @@ struct HotKeyCombination: Codable {
     }
 
     var displayString: String {
-        var parts: [String] = ["⌘"]
-        let flags = modifiers
-        if flags.contains(.shift) { parts.append("⇧") }
-        if flags.contains(.option) { parts.append("⌥") }
-        if flags.contains(.control) { parts.append("⌃") }
-        parts.append(Self.format(keyEquivalent))
-        return parts.joined()
+        (["⌘"] + displayKeyParts).joined()
     }
+
+    var displayKeyParts: [String] {
+        modifierSymbols + [mainKeySymbol]
+    }
+
+    var modifierSymbols: [String] {
+        var symbols: [String] = []
+        let flags = modifiers
+        if flags.contains(.shift) { symbols.append("⇧") }
+        if flags.contains(.option) { symbols.append("⌥") }
+        if flags.contains(.control) { symbols.append("⌃") }
+        return symbols
+    }
+
+    var mainKeySymbol: String { Self.format(keyEquivalent) }
 
     static func symbol(for keyCode: UInt16) -> String {
         if let mapped = keySymbols[keyCode] { return mapped }

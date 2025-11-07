@@ -200,10 +200,15 @@ struct SettingsSheet: View {
                                     }
                                 }
 
-                                Text("Комбинации всегда содержат клавишу ⌘, чтобы избегать конфликтов с системными шорткатами.")
-                                    .font(.system(size: 11.5, weight: .medium, design: .rounded))
-                                    .foregroundStyle(ST.textSec)
-                                    .padding(.horizontal, 4)
+                                HStack(spacing: 6) {
+                                    Image(systemName: "lock.fill")
+                                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(Color.accentColor)
+                                    Text("⌘ зафиксирована в каждой комбинации. Просто нажмите нужную клавишу, чтобы изменить хоткей.")
+                                }
+                                .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                                .foregroundStyle(ST.textSec)
+                                .padding(.horizontal, 4)
                             }
                         }
 
@@ -422,7 +427,7 @@ private struct HotKeyEditorRow: View {
                         return success
                     }
                 )
-                .help("⌘ всегда входит в комбинацию")
+                .help("⌘ уже закреплена — выберите дополнительную клавишу")
 
                 if combination != action.defaultCombination {
                     Button("Сбросить") {
@@ -495,13 +500,13 @@ private struct HotKeyGroup: Identifiable {
         ),
         HotKeyGroup(
             title: "Внешний вид",
-            subtitle: "Прозрачность и размер текста",
+            subtitle: "Настройка прозрачности панели",
             systemImage: "slider.horizontal.3",
             gradientColors: [
-                Color(red: 0.52, green: 0.89, blue: 0.72),
-                Color(red: 0.18, green: 0.49, blue: 0.41)
+                Color(red: 0.45, green: 0.51, blue: 0.96),
+                Color(red: 0.21, green: 0.25, blue: 0.55)
             ],
-            actions: [.transparencyDecrease, .transparencyIncrease, .fontDecrease, .fontIncrease]
+            actions: [.transparencyDecrease, .transparencyIncrease]
         )
     ]
 }
@@ -514,22 +519,36 @@ private struct HotKeyCaptureField: View {
     @State private var eventMonitor: Any?
 
     var body: some View {
-        Text(isCapturing ? "Нажмите сочетание…" : combination.displayString)
-            .font(.system(size: 13, weight: .semibold, design: .rounded))
-            .foregroundStyle(isCapturing ? Color.accentColor : ST.textPri)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.white.opacity(0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(isCapturing ? Color.accentColor : Color.white.opacity(0.12), lineWidth: 1)
-                    )
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .onTapGesture { toggleCapture() }
-            .onDisappear { stopCapture() }
+        HStack(spacing: 8) {
+            if isCapturing {
+                Image(systemName: "keyboard")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.accentColor)
+                Text("Нажмите клавишу…")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.accentColor)
+            } else {
+                HotKeyKeycap(symbol: "⌘", locked: true)
+                ForEach(combination.modifierSymbols, id: \.self) { symbol in
+                    HotKeyKeycap(symbol: symbol)
+                }
+                HotKeyKeycap(symbol: combination.mainKeySymbol)
+            }
+        }
+        .frame(minWidth: 160, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white.opacity(isCapturing ? 0.12 : 0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(isCapturing ? Color.accentColor.opacity(0.6) : Color.white.opacity(0.14), lineWidth: 1)
+                )
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .onTapGesture { toggleCapture() }
+        .onDisappear { stopCapture() }
     }
 
     private func toggleCapture() {
@@ -562,12 +581,10 @@ private struct HotKeyCaptureField: View {
             return
         }
 
-        guard event.modifierFlags.contains(.command) else {
-            NSSound.beep()
-            return
-        }
-
-        let modifiers = event.modifierFlags.sanitizedForHotKey()
+        var modifiers = event.modifierFlags.sanitizedForHotKey()
+        modifiers.subtract(.command)
+        modifiers.subtract(.function)
+        modifiers.subtract(.numericPad)
         let symbol = keySymbol(for: event)
         let newCombination = HotKeyCombination(keyCode: event.keyCode, modifiers: modifiers, keyEquivalent: symbol)
 
@@ -598,6 +615,34 @@ private struct HotKeyCaptureField: View {
         }
 
         return HotKeyCombination.symbol(for: event.keyCode)
+    }
+}
+
+private struct HotKeyKeycap: View {
+    let symbol: String
+    var locked: Bool = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if locked {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.accentColor)
+            }
+            Text(symbol)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.white.opacity(0.92))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(locked ? Color.accentColor.opacity(0.22) : Color.white.opacity(0.10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(locked ? Color.accentColor.opacity(0.45) : Color.white.opacity(0.18), lineWidth: 1)
+                )
+        )
     }
 }
 
