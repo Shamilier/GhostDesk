@@ -84,14 +84,14 @@ struct OverlayRootView: View {
                 selected: $selectedTab,
                 onPrimaryTap: { isExpanded = true },
                 onEyeTap: {
-                    OverlayWindowManager.shared.withResizeSuspended(0.9, finalAnimate: true)
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.86)) {
+                    OverlayWindowManager.shared.withResizeSuspended(0.86, finalAnimate: true)
+                    withAnimation(.spring(response: 0.2, dampingFraction: 0.86)) {
                         isExpanded.toggle()
                     }
                 },
                 onMenuTap: {
-                    OverlayWindowManager.shared.withResizeSuspended(0.36, finalAnimate: true)
-                    withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                    OverlayWindowManager.shared.withResizeSuspended(0.2, finalAnimate: true)
+                    withAnimation(.spring(response: 0.2, dampingFraction: 0.86)) {
                         if selectedTab == .settings {
                             selectedTab = lastNonSettingsTab
                         } else {
@@ -121,8 +121,8 @@ struct OverlayRootView: View {
         }
         // окно подстраивается по высоте как и для других панелей
         .overlayAutoResize()
-        .animation(.spring(response: 0.35, dampingFraction: 0.86), value: isExpanded)
-        .animation(.spring(response: 0.35, dampingFraction: 0.86), value: selectedTab)
+        .animation(.spring(response: 0.2, dampingFraction: 0.86), value: isExpanded)
+        .animation(.spring(response: 0.2, dampingFraction: 0.86), value: selectedTab)
         .onChange(of: overlay.askSolveTrigger) { _ in
             isExpanded = true
             selectedTab = .ask
@@ -133,26 +133,26 @@ struct OverlayRootView: View {
             Task { await askVM.submitWithoutQuery(transcript: transcriptTail) }
 
             OverlayWindowManager.shared.scheduleResize(animate: false)
-            OverlayWindowManager.shared.kickFinalResize(after: 0.38)
+            OverlayWindowManager.shared.kickFinalResize(after: 0.2)
         }
         .onChange(of: isExpanded) { _ in
             if isExpanded && selectedTab == .ask { askFocused = true }
             OverlayWindowManager.shared.scheduleResize(animate: false)
-            OverlayWindowManager.shared.kickFinalResize(after: 0.38)
+            OverlayWindowManager.shared.kickFinalResize(after: 0.2)
         }
         .onChange(of: selectedTab) { tab in
             if isExpanded && tab == .ask { askFocused = true }
             OverlayWindowManager.shared.scheduleResize(animate: false)
-            OverlayWindowManager.shared.kickFinalResize(after: 0.38)
+            OverlayWindowManager.shared.kickFinalResize(after: 0.2)
         }
 
         .onChange(of: showTranscript) { _ in
             OverlayWindowManager.shared.scheduleResize(animate: false)
-            OverlayWindowManager.shared.kickFinalResize(after: 0.38)
+            OverlayWindowManager.shared.kickFinalResize(after: 0.2)
         }
         .onAppear {
             OverlayWindowManager.shared.scheduleResize(animate: false)
-            OverlayWindowManager.shared.kickFinalResize(after: 0.38)
+            OverlayWindowManager.shared.kickFinalResize(after: 0.2)
         }
     }
 
@@ -594,7 +594,7 @@ struct OverlayRootView: View {
                 isSubmitting: askVM.isSubmitting,
                 onSubmit: submitQuestion
             )
-            .frame(maxWidth: 720)
+            .frame(maxWidth: 600)
 
             if showResponse {
                 AIResponseCard(
@@ -617,7 +617,7 @@ struct OverlayRootView: View {
                     },
                     onStop: { askVM.cancelStream() }
                 )
-                .frame(maxWidth: 860, minHeight: 220)
+                .frame(maxWidth: 600, minHeight: 220)
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
@@ -627,6 +627,8 @@ struct OverlayRootView: View {
         .onChange(of: askVM.answerDraft) { v in
             if !v.isEmpty { showResponse = true }
         }
+        .frame(maxWidth: 600)  // Фиксируем максимальную ширину всей панели
+
         .padding(.horizontal, 8)
     }
 
@@ -1125,7 +1127,7 @@ struct AskField: View {
             TextEditor(text: $text)
                 .focused(focused)
                 .font(.title3.weight(.medium))
-                .frame(minHeight: 80)
+                .frame(maxWidth: 600, minHeight: 80)  // Фиксируем ширину для TextEditor
                 .padding(.vertical, 10)
                 .padding(.leading, 12)
                 .background(
@@ -1150,6 +1152,7 @@ struct AskField: View {
             }
             .padding(.trailing, 8)
         }
+        .frame(maxWidth: 600)  // Фиксируем максимальную ширину для всего поля ввода
         .padding(.horizontal, 6)
         .contentShape(Rectangle())
         .allowsHitTesting(true)
