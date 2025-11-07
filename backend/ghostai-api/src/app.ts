@@ -388,7 +388,7 @@ export function createApp({ config, db, s3Client }: AppDependencies) {
 
   app.use("/v1/ask", qaRateLimit, auth, createQaRouter({ db, config, openAiClient: client }));
 
-  app.post("/hint", qaRateLimit, auth, planUsageLimiter.limit("hint"), async (req, res) => {
+  app.post("/hint", qaRateLimit, auth, async (req, res) => {
     if (!client) {
       return res.status(500).json({ error: "OpenAI client is not configured" });
     }
@@ -498,16 +498,19 @@ export function createApp({ config, db, s3Client }: AppDependencies) {
     }
   });
 
-  app.post(
-    "/ask",
-    qaRateLimit,
-    auth,
-    planUsageLimiter.limit("ask"),
-    upload.single("image"),
-    async (req, res) => {
-      if (!client) {
-        return res.status(500).json({ error: "OpenAI client is not configured" });
+  app.post("/ask", qaRateLimit, auth, upload.single("image"), async (req, res) => {
+    if (!client) {
+      return res.status(500).json({ error: "OpenAI client is not configured" });
+    }
+
+    try {
+      const token = readAuthKey(req);
+      const authUser = req.user;
+      if (!authUser) {
+        return res.status(401).json({ error: "Unauthorized" });
       }
+
+      logAuthUsage("/ask", token, authUser);
 
       try {
         const token = readAuthKey(req);
@@ -568,13 +571,12 @@ export function createApp({ config, db, s3Client }: AppDependencies) {
         }
       }
     }
-  );
+  });
 
   app.post(
     "/ask_without_query",
     qaRateLimit,
     auth,
-    planUsageLimiter.limit("ask"),
     upload.single("image"),
     async (req, res) => {
       if (!client) {
