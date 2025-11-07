@@ -324,8 +324,11 @@ final class HotKeyPreferences: ObservableObject {
     }
 }
 
-private extension NSEvent.ModifierFlags {
+// стало (доступно всему модулю)
+extension NSEvent.ModifierFlags {
+    /// Нормализуем модификаторы хоткея: оставляем только разрешённые клавиши-модификаторы.
     func sanitizedForHotKey() -> NSEvent.ModifierFlags {
-        intersection([.shift, .option, .control])
+        // Команда у тебя обязательна при захвате, так что имеет смысл её тоже сохранять.
+        intersection([.command, .shift, .option, .control, .function, .numericPad])
     }
 }

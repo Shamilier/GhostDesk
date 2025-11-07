@@ -361,7 +361,7 @@ private struct HotKeyEditorRow: View {
                 Button("Сбросить") { onReset() }
                     .buttonStyle(.plain)
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.accentColor)
+                    .foregroundStyle(Color.accentColor)
                     .padding(.horizontal, 4)
             }
         }
