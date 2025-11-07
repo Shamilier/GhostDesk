@@ -42,6 +42,8 @@ struct SettingsSheet: View {
 
     @State private var isRefreshing = false
 
+    private var hotKeyGroups: [HotKeyGroup] { HotKeyGroup.presets }
+
     private var expiresDescription: String {
         guard let expiresAt = auth.expiresAt else { return "Не установлено" }
         return expiresAt.formatted(date: .abbreviated, time: .shortened)
@@ -149,6 +151,60 @@ struct SettingsSheet: View {
                             }
                             .toggleStyle(.switch)
                             .tint(.accentColor)
+                        }
+
+                        GlassSection("Горячие клавиши") {
+                            VStack(alignment: .leading, spacing: 18) {
+                                ForEach(hotKeyGroups) { group in
+                                    VStack(alignment: .leading, spacing: 14) {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Label {
+                                                Text(group.title)
+                                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                                    .foregroundStyle(ST.textPri)
+                                            } icon: {
+                                                Image(systemName: group.systemImage)
+                                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                                    .foregroundStyle(Color.white.opacity(0.9))
+                                                    .shadow(color: Color.black.opacity(0.12), radius: 4, x: 0, y: 2)
+                                            }
+                                            if !group.subtitle.isEmpty {
+                                                Text(group.subtitle)
+                                                    .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                                                    .foregroundStyle(ST.textSec)
+                                            }
+                                        }
+
+                                        VStack(spacing: 12) {
+                                            ForEach(group.actions) { action in
+                                                HotKeyEditorRow(
+                                                    action: action,
+                                                    combination: hotKeys.combination(for: action),
+                                                    onUpdate: { hotKeys.update($0, for: action) },
+                                                    onReset: { hotKeys.reset(action) }
+                                                )
+                                            }
+                                        }
+                                        .padding(16)
+                                        .background(
+                                            ZStack {
+                                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                                    .fill(.ultraThinMaterial)
+                                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                                    .fill(group.gradient(reduceTransparency: reduceTransparency))
+                                                    .opacity(reduceTransparency ? 0.28 : 0.6)
+                                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                                    .stroke(Color.white.opacity(0.16), lineWidth: 1)
+                                            }
+                                        )
+                                    }
+                                }
+
+                                Text("Комбинации всегда содержат клавишу ⌘, чтобы избегать конфликтов с системными шорткатами.")
+                                    .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                                    .foregroundStyle(ST.textSec)
+                                    .padding(.horizontal, 4)
+                            }
                         }
 
 
@@ -340,32 +396,114 @@ private struct HotKeyEditorRow: View {
     let onUpdate: (HotKeyCombination) -> Bool
     let onReset: () -> Void
 
+    @State private var updateFailed = false
+
     var body: some View {
-        HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(action.title)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundStyle(ST.textPri)
-                if let detail = action.detail {
-                    Text(detail)
-                        .font(.system(size: 13, weight: .regular, design: .rounded))
-                        .foregroundStyle(ST.textSec)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(action.title)
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundStyle(ST.textPri)
+                    if let detail = action.detail {
+                        Text(detail)
+                            .font(.system(size: 13, weight: .regular, design: .rounded))
+                            .foregroundStyle(ST.textSec)
+                    }
                 }
-            }
 
-            Spacer(minLength: 24)
+                Spacer(minLength: 24)
 
-            HotKeyCaptureField(combination: combination, onUpdate: onUpdate)
+                HotKeyCaptureField(
+                    combination: combination,
+                    onUpdate: { newValue in
+                        let success = onUpdate(newValue)
+                        updateFailed = !success
+                        return success
+                    }
+                )
+                .help("⌘ всегда входит в комбинацию")
 
-            if combination != action.defaultCombination {
-                Button("Сбросить") { onReset() }
+                if combination != action.defaultCombination {
+                    Button("Сбросить") {
+                        updateFailed = false
+                        onReset()
+                    }
                     .buttonStyle(.plain)
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color.accentColor)
                     .padding(.horizontal, 4)
+                }
+            }
+
+            if updateFailed {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(ST.redText)
+                    Text("Комбинация конфликтует с закреплённым хоткеем. Попробуйте другое сочетание.")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(ST.redText)
+                }
+                .padding(.leading, 2)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .onChange(of: combination) { _ in
+            updateFailed = false
+        }
     }
+}
+
+private struct HotKeyGroup: Identifiable {
+    let id = UUID()
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    let gradientColors: [Color]
+    let actions: [HotKeyAction]
+
+    func gradient(reduceTransparency: Bool) -> LinearGradient {
+        let opacity: Double = reduceTransparency ? 0.35 : 0.65
+        return LinearGradient(
+            colors: gradientColors.map { $0.opacity(opacity) },
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    static let presets: [HotKeyGroup] = [
+        HotKeyGroup(
+            title: "Навигация панели",
+            subtitle: "Быстрый контроль появления и положения",
+            systemImage: "rectangle.3.group",
+            gradientColors: [
+                Color(red: 0.33, green: 0.69, blue: 1.00),
+                Color(red: 0.20, green: 0.35, blue: 0.82)
+            ],
+            actions: [.toggleOverlay, .toggleFocus, .resetPosition]
+        ),
+        HotKeyGroup(
+            title: "Взаимодействие с задачами",
+            subtitle: "Создание заметок, подсказки и запись",
+            systemImage: "bolt.badge.clock",
+            gradientColors: [
+                Color(red: 1.00, green: 0.56, blue: 0.64),
+                Color(red: 0.79, green: 0.33, blue: 0.69)
+            ],
+            actions: [.toggleRecording, .askHint, .askSolve]
+        ),
+        HotKeyGroup(
+            title: "Внешний вид",
+            subtitle: "Прозрачность и размер текста",
+            systemImage: "slider.horizontal.3",
+            gradientColors: [
+                Color(red: 0.52, green: 0.89, blue: 0.72),
+                Color(red: 0.18, green: 0.49, blue: 0.41)
+            ],
+            actions: [.transparencyDecrease, .transparencyIncrease, .fontDecrease, .fontIncrease]
+        )
+    ]
 }
 
 private struct HotKeyCaptureField: View {
