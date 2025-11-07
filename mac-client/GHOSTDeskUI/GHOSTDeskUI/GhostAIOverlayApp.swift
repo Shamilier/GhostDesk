@@ -50,7 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // показать при старте
         OverlayWindowManager.shared.show(model: model, auth: authState)
 
-        HotKeyManager.shared.registerDefaultHotkeys()
+        HotKeyManager.shared.activate()
         NSApp.activate(ignoringOtherApps: true)
     }
 

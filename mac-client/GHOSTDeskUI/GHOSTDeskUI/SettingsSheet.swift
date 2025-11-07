@@ -37,6 +37,7 @@ struct SettingsSheet: View {
     @Binding var isShown: Bool           // ← вот так
     @EnvironmentObject private var auth: AuthState
     @ObservedObject private var overlay = OverlayModel.shared
+    @ObservedObject private var hotKeys = HotKeyPreferences.shared
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     @State private var isRefreshing = false
@@ -127,6 +128,44 @@ struct SettingsSheet: View {
                                 if let issue = auth.authorizationIssue ?? auth.lastError {
                                     Text(issue).font(.caption).foregroundStyle(.red)
                                 }
+                            }
+                        }
+
+                        GlassSection("Отображение окна") {
+                            Toggle(
+                                isOn: Binding(
+                                    get: { !overlay.isHiddenFromScreenCapture },
+                                    set: { overlay.isHiddenFromScreenCapture = !$0 }
+                                )
+                            ) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Показывать при захвате экрана")
+                                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(ST.textPri)
+                                    Text("Отключите, чтобы панель GhostDesk оставалась невидимой на скриншотах и при трансляции экрана.")
+                                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                                        .foregroundStyle(ST.textSec)
+                                }
+                            }
+                            .toggleStyle(.switch)
+                            .tint(.accentColor)
+                        }
+
+                        GlassSection("Горячие клавиши") {
+                            VStack(spacing: 12) {
+                                ForEach(HotKeyAction.editableActions) { action in
+                                    HotKeyEditorRow(
+                                        action: action,
+                                        combination: hotKeys.combination(for: action),
+                                        onUpdate: { hotKeys.update($0, for: action) },
+                                        onReset: { hotKeys.reset(action) }
+                                    )
+                                }
+
+                                Text("Все сочетания обязательно включают клавишу ⌘. Если выбранная комбинация занята, предыдущему действию возвращается настройка по умолчанию.")
+                                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                                    .foregroundStyle(ST.textTri)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
 
@@ -308,6 +347,137 @@ struct SettingsSheet: View {
             }
             .buttonStyle(DestructiveOutlineButtonStyle())
         }
+    }
+}
+
+// MARK: - HotKey helpers
+
+private struct HotKeyEditorRow: View {
+    let action: HotKeyAction
+    let combination: HotKeyCombination
+    let onUpdate: (HotKeyCombination) -> Bool
+    let onReset: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(action.title)
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundStyle(ST.textPri)
+                if let detail = action.detail {
+                    Text(detail)
+                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                        .foregroundStyle(ST.textSec)
+                }
+            }
+
+            Spacer(minLength: 24)
+
+            HotKeyCaptureField(combination: combination, onUpdate: onUpdate)
+
+            if combination != action.defaultCombination {
+                Button("Сбросить") { onReset() }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.accentColor)
+                    .padding(.horizontal, 4)
+            }
+        }
+    }
+}
+
+private struct HotKeyCaptureField: View {
+    let combination: HotKeyCombination
+    let onUpdate: (HotKeyCombination) -> Bool
+
+    @State private var isCapturing = false
+    @State private var eventMonitor: Any?
+
+    var body: some View {
+        Text(isCapturing ? "Нажмите сочетание…" : combination.displayString)
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .foregroundStyle(isCapturing ? Color.accentColor : ST.textPri)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(isCapturing ? Color.accentColor : Color.white.opacity(0.12), lineWidth: 1)
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .onTapGesture { toggleCapture() }
+            .onDisappear { stopCapture() }
+    }
+
+    private func toggleCapture() {
+        if isCapturing {
+            stopCapture()
+        } else {
+            startCapture()
+        }
+    }
+
+    private func startCapture() {
+        isCapturing = true
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+            handle(event: event)
+            return nil
+        }
+    }
+
+    private func stopCapture() {
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
+        }
+        isCapturing = false
+    }
+
+    private func handle(event: NSEvent) {
+        if event.keyCode == 53 { // Escape cancels capture
+            stopCapture()
+            return
+        }
+
+        guard event.modifierFlags.contains(.command) else {
+            NSSound.beep()
+            return
+        }
+
+        let modifiers = event.modifierFlags.sanitizedForHotKey()
+        let symbol = keySymbol(for: event)
+        let newCombination = HotKeyCombination(keyCode: event.keyCode, modifiers: modifiers, keyEquivalent: symbol)
+
+        if onUpdate(newCombination) {
+            stopCapture()
+        } else {
+            NSSound.beep()
+        }
+    }
+
+    private func keySymbol(for event: NSEvent) -> String {
+        if let special = event.specialKey {
+            switch special {
+            case .leftArrow: return "←"
+            case .rightArrow: return "→"
+            case .upArrow: return "↑"
+            case .downArrow: return "↓"
+            default: break
+            }
+        }
+
+        if let chars = event.characters, !chars.isEmpty {
+            return String(chars.prefix(1))
+        }
+
+        if let chars = event.charactersIgnoringModifiers, !chars.isEmpty {
+            return String(chars.prefix(1))
+        }
+
+        return HotKeyCombination.symbol(for: event.keyCode)
     }
 }
 
