@@ -3,6 +3,10 @@ import AppKit
 import Combine
 
 final class OverlayModel: ObservableObject {
+    private enum Defaults {
+        static let screenCaptureHidden = "overlay.screenCaptureHidden"
+    }
+
     struct TranscriptMessage: Identifiable, Equatable {
         let id: UUID
         let source: AudioSourceKind
@@ -57,6 +61,17 @@ final class OverlayModel: ObservableObject {
     @Published var isFocusable: Bool = true
     @Published var transparencyIndex: Int = 1     // 0…5
     @Published var fontScaleIndex: Int = 1        // 0…5
+    @Published var isHiddenFromScreenCapture: Bool = {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: Defaults.screenCaptureHidden) != nil else { return true }
+        return defaults.bool(forKey: Defaults.screenCaptureHidden)
+    }() {
+        didSet {
+            let defaults = UserDefaults.standard
+            defaults.set(isHiddenFromScreenCapture, forKey: Defaults.screenCaptureHidden)
+            OverlayWindowManager.shared.updateScreenCaptureVisibility(hidden: isHiddenFromScreenCapture)
+        }
+    }
 
     // Левый блок (заглушки)
     @Published var proLevel: String = "PRO"
@@ -84,6 +99,7 @@ final class OverlayModel: ObservableObject {
     private init() {
         transcriptionStates = Dictionary(uniqueKeysWithValues: AudioSourceKind.allCases.map { ($0, TranscriptionChannelState()) })
         updateDerivedTranscriptionState()
+        OverlayWindowManager.shared.updateScreenCaptureVisibility(hidden: isHiddenFromScreenCapture)
     }
 
     // MARK: - Transcription helpers

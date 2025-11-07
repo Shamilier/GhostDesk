@@ -13,6 +13,7 @@ final class OverlayWindowManager {
     private var anchorInWindow: CGPoint?
     private let minimumContentSize = CGSize(width: 320, height: 60)
     private var authState: AuthState?
+    private var hidesFromScreenCapture = true
     private let snapDistance: CGFloat = 12
     // MARK: - Coalesced resize
     private var resizeWorkItem: DispatchWorkItem?
@@ -79,6 +80,7 @@ final class OverlayWindowManager {
             lastContentSize = .zero
             anchorInWindow = nil
             panel.alphaValue = model.alpha
+            panel.sharingType = hidesFromScreenCapture ? .none : .readOnly
 
             NSApp.activate(ignoringOtherApps: true)
             panel.makeKeyAndOrderFront(nil)
@@ -106,6 +108,7 @@ final class OverlayWindowManager {
             NSApp.activate(ignoringOtherApps: true)
             window?.makeKeyAndOrderFront(nil)
             window?.setIsVisible(true)
+            updateScreenCaptureVisibility(hidden: hidesFromScreenCapture)
 
             if hostingView == nil, let existing = window?.contentView as? NSHostingView<AnyView> {
                 hostingView = existing
@@ -163,6 +166,11 @@ final class OverlayWindowManager {
 
     func applyFocus(_ focusable: Bool) {
         window?.ignoresMouseEvents = !focusable
+    }
+
+    func updateScreenCaptureVisibility(hidden: Bool) {
+        hidesFromScreenCapture = hidden
+        window?.sharingType = hidden ? .none : .readOnly
     }
 
     // MARK: - Helpers

@@ -130,6 +130,26 @@ struct SettingsSheet: View {
                             }
                         }
 
+                        GlassSection("Отображение окна") {
+                            Toggle(
+                                isOn: Binding(
+                                    get: { !overlay.isHiddenFromScreenCapture },
+                                    set: { overlay.isHiddenFromScreenCapture = !$0 }
+                                )
+                            ) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Показывать при захвате экрана")
+                                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(ST.textPri)
+                                    Text("Отключите, чтобы панель GhostDesk оставалась невидимой на скриншотах и при трансляции экрана.")
+                                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                                        .foregroundStyle(ST.textSec)
+                                }
+                            }
+                            .toggleStyle(.switch)
+                            .tint(.accentColor)
+                        }
+
 
                         // === Низ (кнопки действия) ===
                     }
