@@ -151,24 +151,6 @@ struct SettingsSheet: View {
                             .tint(.accentColor)
                         }
 
-                        GlassSection("Горячие клавиши") {
-                            VStack(spacing: 12) {
-                                ForEach(HotKeyAction.editableActions) { action in
-                                    HotKeyEditorRow(
-                                        action: action,
-                                        combination: hotKeys.combination(for: action),
-                                        onUpdate: { hotKeys.update($0, for: action) },
-                                        onReset: { hotKeys.reset(action) }
-                                    )
-                                }
-
-                                Text("Все сочетания обязательно включают клавишу ⌘. Если выбранная комбинация занята, предыдущему действию возвращается настройка по умолчанию.")
-                                    .font(.system(size: 12, weight: .regular, design: .rounded))
-                                    .foregroundStyle(ST.textTri)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-
 
                         // === Низ (кнопки действия) ===
                     }
