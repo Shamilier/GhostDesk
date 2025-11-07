@@ -221,7 +221,7 @@ struct SettingsSheet: View {
             }
             .padding(12)
         }
-        .frame(maxWidth: 720)
+        .frame(maxWidth: 620)
     }
     
     private var maskedAccessToken: String {
