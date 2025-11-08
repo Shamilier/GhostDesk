@@ -159,95 +159,97 @@ struct OverlayRootView: View {
     // MARK: - Listen Panel
 
     private var listenPanel: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
+        Group {
+            if showTranscript {
+                GlassCard {
+                    VStack(alignment: .leading, spacing: 10) {
 
-                // HEADER (компактный)
-                HStack(spacing: 12) {
-                    LogoOrb().frame(width: 18, height: 18)
+                        // HEADER (компактный)
+                        HStack(spacing: 12) {
+                            LogoOrb().frame(width: 18, height: 18)
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(showTranscript ? "Транскрипт" : "Инсайты в реальном времени")
-                            .font(.headline.weight(.semibold))
-                        HStack(spacing: 6) {
-                            LiveDot(active: overlay.anyChannelIsTranscribing)
-                            let isOn = overlay.anyChannelIsTranscribing
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(showTranscript ? "Транскрипт" : "Инсайты в реальном времени")
+                                    .font(.headline.weight(.semibold))
+                                HStack(spacing: 6) {
+                                    LiveDot(active: overlay.anyChannelIsTranscribing)
+                                    let isOn = overlay.anyChannelIsTranscribing
 
-                            Text(isOn ? "Идёт запись…" : "Готов к запуску")
-                                .font(.caption2.monospaced())
-                                .foregroundStyle(isOn ? .green : .secondary)
-                                .glow(active: isOn, color: .green) // мягкое свечение только когда запись идёт
-                                .animation(.easeInOut(duration: 0.25), value: isOn)
-                        }
-                    }
-
-                    Spacer(minLength: 8)
-
-                    Button(showTranscript ? "Инсайты" : "Транскрипт") {
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
-                            showTranscript.toggle()
-                        }
-                        OverlayWindowManager.shared.scheduleResize(animate: false)
-                        OverlayWindowManager.shared.kickFinalResize(after: 0.30)
-                    }
-                    .buttonStyle(GlassPill())
-
-                    let phase = transcriptionCoordinator.overallPhase
-                    let running  = phase == .running
-                    let starting = phase == .starting
-                    let stopping = phase == .stopping
-
-                    Button {
-                        switch phase {
-                        case .idle: transcriptionCoordinator.startRecording()
-                        case .starting, .running, .stopping: transcriptionCoordinator.stopAll()
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            if starting || stopping { ProgressView().controlSize(.small) }
-                            Image(systemName: (running || stopping) ? "stop.fill" : "play.fill")
-                            Text(starting ? "Запуск…" : (stopping ? "Остановка…" : (running ? "Стоп" : "Старт")))
-                        }
-                    }
-                    .buttonStyle(GlassPill(tint: (running || stopping) ? .red : .accentColor))
-                    .disabled(starting)
-
-                    Button {
-                        transcriptionCoordinator.setMicrophoneArmed(!transcriptionCoordinator.isMicrophoneArmed)
-                    } label: {
-                        Label("Микрофон", systemImage: transcriptionCoordinator.isMicrophoneArmed ? "mic.fill" : "mic")
-                    }
-                    .buttonStyle(GlassPill(tint: transcriptionCoordinator.isMicrophoneArmed ? .pink : .secondary))
-                }
-                .padding(.vertical, 2)
-
-                // --------- ВАЖНО: дальше — тело панели ---------
-                Divider().overlay(Color.white.opacity(0.10))
-
-                if showTranscript {
-                    TranscriptChatView(
-                        systemState: systemChannelState,
-                        microphoneState: microphoneChannelState,
-                        autoScroll: $autoScroll
-                    )
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-                    .edgeFade(height: 320)     // фикс высоты + плавное затухание краёв
-
-                    HintStrip()
-                        .padding(.top, 6)
-                } else {
-                    InsightsPanel(
-                        hint: hint,
-                        onRequest: { intent in requestInsight(intent) },
-                        onClose: {
-                            withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
-                                showTranscript = true
+                                    Text(isOn ? "Идёт запись…" : "Готов к запуску")
+                                        .font(.caption2.monospaced())
+                                        .foregroundStyle(isOn ? .green : .secondary)
+                                        .glow(active: isOn, color: .green) // мягкое свечение только когда запись идёт
+                                        .animation(.easeInOut(duration: 0.25), value: isOn)
+                                }
                             }
+
+                            Spacer(minLength: 8)
+
+                            Button(showTranscript ? "Инсайты" : "Транскрипт") {
+                                withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                                    showTranscript.toggle()
+                                }
+                                OverlayWindowManager.shared.scheduleResize(animate: false)
+                                OverlayWindowManager.shared.kickFinalResize(after: 0.30)
+                            }
+                            .buttonStyle(GlassPill())
+
+                            let phase = transcriptionCoordinator.overallPhase
+                            let running  = phase == .running
+                            let starting = phase == .starting
+                            let stopping = phase == .stopping
+
+                            Button {
+                                switch phase {
+                                case .idle: transcriptionCoordinator.startRecording()
+                                case .starting, .running, .stopping: transcriptionCoordinator.stopAll()
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    if starting || stopping { ProgressView().controlSize(.small) }
+                                    Image(systemName: (running || stopping) ? "stop.fill" : "play.fill")
+                                    Text(starting ? "Запуск…" : (stopping ? "Остановка…" : (running ? "Стоп" : "Старт")))
+                                }
+                            }
+                            .buttonStyle(GlassPill(tint: (running || stopping) ? .red : .accentColor))
+                            .disabled(starting)
+
+                            Button {
+                                transcriptionCoordinator.setMicrophoneArmed(!transcriptionCoordinator.isMicrophoneArmed)
+                            } label: {
+                                Label("Микрофон", systemImage: transcriptionCoordinator.isMicrophoneArmed ? "mic.fill" : "mic")
+                            }
+                            .buttonStyle(GlassPill(tint: transcriptionCoordinator.isMicrophoneArmed ? .pink : .secondary))
                         }
-                    )
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-                    .frame(height: 420)        // чтобы окно не «скакало», держим такую же высоту
+                        .padding(.vertical, 2)
+
+                        // --------- ВАЖНО: дальше — тело панели ---------
+                        Divider().overlay(Color.white.opacity(0.10))
+
+                        TranscriptChatView(
+                            systemState: systemChannelState,
+                            microphoneState: microphoneChannelState,
+                            autoScroll: $autoScroll
+                        )
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .edgeFade(height: 320)     // фикс высоты + плавное затухание краёв
+
+                        HintStrip()
+                            .padding(.top, 6)
+                    }
                 }
+            } else {
+                InsightsPanel(
+                    hint: hint,
+                    onRequest: { intent in requestInsight(intent) },
+                    onClose: {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                            showTranscript = true
+                        }
+                    }
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
+                .frame(height: 420)        // чтобы окно не «скакало», держим такую же высоту
             }
         }
         .frame(maxWidth: 600)
@@ -936,6 +938,7 @@ private struct AIResponseCard: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(14)
                 }
+                .glassReadable()
                 .frame(minHeight: 180)
             }
             .padding(12)
@@ -1164,23 +1167,37 @@ struct AskField: View {
 struct GlassPill: ButtonStyle {
     var tint: Color? = nil
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        let shape = Capsule(style: .continuous)
+        let resolvedTint = tint ?? .accentColor
+        let label = configuration.label
             .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(.primary)
+            .foregroundStyle(tint ?? .primary)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(.thinMaterial)
-                    .overlay(Capsule().stroke(.white.opacity(0.2), lineWidth: 1))
-                    .shadow(
-                        color: (tint ?? .accentColor).opacity(configuration.isPressed ? 0.25 : 0.4),
-                        radius: configuration.isPressed ? 6 : 12,
-                        x: 0, y: 0
+            .tint(resolvedTint)
+
+        let glowColor = resolvedTint.opacity(configuration.isPressed ? 0.25 : 0.4)
+        let glowRadius: CGFloat = configuration.isPressed ? 6 : 12
+
+        return Group {
+            if #available(macOS 15, *) {
+                label
+                    .glassBackgroundEffect(in: shape)
+                    .glassBorder()
+                    .glassContentShape(shape)
+                    .glassLifted()
+            } else {
+                label
+                    .background(
+                        shape
+                            .fill(.thinMaterial)
+                            .overlay(shape.stroke(.white.opacity(0.2), lineWidth: 1))
                     )
-            )
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.spring(response: 0.28, dampingFraction: 0.9), value: configuration.isPressed)
+            }
+        }
+        .shadow(color: glowColor, radius: glowRadius, x: 0, y: 0)
+        .scaleEffect(configuration.isPressed ? 0.98 : 1)
+        .animation(.spring(response: 0.28, dampingFraction: 0.9), value: configuration.isPressed)
     }
 }
 
