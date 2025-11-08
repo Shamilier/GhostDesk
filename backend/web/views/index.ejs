@@ -2,71 +2,291 @@
 <html lang="ru">
   <%- include('partials/head', { title }) %>
   <body class="theme-dark">
-    <div class="background-gradient"></div>
+    <div class="landing-background" aria-hidden="true"></div>
     <%- include('partials/header') %>
-    <main class="page">
-      <section class="hero">
-        <div class="hero-content">
-          <p class="tagline">Невидимый ассистент Ghost AI</p>
-          <h1>Контроль каждой встречи без лишнего шума</h1>
-          <p class="description">
-            Ghost AI помогает вести диалоги уверенно: транскрибирует разговоры, дает подсказки и собирает аналитику.
-            Управляйте командой и сделками из одного портала.
-          </p>
-          <div class="hero-actions">
-            <a class="primary-button" href="/register">Создать аккаунт</a>
-            <a class="ghost-button" href="/login">Уже с нами</a>
+    <main class="landing">
+      <section class="hero" id="hero">
+        <div class="hero__glow" aria-hidden="true"></div>
+        <div class="hero__container">
+          <div class="hero__content">
+            <p class="hero__eyebrow">Невидимый слой для разговоров</p>
+            <h1 class="hero__title">Говорите свободно. <span>Остальное — сделает AI</span></h1>
+            <p class="hero__description">
+              Ghost AI в реальном времени слышит звук и вас, понимает контекст, подсказывает фразы и сохраняет встречу в умный архив.
+              Структура интерфейса повторяет приложение: чистые блоки, ровный ритм, никакого визуального шума.
+            </p>
+            <div class="hero__actions">
+              <a class="btn-primary" href="#cta">Попробовать бесплатно</a>
+              <a class="btn-secondary" href="#how">Смотреть демо</a>
+            </div>
+            <ul class="hero__benefits">
+              <% landing.heroBenefits.forEach(point => { %>
+                <li>
+                  <span class="hero__bullet" aria-hidden="true"></span>
+                  <span><%= point %></span>
+                </li>
+              <% }) %>
+            </ul>
           </div>
-        </div>
-        <div class="hero-card">
-          <div class="card-header">
-            <span class="status-dot"></span>
-            <span>Live Transcript</span>
-          </div>
-          <div class="card-body">
-            <p>"Ghost AI заметил повторяющиеся вопросы клиента. Предложить сценарий upsell?"</p>
-            <div class="card-footer">
-              <span>AI Assist</span>
-              <span class="chip">Boost +42%</span>
+          <div class="hero__panel">
+            <div class="glass-card hero-card">
+              <header class="hero-card__header">
+                <span class="hero-card__dot" aria-hidden="true"></span>
+                <span>Live Transcript</span>
+              </header>
+              <div class="hero-card__body">
+                <p>«Ghost AI заметил повторяющиеся вопросы клиента. Предложить сценарий upsell?»</p>
+              </div>
+              <footer class="hero-card__footer">
+                <span>AI Assist</span>
+                <span class="hero-card__chip">Boost +42%</span>
+              </footer>
             </div>
           </div>
         </div>
       </section>
 
-      <section class="feature-grid" id="features">
-        <% features.forEach((feature) => { %>
-          <article class="feature-card">
-            <h3><%= feature %></h3>
-            <p>
-              Ghost AI анализирует диалоги в реальном времени и помогает фокусироваться на ключевых моментах. Получайте рекомендации и
-              моментально отправляйте follow-up.
-            </p>
-          </article>
-        <% }) %>
+      <section class="metrics" id="social-proof">
+        <div class="metrics__grid">
+          <% landing.metrics.forEach(item => { %>
+            <article class="glass-card metric">
+              <h3><%= item.value %></h3>
+              <p><%= item.description %></p>
+              <span><%= item.note %></span>
+            </article>
+          <% }) %>
+        </div>
       </section>
 
-      <section class="plans" id="plans">
-        <h2>Прозрачные тарифы</h2>
-        <div class="plan-cards">
-          <div class="plan-card active">
-            <h3>Free</h3>
-            <p class="price">0₽</p>
-            <ul>
-              <li>До 5 встреч в месяц</li>
-              <li>Транскрибация и заметки</li>
-              <li>Персональный токен доступа</li>
-            </ul>
-            <a href="/register" class="primary-button">Попробовать</a>
+      <section class="section" id="features">
+        <div class="section__heading">
+          <p class="section__eyebrow">Возможности</p>
+          <h2>Все, что нужно для ясных разговоров</h2>
+          <p class="section__description">
+            Ghost AI объединяет звук, экран и AI-подсказки в один невидимый слой. Каждый блок — отдельный инструмент, который работает автономно и не перегружает ваш экран.
+          </p>
+        </div>
+        <div class="feature-grid">
+          <% landing.features.forEach(feature => { %>
+            <article class="glass-card feature">
+              <h3><%= feature.title %></h3>
+              <p><span><%= feature.highlight %></span> <%= feature.description %></p>
+            </article>
+          <% }) %>
+        </div>
+      </section>
+
+      <section class="section section--split" id="how">
+        <div class="section__heading section__heading--left">
+          <p class="section__eyebrow">Как это работает</p>
+          <h2>Включите Ghost AI один раз — и ведите диалог вместе с AI</h2>
+          <p class="section__description">
+            От подключения до архивирования — Ghost AI остаётся невидимым, но помогает на каждом шаге. Каждый этап оформлен отдельным блоком, поэтому вы всегда понимаете, что происходит.
+          </p>
+          <div class="supporting">
+            <% landing.supportingPoints.forEach(point => { %>
+              <article class="glass-card supporting__item">
+                <h3><%= point.title %></h3>
+                <p><%= point.copy %></p>
+                <span><%= point.accent %></span>
+              </article>
+            <% }) %>
           </div>
-          <div class="plan-card">
-            <h3>Pro</h3>
-            <p class="price">990₽</p>
+        </div>
+        <div class="steps">
+          <% landing.steps.forEach((step, index) => { %>
+            <article class="glass-card step">
+              <span class="step__badge">Шаг <%= index + 1 %></span>
+              <h3><%= step.title %></h3>
+              <p><%= step.description %></p>
+            </article>
+          <% }) %>
+        </div>
+      </section>
+
+      <section class="section" id="use-cases">
+        <div class="section__heading">
+          <p class="section__eyebrow">Сценарии</p>
+          <h2>Ghost AI усиливает каждую встречу</h2>
+          <p class="section__description">
+            Выбирайте сценарий, и вы увидите, как Ghost AI структурирует разговор. Карточки повторяют оформление приложения: стеклянные поверхности, четкие заголовки, концентрированная информация.
+          </p>
+        </div>
+        <div class="use-cases">
+          <div class="use-cases__list" role="tablist">
+            <% landing.useCases.forEach((useCase, index) => { %>
+              <button
+                type="button"
+                class="use-case <%= index === 0 ? 'is-active' : '' %>"
+                id="case-tab-<%= index %>"
+                role="tab"
+                aria-selected="<%= index === 0 %>"
+                aria-controls="case-<%= index %>"
+                data-case-trigger
+                data-target="case-<%= index %>"
+              >
+                <h3><%= useCase.title %></h3>
+                <p><%= useCase.description %></p>
+                <span class="use-case__status" aria-hidden="true">Активно</span>
+              </button>
+            <% }) %>
+          </div>
+          <div class="use-cases__details">
+            <% landing.useCases.forEach((useCase, index) => { %>
+              <article
+                class="glass-card use-case-detail <%= index === 0 ? 'is-active' : '' %>"
+                id="case-<%= index %>"
+                role="tabpanel"
+                aria-labelledby="case-tab-<%= index %>"
+                <%= index === 0 ? '' : 'hidden' %>
+                data-case-panel
+              >
+                <span class="use-case-detail__eyebrow">Выбранный сценарий</span>
+                <h3><%= useCase.headline %></h3>
+                <p><%= useCase.summary %></p>
+                <ul>
+                  <% useCase.bullets.forEach(point => { %>
+                    <li>
+                      <span aria-hidden="true"></span>
+                      <span><%= point %></span>
+                    </li>
+                  <% }) %>
+                </ul>
+                <a href="#cta" class="btn-secondary"><%= useCase.cta %></a>
+              </article>
+            <% }) %>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="testimonials">
+        <div class="testimonials glass-card">
+          <div class="testimonials__quote">
+            <span class="section__eyebrow">Отзывы</span>
+            <% landing.testimonials.forEach((testimonial, index) => { %>
+              <blockquote
+                class="testimonials__text <%= index === 0 ? 'is-active' : '' %>"
+                data-testimonial-panel="testimonial-<%= index %>"
+                <%= index === 0 ? '' : 'hidden' %>
+              >
+                «<%= testimonial.quote %>»
+              </blockquote>
+            <% }) %>
+          </div>
+          <div class="testimonials__aside">
+            <div class="testimonials__people">
+              <% landing.testimonials.forEach((testimonial, index) => { %>
+                <button
+                  type="button"
+                  class="testimonials__person <%= index === 0 ? 'is-active' : '' %>"
+                  data-testimonial-trigger
+                  data-target="testimonial-<%= index %>"
+                >
+                  <span class="testimonials__name"><%= testimonial.name %></span>
+                  <span class="testimonials__role"><%= testimonial.role %></span>
+                </button>
+              <% }) %>
+            </div>
+            <% landing.testimonials.forEach((testimonial, index) => { %>
+              <div class="testimonials__metric <%= index === 0 ? 'is-active' : '' %>" data-testimonial-metric data-target="testimonial-<%= index %>" <%= index === 0 ? '' : 'hidden' %>>
+                <span><%= testimonial.metric %></span>
+              </div>
+            <% }) %>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="pricing">
+        <div class="section__heading">
+          <p class="section__eyebrow">Тарифы</p>
+          <h2>Подберите ритм, который подходит вам</h2>
+          <p class="section__description">
+            Переключайтесь между помесячной и годовой оплатой в один клик. Все планы включают конфиденциальность, архив и доступ к новым функциям без доплат.
+          </p>
+          <div class="section__kicker">Первые 14 дней — бесплатно на любом плане</div>
+        </div>
+        <div class="pricing__controls">
+          <div class="pricing__toggle" role="tablist">
+            <button type="button" class="is-active" data-billing-option="monthly" aria-selected="true">Помесячно</button>
+            <button type="button" data-billing-option="yearly" aria-selected="false">За год</button>
+          </div>
+          <div class="pricing__note" data-billing-note data-monthly="Скидка 18% доступна на годовой подписке" data-yearly="Экономия до 18% при оплате за год">
+            Скидка 18% доступна на годовой подписке
+          </div>
+        </div>
+        <div class="pricing__grid">
+          <% landing.plans.forEach((plan, index) => { %>
+            <article class="glass-card plan <%= plan.highlighted ? 'is-highlighted' : '' %>" data-plan>
+              <header class="plan__header">
+                <h3><%= plan.name %></h3>
+                <% if (plan.highlighted) { %>
+                  <span class="plan__badge">Популярный</span>
+                <% } %>
+              </header>
+              <p class="plan__description"><%= plan.description %></p>
+              <div class="plan__price">
+                <span
+                  class="plan__value"
+                  data-plan-price
+                  data-monthly="<%= plan.monthly.price %>"
+                  data-yearly="<%= plan.yearly.price %>"
+                >
+                  <%= plan.monthly.price %>
+                </span>
+                <span
+                  class="plan__suffix"
+                  data-plan-suffix
+                  data-monthly="<%= plan.monthly.suffix %>"
+                  data-yearly="<%= plan.yearly.suffix %>"
+                >
+                  <%= plan.monthly.suffix %>
+                </span>
+              </div>
+              <ul class="plan__benefits">
+                <% plan.benefits.forEach(benefit => { %>
+                  <li><span aria-hidden="true"></span><span><%= benefit %></span></li>
+                <% }) %>
+              </ul>
+              <a href="#cta" class="plan__cta <%= plan.highlighted ? 'plan__cta--primary' : '' %>">Выбрать план</a>
+            </article>
+          <% }) %>
+        </div>
+      </section>
+
+      <section class="section" id="faq">
+        <div class="section__heading">
+          <p class="section__eyebrow">FAQ</p>
+          <h2>Остались вопросы? Ответим заранее</h2>
+        </div>
+        <div class="faq">
+          <% landing.faqs.forEach((item, index) => { %>
+            <details class="faq__item" <%= index === 0 ? 'open' : '' %>>
+              <summary>
+                <span><%= item.question %></span>
+              </summary>
+              <p><%= item.answer %></p>
+            </details>
+          <% }) %>
+        </div>
+      </section>
+
+      <section class="cta" id="cta">
+        <div class="glass-card cta__card">
+          <div class="cta__content">
+            <p class="section__eyebrow">Попробуйте сейчас</p>
+            <h2>Готовы говорить уверенно?</h2>
+            <p>
+              Запустите Ghost AI бесплатно, подключите любимые сервисы и почувствуйте, как AI держит весь контекст разговора. В любой момент можно пригласить коллег и расширить план.
+            </p>
             <ul>
-              <li>Безлимитные встречи</li>
-              <li>Подсказки продаж и скрипты</li>
-              <li>CRM-интеграции и API</li>
+              <% landing.ctaPoints.forEach(point => { %>
+                <li><span aria-hidden="true"></span><span><%= point %></span></li>
+              <% }) %>
             </ul>
-            <a href="/register" class="ghost-button">Скоро</a>
+          </div>
+          <div class="cta__actions">
+            <a class="btn-primary" href="https://ghostai.ru/signup">Попробовать бесплатно</a>
+            <a class="btn-secondary" href="#how">Смотреть демо</a>
           </div>
         </div>
       </section>
