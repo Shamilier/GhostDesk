@@ -41,39 +41,6 @@ public struct FloatingToolbar: View {
     }
 }
 
-// MARK: - Glass визуальные токены
-private enum Glass {
-    static var accent: Color { .accentColor }
-    static var accentGradient: LinearGradient {
-        LinearGradient(colors: [accent.opacity(0.95), accent.opacity(0.6)],
-                       startPoint: .topLeading, endPoint: .bottomTrailing)
-    }
-    static var background: some View {
-        Capsule(style: .continuous)
-            .fill(.ultraThinMaterial)
-            .background(
-                Capsule().fill(Color.black.opacity(0.06))
-            )
-    }
-    static var ring: some View {
-        Capsule()
-            .strokeBorder(
-                LinearGradient(colors: [
-                    .white.opacity(0.65),
-                    .white.opacity(0.18)
-                ], startPoint: .topLeading, endPoint: .bottomTrailing),
-                lineWidth: 1
-            )
-            .blendMode(.overlay)
-    }
-    static var hairline: Color { .white.opacity(0.22) }
-    static var hairlineOverlay: some View {
-        Capsule().inset(by: 1.5)
-            .strokeBorder(.white.opacity(0.5), lineWidth: 0.5)
-    }
-    static var accentShadow: Color { .accentColor.opacity(0.16) }
-}
-
 private struct CommandBar: View {
     var isRecording: Bool
     @Binding var selected: CommandTab
@@ -82,44 +49,72 @@ private struct CommandBar: View {
     var onMenuTap: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
-            // logo
-            ZStack {
-                Circle().fill(.ultraThinMaterial)
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+        let capsule = Capsule(style: .continuous)
+
+        let bar = HStack(spacing: 10) {
+            Group {
+                if #available(macOS 15, *) {
+                    ZStack {
+                        Circle().fill(Color.clear)
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    .glassBackgroundEffect(in: Circle())
+                    .glassBorder()
+                    .glassContentShape(Circle())
+                    .glassLifted()
+                } else {
+                    ZStack {
+                        Circle().fill(.ultraThinMaterial)
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    .overlay(Circle().stroke(.white.opacity(0.22), lineWidth: 0.75))
+                }
             }
             .frame(width: 28, height: 28)
-            .overlay(Circle().stroke(.white.opacity(0.22), lineWidth: 0.75))
 
             TabSwitcher(
                 selected: $selected,
                 isRecording: isRecording,
-                onTabTap: { onPrimaryTap() }    // ← добавили
+                onTabTap: { onPrimaryTap() }
             )
 
+            KeyedIconButton(system: "eye", key: "⌘E", action: onEyeTap)
 
-            KeyedIconButton(system: "eye",      key: "⌘E", action: onEyeTap)
             Button(action: onMenuTap) {
                 Image(systemName: "ellipsis")
                     .rotationEffect(.degrees(90))
             }
             .buttonStyle(MiniIconButton())
-
         }
         .frame(height: 44)
         .padding(.horizontal, 12)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(
-            Capsule().strokeBorder(
-                LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.18)],
-                               startPoint: .topLeading, endPoint: .bottomTrailing),
-                lineWidth: 1
-            )
-        )
-        // УБРАЛИ дымку: либо совсем без тени, либо очень аккуратно:
-        // .shadow(color: .black.opacity(0.10), radius: 4, y: 1)
+
+        return Group {
+            if #available(macOS 15, *) {
+                bar
+                    .glassBackgroundEffect(in: capsule)
+                    .glassBorder()
+                    .glassContentShape(capsule)
+                    .glassLifted()
+            } else {
+                bar
+                    .background(.ultraThinMaterial, in: capsule)
+                    .overlay(
+                        capsule.stroke(
+                            LinearGradient(
+                                colors: [.white.opacity(0.55), .white.opacity(0.18)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                    )
+            }
+        }
         .frame(maxWidth: 560)
     }
 }
@@ -172,10 +167,19 @@ private struct TabChip: View {
         Button(action: onTap) {
             ZStack {
                 if isActive {
-                    Capsule()
-                        .fill(Color.white.opacity(0.12))
-                        .matchedGeometryEffect(id: "tabHilite", in: ns)
-                        .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 0.5))
+                    Group {
+                        if #available(macOS 15, *) {
+                            Capsule()
+                                .fill(Color.white.opacity(0.14))
+                                .matchedGeometryEffect(id: "tabHilite", in: ns)
+                                .glassMaterialOverlay()
+                        } else {
+                            Capsule()
+                                .fill(Color.white.opacity(0.12))
+                                .matchedGeometryEffect(id: "tabHilite", in: ns)
+                                .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 0.5))
+                        }
+                    }
                 }
                 HStack(spacing: 6) {
                     Image(systemName: icon)
@@ -204,27 +208,55 @@ private struct KeyedIconButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
+            let keyShape = RoundedRectangle(cornerRadius: 4, style: .continuous)
+            let buttonShape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+
+            let label = HStack(spacing: 6) {
                 Image(systemName: system)
                     .font(.system(size: 13, weight: .semibold))
                 if !key.isEmpty {
-                    Text(key)
+                    let keyLabel = Text(key)
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(.thinMaterial)
-                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(.white.opacity(0.25), lineWidth: 0.5))
-                        )
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+
+                    Group {
+                        if #available(macOS 15, *) {
+                            keyLabel
+                                .glassBackgroundEffect(in: keyShape)
+                                .glassBorder()
+                                .glassContentShape(keyShape)
+                        } else {
+                            keyLabel
+                                .background(
+                                    keyShape
+                                        .fill(.thinMaterial)
+                                        .overlay(keyShape.stroke(.white.opacity(0.25), lineWidth: 0.5))
+                                )
+                        }
+                    }
                 }
             }
             .foregroundStyle(.primary)
-            .padding(.horizontal, 8).padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.white.opacity(0.04))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(0.12), lineWidth: 0.5))
-            )
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+
+            Group {
+                if #available(macOS 15, *) {
+                    label
+                        .glassBackgroundEffect(in: buttonShape)
+                        .glassBorder()
+                        .glassContentShape(buttonShape)
+                        .glassLifted()
+                } else {
+                    label
+                        .background(
+                            buttonShape
+                                .fill(Color.white.opacity(0.04))
+                                .overlay(buttonShape.stroke(.white.opacity(0.12), lineWidth: 0.5))
+                        )
+                }
+            }
         }
         .buttonStyle(.plain)
     }
@@ -234,18 +266,29 @@ private struct KeyedIconButton: View {
 private struct KeyPill: View {
     var text: String
     var body: some View {
-        Text(text)
+        let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
+        let label = Text(text)
             .font(.system(size: 11, weight: .semibold, design: .rounded))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(.thinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .stroke(.white.opacity(0.22), lineWidth: 0.5)
+
+        Group {
+            if #available(macOS 15, *) {
+                label
+                    .glassBackgroundEffect(in: shape)
+                    .glassBorder()
+                    .glassContentShape(shape)
+            } else {
+                label
+                    .background(
+                        shape
+                            .fill(.thinMaterial)
+                            .overlay(
+                                shape.stroke(.white.opacity(0.22), lineWidth: 0.5)
+                            )
                     )
-            )
+            }
+        }
     }
 }
 
