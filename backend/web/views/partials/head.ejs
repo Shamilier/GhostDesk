@@ -1,6 +1,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    name="description"
+    content="<%= typeof description !== 'undefined' ? description : 'Ghost AI — невидимый ассистент, который транскрибирует встречи, подсказывает формулировки и собирает аналитику.' %>"
+  />
   <% if (typeof metaRefresh !== 'undefined' && metaRefresh) { %>
   <meta http-equiv="refresh" content="<%= metaRefresh %>" />
   <% } %>
