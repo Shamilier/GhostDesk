@@ -1,58 +1,20 @@
-<header class="global-header" data-header>
-  <div class="global-header__inner">
-    <a href="/" class="global-header__brand">
-      <span aria-hidden="true" class="global-header__dot"></span>
-      <span>Ghost AI</span>
-    </a>
-    <nav class="global-header__nav" aria-label="Основное меню">
-      <% navLinks.forEach(link => { %>
-        <a href="<%= link.href %>" class="global-header__link" data-nav-link>
-          <%= link.label %>
-        </a>
-      <% }) %>
-      <a href="/recordings" class="global-header__link <%= typeof activeNav !== 'undefined' && activeNav === 'recordings' ? 'is-active' : '' %>" data-nav-link>
-        Мои записи
-      </a>
-    </nav>
-    <div class="global-header__actions">
-      <% if (currentUser) { %>
-        <a class="btn-secondary" href="/dashboard">Личный кабинет</a>
-        <form action="/logout" method="post" class="global-header__logout">
-          <button type="submit" class="btn-primary">Выйти</button>
-        </form>
-      <% } else { %>
-        <a class="btn-secondary" href="/login">Войти</a>
-        <a class="btn-primary" href="/register">Регистрация</a>
-      <% } %>
-    </div>
-    <button type="button" class="global-header__toggle" aria-expanded="false" aria-label="Меню" data-nav-toggle>
-      <span class="sr-only">Открыть меню</span>
-      <span class="global-header__bar" aria-hidden="true"></span>
-      <span class="global-header__bar" aria-hidden="true"></span>
-      <span class="global-header__bar" aria-hidden="true"></span>
-    </button>
-  </div>
-  <div class="global-header__mobile" data-nav-menu>
-    <nav class="global-header__mobile-nav" aria-label="Мобильное меню">
-      <% navLinks.forEach(link => { %>
-        <a href="<%= link.href %>" class="global-header__mobile-link" data-nav-link>
-          <%= link.label %>
-        </a>
-      <% }) %>
-      <a href="/recordings" class="global-header__mobile-link <%= typeof activeNav !== 'undefined' && activeNav === 'recordings' ? 'is-active' : '' %>" data-nav-link>
-        Мои записи
-      </a>
-    </nav>
-    <div class="global-header__mobile-actions">
-      <% if (currentUser) { %>
-        <a class="btn-secondary" href="/dashboard">Личный кабинет</a>
-        <form action="/logout" method="post" class="global-header__logout">
-          <button type="submit" class="btn-primary full-width">Выйти</button>
-        </form>
-      <% } else { %>
-        <a class="btn-secondary" href="/login">Войти</a>
-        <a class="btn-primary" href="/register">Регистрация</a>
-      <% } %>
-    </div>
+<header class="site-header">
+  <a href="/" class="logo">Ghost AI</a>
+  <nav class="main-nav">
+    <a href="/#features">Возможности</a>
+    <a href="/#plans">Тарифы</a>
+    <a href="/#support">Поддержка</a>
+    <a href="/recordings" class="<%= typeof activeNav !== 'undefined' && activeNav === 'recordings' ? 'is-active' : '' %>">Мои записи</a>
+  </nav>
+  <div class="auth-actions">
+    <% if (currentUser) { %>
+      <a class="ghost-button" href="/dashboard">Личный кабинет</a>
+      <form action="/logout" method="post">
+        <button type="submit" class="primary-button">Выйти</button>
+      </form>
+    <% } else { %>
+      <a class="ghost-button" href="/login">Войти</a>
+      <a class="primary-button" href="/register">Регистрация</a>
+    <% } %>
   </div>
 </header>

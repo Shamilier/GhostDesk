@@ -1,28 +1,7 @@
 <footer class="site-footer" id="support">
-  <div class="site-footer__card">
-    <div class="site-footer__brand">
-      <div class="site-footer__wordmark">
-        <span class="site-footer__dot" aria-hidden="true"></span>
-        <span>Ghost AI</span>
-      </div>
-      <p>Невидимый AI-ассистент для разговоров. Ghost AI помогает слышать, понимать и действовать уверенно в каждом диалоге.</p>
-    </div>
-    <div class="site-footer__menus">
-      <nav aria-label="Навигация по разделам">
-        <% navLinks.forEach(link => { %>
-          <a href="<%= link.href %>"><%= link.label %></a>
-        <% }) %>
-      </nav>
-      <nav aria-label="Социальные сети" class="site-footer__socials">
-        <% footerSocials.forEach(link => { %>
-          <a href="<%= link.href %>" target="_blank" rel="noreferrer"><%= link.label %></a>
-        <% }) %>
-      </nav>
-    </div>
+  <div>
+    <h4>Нужна помощь?</h4>
+    <p>Свяжитесь с командой Ghost AI: <a href="mailto:support@ghostai.ru">support@ghostai.ru</a></p>
   </div>
-  <div class="site-footer__bottom">
-    <span>© <%= currentYear %> Ghost AI. Все права защищены.</span>
-    <a href="mailto:support@ghostai.ru">support@ghostai.ru</a>
-  </div>
+  <p class="copyright">© <%= new Date().getFullYear() %> Ghost AI. Все права защищены.</p>
 </footer>
-<script src="/js/site.js" defer></script>
