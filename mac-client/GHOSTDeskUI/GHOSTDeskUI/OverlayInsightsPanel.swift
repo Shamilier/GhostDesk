@@ -190,9 +190,17 @@ struct InsightsPanel: View {
                 .padding(.vertical, 14)
             }
             .background(
-                shape
-                    .fill(Color.white.opacity(0.03))
-                    .overlay(shape.stroke(.white.opacity(0.08), lineWidth: 1))
+                Group {
+                    if #available(macOS 26.0, *) {
+                        shape
+                            .fill(Color.clear)
+                            .glassEffect(.clear, in: .rect(cornerRadius: 16))
+                    } else {
+                        shape
+                            .fill(Color.white.opacity(0.03))
+                            .overlay(shape.stroke(.white.opacity(0.08), lineWidth: 1))
+                    }
+                }
             )
             .clipShape(shape)
         }

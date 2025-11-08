@@ -212,26 +212,56 @@ struct ApiKeyGateView: View {
         
     }
     private var glassBackgroundClipped: some View {
-        RoundedRectangle(cornerRadius: 24, style: .continuous)
-            .fill(.ultraThinMaterial)
-            .overlay(                               // лёгкий внутренний свет
+        Group {
+            if #available(macOS 26.0, *) {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-                    .blur(radius: 18)
-                    .blendMode(.plusLighter)
-                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous)) // критично!
-            )
+                    .fill(Color.clear)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                            .blur(radius: 18)
+                            .blendMode(.plusLighter)
+                            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    )
+                    .glassEffect(.clear, in: .rect(cornerRadius: 24))
+            } else {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                            .blur(radius: 18)
+                            .blendMode(.plusLighter)
+                            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    )
+            }
+        }
     }
     private var cardBackgroundClipped: some View {
-        RoundedRectangle(cornerRadius: GD.corner, style: .continuous)
-            .fill(.ultraThinMaterial)
-            .overlay(
+        Group {
+            if #available(macOS 26.0, *) {
                 RoundedRectangle(cornerRadius: GD.corner, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-                    .blur(radius: 18)
-                    .blendMode(.plusLighter)
-                    .clipShape(RoundedRectangle(cornerRadius: GD.corner, style: .continuous)) // 👈 критично!
-            )
+                    .fill(Color.clear)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: GD.corner, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                            .blur(radius: 18)
+                            .blendMode(.plusLighter)
+                            .clipShape(RoundedRectangle(cornerRadius: GD.corner, style: .continuous))
+                    )
+                    .glassEffect(.clear, in: .rect(cornerRadius: GD.corner))
+            } else {
+                RoundedRectangle(cornerRadius: GD.corner, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: GD.corner, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                            .blur(radius: 18)
+                            .blendMode(.plusLighter)
+                            .clipShape(RoundedRectangle(cornerRadius: GD.corner, style: .continuous))
+                    )
+            }
+        }
     }
     private var cardBorderSoft: some View {
         RoundedRectangle(cornerRadius: GD.corner, style: .continuous)
@@ -273,19 +303,31 @@ struct ApiKeyGateView: View {
     private var cardBackground: some View {
         Group {
             if reduceTransparency {
-                // Фолбэк под Reduce Transparency
                 RoundedRectangle(cornerRadius: GD.corner, style: .continuous)
                     .fill(Color.black.opacity(0.78))
             } else {
-                // Стекло
-                RoundedRectangle(cornerRadius: GD.corner, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay( // лёгкий внутренний glow — «liquid» эффект
+                Group {
+                    if #available(macOS 26.0, *) {
                         RoundedRectangle(cornerRadius: GD.corner, style: .continuous)
-                            .fill(Color.white.opacity(0.08))
-                            .blur(radius: 24)
-                            .blendMode(.plusLighter)
-                    )
+                            .fill(Color.clear)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: GD.corner, style: .continuous)
+                                    .fill(Color.white.opacity(0.08))
+                                    .blur(radius: 24)
+                                    .blendMode(.plusLighter)
+                            )
+                            .glassEffect(.clear, in: .rect(cornerRadius: GD.corner))
+                    } else {
+                        RoundedRectangle(cornerRadius: GD.corner, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: GD.corner, style: .continuous)
+                                    .fill(Color.white.opacity(0.08))
+                                    .blur(radius: 24)
+                                    .blendMode(.plusLighter)
+                            )
+                    }
+                }
             }
         }
     }
