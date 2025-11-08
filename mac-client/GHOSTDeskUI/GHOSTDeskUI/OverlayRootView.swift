@@ -870,12 +870,20 @@ private struct HintStrip: View {
             }
             .padding(12)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-                    .overlay(
+                Group {
+                    if #available(macOS 26.0, *) {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(.white.opacity(0.12), lineWidth: 1)
-                    )
+                            .fill(Color.clear)
+                            .glassEffect(.clear, in: .rect(cornerRadius: 12))
+                    } else {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(.white.opacity(0.12), lineWidth: 1)
+                            )
+                    }
+                }
             )
         }
     }
@@ -908,8 +916,16 @@ private struct AIResponseCard: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
                             .background(
-                                Capsule().fill(Color.white.opacity(0.06))
-                                    .overlay(Capsule().stroke(.white.opacity(0.12), lineWidth: 1))
+                                Group {
+                                    if #available(macOS 26.0, *) {
+                                        Capsule()
+                                            .fill(Color.clear)
+                                            .glassEffect(.clear, in: .capsule)
+                                    } else {
+                                        Capsule().fill(Color.white.opacity(0.06))
+                                            .overlay(Capsule().stroke(.white.opacity(0.12), lineWidth: 1))
+                                    }
+                                }
                             )
                     }
 
@@ -978,10 +994,18 @@ private struct AskBar: View {
         .padding(8)
         .frame(height: 58)
         .background(
-            Color.clear.background(
-                .ultraThinMaterial,
-                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-            )
+            Group {
+                if #available(macOS 26.0, *) {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.clear)
+                        .glassEffect(.clear, in: .rect(cornerRadius: 16))
+                } else {
+                    Color.clear.background(
+                        .ultraThinMaterial,
+                        in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    )
+                }
+            }
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -1009,12 +1033,16 @@ private struct AskInputBar: View {
                 .font(.system(size: 12, weight: .semibold))
                 .padding(.horizontal, 10).padding(.vertical, 6)
                 .background(
-                    .ultraThinMaterial,
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(.white.opacity(0.18), lineWidth: 1)
+                    Group {
+                        if #available(macOS 26.0, *) {
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(Color.clear)
+                                .glassEffect(.clear, in: .rect(cornerRadius: 16))
+                        } else {
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(.ultraThinMaterial)
+                        }
+                    }
                 )
             }
             .buttonStyle(.plain)
@@ -1025,8 +1053,16 @@ private struct AskInputBar: View {
                 .font(.system(size: 16, weight: .medium))
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .background(
-                    Capsule().fill(Color.white.opacity(0.06))
-                        .overlay(Capsule().stroke(.white.opacity(0.10), lineWidth: 1))
+                    Group {
+                        if #available(macOS 26.0, *) {
+                            Capsule()
+                                .fill(Color.clear)
+                                .glassEffect(.clear, in: .capsule)
+                        } else {
+                            Capsule().fill(Color.white.opacity(0.06))
+                                .overlay(Capsule().stroke(.white.opacity(0.10), lineWidth: 1))
+                        }
+                    }
                 )
                 .onSubmit { onSubmit() }
                 .disableAutocorrection(true)
@@ -1037,8 +1073,16 @@ private struct AskInputBar: View {
             .font(.system(size: 14, weight: .semibold))
             .padding(.horizontal, 14).padding(.vertical, 9)
             .background(
-                Capsule().fill(Color.accentColor)
-                    .overlay(Capsule().stroke(.white.opacity(0.20), lineWidth: 0.5))
+                Group {
+                    if #available(macOS 26.0, *) {
+                        Capsule()
+                            .fill(Color.clear)
+                            .glassEffect(.regular.tint(.accentColor).interactive(), in: .capsule)
+                    } else {
+                        Capsule().fill(Color.accentColor)
+                            .overlay(Capsule().stroke(.white.opacity(0.20), lineWidth: 0.5))
+                    }
+                }
             )
             .foregroundStyle(.white)
             .disabled(isSubmitting)
@@ -1164,23 +1208,40 @@ struct AskField: View {
 struct GlassPill: ButtonStyle {
     var tint: Color? = nil
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(.thinMaterial)
-                    .overlay(Capsule().stroke(.white.opacity(0.2), lineWidth: 1))
-                    .shadow(
-                        color: (tint ?? .accentColor).opacity(configuration.isPressed ? 0.25 : 0.4),
-                        radius: configuration.isPressed ? 6 : 12,
-                        x: 0, y: 0
+        Group {
+            if #available(macOS 26.0, *) {
+                let resolvedTint = tint ?? .accentColor
+                configuration.label
+                    .font(.system(size: 13, weight: .semibold))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .glassEffect(
+                        tint == nil ? .clear : .regular.tint(resolvedTint).interactive(),
+                        in: .capsule
                     )
-            )
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.spring(response: 0.28, dampingFraction: 0.9), value: configuration.isPressed)
+                    .tint(resolvedTint)
+                    .scaleEffect(configuration.isPressed ? 0.98 : 1)
+                    .animation(.spring(response: 0.28, dampingFraction: 0.9), value: configuration.isPressed)
+            } else {
+                configuration.label
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(.thinMaterial)
+                            .overlay(Capsule().stroke(.white.opacity(0.2), lineWidth: 1))
+                            .shadow(
+                                color: (tint ?? .accentColor).opacity(configuration.isPressed ? 0.25 : 0.4),
+                                radius: configuration.isPressed ? 6 : 12,
+                                x: 0, y: 0
+                            )
+                    )
+                    .scaleEffect(configuration.isPressed ? 0.98 : 1)
+                    .animation(.spring(response: 0.28, dampingFraction: 0.9), value: configuration.isPressed)
+            }
+        }
     }
 }
 

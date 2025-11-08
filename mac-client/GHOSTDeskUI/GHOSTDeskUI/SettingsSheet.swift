@@ -187,14 +187,31 @@ struct SettingsSheet: View {
                                         }
                                         .padding(16)
                                         .background(
-                                            ZStack {
-                                                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                                    .fill(.ultraThinMaterial)
-                                                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                                    .fill(group.gradient(reduceTransparency: reduceTransparency))
-                                                    .opacity(reduceTransparency ? 0.28 : 0.6)
-                                                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                                    .stroke(Color.white.opacity(0.16), lineWidth: 1)
+                                            Group {
+                                                if #available(macOS 26.0, *) {
+                                                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                                        .fill(Color.clear)
+                                                        .background(
+                                                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                                                .fill(group.gradient(reduceTransparency: reduceTransparency))
+                                                                .opacity(reduceTransparency ? 0.28 : 0.6)
+                                                        )
+                                                        .overlay(
+                                                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                                                .stroke(Color.white.opacity(0.16), lineWidth: 1)
+                                                        )
+                                                        .glassEffect(.clear, in: .rect(cornerRadius: 18))
+                                                } else {
+                                                    ZStack {
+                                                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                                            .fill(.ultraThinMaterial)
+                                                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                                            .fill(group.gradient(reduceTransparency: reduceTransparency))
+                                                            .opacity(reduceTransparency ? 0.28 : 0.6)
+                                                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                                            .stroke(Color.white.opacity(0.16), lineWidth: 1)
+                                                    }
+                                                }
                                             }
                                         )
                                     }
@@ -725,37 +742,62 @@ private struct CopyableTokenField: View {
 
 private struct SecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(Color.white.opacity(0.92))
-            .padding(.vertical, 10).padding(.horizontal, 14)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(configuration.isPressed ? ST.secBaseHover : ST.secBase)
-                    .overlay(
+        Group {
+            if #available(macOS 26.0, *) {
+                configuration.label
+                    .foregroundStyle(Color.white.opacity(0.92))
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 14)
+                    .glassEffect(.clear, in: .rect(cornerRadius: 14))
+                    .glassEffectTransition(.matchedGeometry)
+                    .scaleEffect(configuration.isPressed ? 0.985 : 1)
+                    .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            } else {
+                configuration.label
+                    .foregroundStyle(Color.white.opacity(0.92))
+                    .padding(.vertical, 10).padding(.horizontal, 14)
+                    .background(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                            .fill(configuration.isPressed ? ST.secBaseHover : ST.secBase)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                            )
                     )
-            )
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+                    .scaleEffect(configuration.isPressed ? 0.985 : 1)
+                    .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            }
+        }
     }
 }
 
 private struct DestructiveOutlineButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(ST.redText)
-            .padding(.vertical, 10).padding(.horizontal, 14)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(ST.redStroke, lineWidth: 1)
+        Group {
+            if #available(macOS 26.0, *) {
+                configuration.label
+                    .foregroundStyle(ST.redText)
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 14)
+                    .glassEffect(.regular.tint(ST.redText).interactive(), in: .rect(cornerRadius: 14))
+                    .scaleEffect(configuration.isPressed ? 0.985 : 1)
+                    .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            } else {
+                configuration.label
+                    .foregroundStyle(ST.redText)
+                    .padding(.vertical, 10).padding(.horizontal, 14)
                     .background(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(configuration.isPressed ? ST.redText.opacity(0.08) : Color.clear)
+                            .stroke(ST.redStroke, lineWidth: 1)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(configuration.isPressed ? ST.redText.opacity(0.08) : Color.clear)
+                            )
                     )
-            )
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+                    .scaleEffect(configuration.isPressed ? 0.985 : 1)
+                    .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            }
+        }
     }
 }
 
@@ -765,14 +807,24 @@ private struct CloseButton: View {
     @State private var hover = false
     var body: some View {
         Button(action: action) {
-            Image(systemName: "xmark")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(ST.textPri)
-                .frame(width: 28, height: 28)
-                .background(
-                    Circle().fill(hover ? ST.secBaseHover : ST.secBase)
-                        .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 1))
-                )
+            Group {
+                if #available(macOS 26.0, *) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(ST.textPri)
+                        .frame(width: 28, height: 28)
+                        .glassEffect(.clear, in: .circle)
+                } else {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(ST.textPri)
+                        .frame(width: 28, height: 28)
+                        .background(
+                            Circle().fill(hover ? ST.secBaseHover : ST.secBase)
+                                .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 1))
+                        )
+                }
+            }
         }
         .buttonStyle(.plain)
         .onHover { hover = $0 }
