@@ -79,10 +79,19 @@ struct OverlayRootView: View {
 
     private var overlayIsland: some View {
         VStack(spacing: 14) {
-            FloatingToolbar(
+            FloatingGlassToolbar(
                 isRecording: overlay.anyChannelIsTranscribing,
                 selected: $selectedTab,
-                onPrimaryTap: { isExpanded = true },
+                isExpanded: $isExpanded,
+                query: $question,
+                onPrimaryTap: {
+                    OverlayWindowManager.shared.withResizeSuspended(0.86, finalAnimate: true)
+                    withAnimation(.spring(response: 0.2, dampingFraction: 0.86)) {
+                        if selectedTab != .settings {
+                            isExpanded = true
+                        }
+                    }
+                },
                 onEyeTap: {
                     OverlayWindowManager.shared.withResizeSuspended(0.86, finalAnimate: true)
                     withAnimation(.spring(response: 0.2, dampingFraction: 0.86)) {
@@ -100,6 +109,13 @@ struct OverlayRootView: View {
                             isExpanded = true
                         }
                     }
+                },
+                onSubmit: { query in
+                    question = query
+                    selectedTab = .ask
+                    askFocused = true
+                    OverlayWindowManager.shared.scheduleResize(animate: false)
+                    OverlayWindowManager.shared.kickFinalResize(after: 0.2)
                 }
             )
             .padding(.top, 8)
