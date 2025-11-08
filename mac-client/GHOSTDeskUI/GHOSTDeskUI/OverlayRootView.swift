@@ -472,13 +472,31 @@ struct OverlayRootView: View {
             .padding(.vertical, showHeader ? 10 : 6)
             .padding(.horizontal, 12)
             .frame(maxWidth: 320, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(style.color.opacity(0.14))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(style.color.opacity(0.18), lineWidth: 1)
-                    )
+            .liquidGlassBackground(
+                RoundedRectangle(cornerRadius: 14, style: .continuous),
+                highlightColor: style.color,
+                highlightOpacity: 0.32,
+                highlightBlur: 36,
+                borderGradient: LinearGradient(
+                    colors: [
+                        style.color.opacity(0.68),
+                        style.color.opacity(0.22)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                tint: .gradient(
+                    LinearGradient(
+                        colors: [
+                            style.color.opacity(0.45),
+                            style.color.opacity(0.16)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    opacity: 1
+                ),
+                fallbackColor: style.color.opacity(0.5)
             )
             .frame(maxWidth: .infinity, alignment: style.bubbleAlignment)
             .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -501,9 +519,21 @@ struct OverlayRootView: View {
             .padding(.vertical, 9)
             .padding(.horizontal, 12)
             .frame(maxWidth: 240, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(style.color.opacity(0.10))
+            .liquidGlassBackground(
+                RoundedRectangle(cornerRadius: 12, style: .continuous),
+                highlightColor: style.color,
+                highlightOpacity: 0.28,
+                highlightBlur: 30,
+                borderGradient: LinearGradient(
+                    colors: [
+                        style.color.opacity(0.55),
+                        style.color.opacity(0.18)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                tint: .color(style.color, opacity: 0.18),
+                fallbackColor: style.color.opacity(0.45)
             )
             .frame(maxWidth: .infinity, alignment: style.bubbleAlignment)
         }
@@ -546,13 +576,22 @@ struct OverlayRootView: View {
             }
             .padding(.vertical, 10)
             .padding(.horizontal, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.white.opacity(0.04))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                    )
+            .liquidGlassBackground(
+                RoundedRectangle(cornerRadius: 14, style: .continuous),
+                highlightOpacity: 0.26,
+                highlightBlur: 34,
+                tint: .gradient(
+                    LinearGradient(
+                        colors: [
+                            style.color.opacity(0.24),
+                            Color.white.opacity(0.04)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    opacity: 1
+                ),
+                fallbackColor: Color.white.opacity(0.32)
             )
             .frame(maxWidth: .infinity, alignment: style.bubbleAlignment)
         }
@@ -980,15 +1019,22 @@ private struct AskBar: View {
         }
         .padding(8)
         .frame(height: 58)
-        .background(
-            Color.clear.background(
-                .ultraThinMaterial,
-                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-            )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(.white.opacity(0.18), lineWidth: 1)
+        .liquidGlassBackground(
+            RoundedRectangle(cornerRadius: 16, style: .continuous),
+            highlightOpacity: 0.28,
+            highlightBlur: 44,
+            tint: .gradient(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.28),
+                        Color.white.opacity(0.08)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                opacity: 1
+            ),
+            fallbackColor: Color.black.opacity(0.7)
         )
     }
 }
@@ -1011,13 +1057,31 @@ private struct AskInputBar: View {
                 }
                 .font(.system(size: 12, weight: .semibold))
                 .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(
-                    .ultraThinMaterial,
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(.white.opacity(0.18), lineWidth: 1)
+                .liquidGlassBackground(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous),
+                    highlightColor: .accentColor,
+                    highlightOpacity: 0.30,
+                    highlightBlur: 36,
+                    borderGradient: LinearGradient(
+                        colors: [
+                            Color.accentColor.opacity(0.65),
+                            Color.accentColor.opacity(0.22)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    tint: .gradient(
+                        LinearGradient(
+                            colors: [
+                                Color.accentColor.opacity(0.45),
+                                Color.accentColor.opacity(0.16)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        opacity: 1
+                    ),
+                    fallbackColor: Color.accentColor.opacity(0.55)
                 )
             }
             .buttonStyle(.plain)
@@ -1027,9 +1091,12 @@ private struct AskInputBar: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 16, weight: .medium))
                 .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(
-                    Capsule().fill(Color.white.opacity(0.06))
-                        .overlay(Capsule().stroke(.white.opacity(0.10), lineWidth: 1))
+                .liquidGlassBackground(
+                    Capsule(style: .continuous),
+                    highlightOpacity: 0.18,
+                    highlightBlur: 32,
+                    tint: .color(Color.white, opacity: 0.12),
+                    fallbackColor: Color.black.opacity(0.6)
                 )
                 .onSubmit { onSubmit() }
                 .disableAutocorrection(true)

@@ -186,16 +186,15 @@ struct SettingsSheet: View {
                                             }
                                         }
                                         .padding(16)
-                                        .background(
-                                            ZStack {
-                                                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                                    .fill(.ultraThinMaterial)
-                                                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                                    .fill(group.gradient(reduceTransparency: reduceTransparency))
-                                                    .opacity(reduceTransparency ? 0.28 : 0.6)
-                                                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                                    .stroke(Color.white.opacity(0.16), lineWidth: 1)
-                                            }
+                                        .liquidGlassBackground(
+                                            RoundedRectangle(cornerRadius: 18, style: .continuous),
+                                            highlightOpacity: 0.26,
+                                            highlightBlur: 40,
+                                            tint: .gradient(
+                                                group.gradient(reduceTransparency: reduceTransparency),
+                                                opacity: reduceTransparency ? 0.22 : 0.65
+                                            ),
+                                            fallbackColor: Color.black.opacity(0.68)
                                         )
                                     }
                                 }

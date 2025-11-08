@@ -1,34 +1,15 @@
 import SwiftUI
 
 public extension View {
-    @ViewBuilder
     func glassCardStyle(cornerRadius: CGFloat = 16) -> some View {
-        if #available(macOS 15, *) {
-            self
-                .padding(12)
-                .glassBackgroundEffect(in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                .glassBorder()
-                .glassContentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        } else {
-            let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            ZStack {
-                Color.clear
-                    .background(.ultraThinMaterial, in: shape)
-                    .overlay(
-                        shape.stroke(
-                            LinearGradient(
-                                colors: [.white.opacity(0.45), .white.opacity(0.12)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                    )
-                self.padding(12)
-            }
-            .clipShape(shape)
-            .contentShape(shape)
-        }
+        self
+            .padding(12)
+            .liquidGlassBackground(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous),
+                highlightOpacity: 0.26,
+                highlightBlur: 44,
+                fallbackColor: Color.black.opacity(0.72)
+            )
     }
 
     @ViewBuilder
@@ -40,13 +21,8 @@ public extension View {
         }
     }
 
-    @ViewBuilder
     func glassLifted() -> some View {
-        if #available(macOS 15, *) {
-            self.glassShadow()
-        } else {
-            self.shadow(color: .black.opacity(0.10), radius: 6, y: 2)
-        }
+        self.liquidGlassShadow()
     }
 }
 
@@ -71,22 +47,15 @@ public struct MiniIconButton: ButtonStyle {
             .frame(width: 28, height: 28)
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
 
-        return Group {
-            if #available(macOS 15, *) {
-                label
-                    .glassBackgroundEffect(in: shape)
-                    .glassBorder()
-                    .glassContentShape(shape)
-                    .glassLifted()
-            } else {
-                label
-                    .background(
-                        shape
-                            .fill(.thinMaterial)
-                            .overlay(shape.stroke(.white.opacity(0.18), lineWidth: 0.75))
-                    )
-            }
-        }
+        return label
+            .liquidGlassBackground(
+                shape,
+                highlightOpacity: 0.18,
+                highlightBlur: 30,
+                tint: .color(Color.white, opacity: 0.10),
+                fallbackColor: Color.black.opacity(0.65)
+            )
+            .glassLifted()
     }
 }
 
@@ -97,9 +66,12 @@ public extension View {
             .textFieldStyle(.plain)
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .background(
-                Capsule().fill(Color.white.opacity(0.06))
-                    .overlay(Capsule().stroke(.white.opacity(0.10), lineWidth: 1))
+            .liquidGlassBackground(
+                Capsule(style: .continuous),
+                highlightOpacity: 0.16,
+                highlightBlur: 30,
+                tint: .color(Color.white, opacity: 0.08),
+                fallbackColor: Color.black.opacity(0.65)
             )
     }
 }
@@ -120,13 +92,12 @@ public struct GlassSection<Content: View>: View {
             }
             VStack(spacing: 12) { content() }
                 .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white.opacity(0.06))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(.white.opacity(0.12), lineWidth: 1)
-                        )
+                .liquidGlassBackground(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous),
+                    highlightOpacity: 0.18,
+                    highlightBlur: 34,
+                    tint: .color(Color.white, opacity: 0.09),
+                    fallbackColor: Color.black.opacity(0.65)
                 )
         }
     }

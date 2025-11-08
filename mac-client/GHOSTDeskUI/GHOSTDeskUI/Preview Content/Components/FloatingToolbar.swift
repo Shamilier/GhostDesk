@@ -52,29 +52,39 @@ private struct CommandBar: View {
         let capsule = Capsule(style: .continuous)
 
         let bar = HStack(spacing: 10) {
-            Group {
-                if #available(macOS 15, *) {
-                    ZStack {
-                        Circle().fill(Color.clear)
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
-                    }
-                    .glassBackgroundEffect(in: Circle())
-                    .glassBorder()
-                    .glassContentShape(Circle())
-                    .glassLifted()
-                } else {
-                    ZStack {
-                        Circle().fill(.ultraThinMaterial)
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
-                    }
-                    .overlay(Circle().stroke(.white.opacity(0.22), lineWidth: 0.75))
-                }
+            ZStack {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
             }
             .frame(width: 28, height: 28)
+            .liquidGlassBackground(
+                Circle(),
+                highlightColor: Color.accentColor,
+                highlightOpacity: 0.32,
+                highlightBlur: 42,
+                borderGradient: LinearGradient(
+                    colors: [
+                        Color.accentColor.opacity(0.75),
+                        Color.accentColor.opacity(0.28)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                tint: .gradient(
+                    LinearGradient(
+                        colors: [
+                            Color.accentColor.opacity(0.45),
+                            Color.accentColor.opacity(0.20)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    opacity: 1
+                ),
+                fallbackColor: Color.accentColor.opacity(0.6)
+            )
+            .glassLifted()
 
             TabSwitcher(
                 selected: $selected,
@@ -93,29 +103,26 @@ private struct CommandBar: View {
         .frame(height: 44)
         .padding(.horizontal, 12)
 
-        return Group {
-            if #available(macOS 15, *) {
-                bar
-                    .glassBackgroundEffect(in: capsule)
-                    .glassBorder()
-                    .glassContentShape(capsule)
-                    .glassLifted()
-            } else {
-                bar
-                    .background(.ultraThinMaterial, in: capsule)
-                    .overlay(
-                        capsule.stroke(
-                            LinearGradient(
-                                colors: [.white.opacity(0.55), .white.opacity(0.18)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                    )
-            }
-        }
-        .frame(maxWidth: 560)
+        return bar
+            .liquidGlassBackground(
+                capsule,
+                highlightOpacity: 0.24,
+                highlightBlur: 52,
+                tint: .gradient(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.35),
+                            Color.white.opacity(0.08)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    opacity: 0.9
+                ),
+                fallbackColor: Color.black.opacity(0.7)
+            )
+            .glassLifted()
+            .frame(maxWidth: 560)
     }
 }
 
@@ -164,36 +171,45 @@ private struct TabChip: View {
     var onTap: () -> Void
 
     var body: some View {
+        let shape = Capsule(style: .continuous)
+
         Button(action: onTap) {
-            ZStack {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(title)
+            }
+            .font(.system(size: 12, weight: .semibold))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .foregroundStyle(.primary)
+            .frame(maxWidth: .infinity)
+            .background {
                 if isActive {
-                    Group {
-                        if #available(macOS 15, *) {
-                            Capsule()
-                                .fill(Color.white.opacity(0.14))
-                                .matchedGeometryEffect(id: "tabHilite", in: ns)
-                                .glassMaterialOverlay()
-                        } else {
-                            Capsule()
-                                .fill(Color.white.opacity(0.12))
-                                .matchedGeometryEffect(id: "tabHilite", in: ns)
-                                .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 0.5))
-                        }
-                    }
+                    Color.clear
+                        .liquidGlassBackground(
+                            shape,
+                            highlightOpacity: 0.22,
+                            highlightBlur: 34,
+                            tint: .gradient(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.28),
+                                        Color.white.opacity(0.08)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                opacity: 1
+                            ),
+                            fallbackColor: Color.white.opacity(0.24)
+                        )
+                        .matchedGeometryEffect(id: "tabHilite", in: ns)
                 }
-                HStack(spacing: 6) {
-                    Image(systemName: icon)
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(title)
-                }
-                .font(.system(size: 12, weight: .semibold))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .foregroundStyle(.primary)
             }
         }
         .buttonStyle(.plain)
-        .contentShape(Capsule())
+        .contentShape(shape)
     }
 }
 
@@ -215,48 +231,32 @@ private struct KeyedIconButton: View {
                 Image(systemName: system)
                     .font(.system(size: 13, weight: .semibold))
                 if !key.isEmpty {
-                    let keyLabel = Text(key)
+                    Text(key)
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-
-                    Group {
-                        if #available(macOS 15, *) {
-                            keyLabel
-                                .glassBackgroundEffect(in: keyShape)
-                                .glassBorder()
-                                .glassContentShape(keyShape)
-                        } else {
-                            keyLabel
-                                .background(
-                                    keyShape
-                                        .fill(.thinMaterial)
-                                        .overlay(keyShape.stroke(.white.opacity(0.25), lineWidth: 0.5))
-                                )
-                        }
-                    }
+                        .liquidGlassBackground(
+                            keyShape,
+                            highlightOpacity: 0.18,
+                            highlightBlur: 26,
+                            tint: .color(Color.white, opacity: 0.12),
+                            fallbackColor: Color.black.opacity(0.6)
+                        )
                 }
             }
             .foregroundStyle(.primary)
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
 
-            Group {
-                if #available(macOS 15, *) {
-                    label
-                        .glassBackgroundEffect(in: buttonShape)
-                        .glassBorder()
-                        .glassContentShape(buttonShape)
-                        .glassLifted()
-                } else {
-                    label
-                        .background(
-                            buttonShape
-                                .fill(Color.white.opacity(0.04))
-                                .overlay(buttonShape.stroke(.white.opacity(0.12), lineWidth: 0.5))
-                        )
-                }
-            }
+            label
+                .liquidGlassBackground(
+                    buttonShape,
+                    highlightOpacity: 0.20,
+                    highlightBlur: 32,
+                    tint: .color(Color.white, opacity: 0.10),
+                    fallbackColor: Color.black.opacity(0.6)
+                )
+                .glassLifted()
         }
         .buttonStyle(.plain)
     }
@@ -272,23 +272,14 @@ private struct KeyPill: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
 
-        Group {
-            if #available(macOS 15, *) {
-                label
-                    .glassBackgroundEffect(in: shape)
-                    .glassBorder()
-                    .glassContentShape(shape)
-            } else {
-                label
-                    .background(
-                        shape
-                            .fill(.thinMaterial)
-                            .overlay(
-                                shape.stroke(.white.opacity(0.22), lineWidth: 0.5)
-                            )
-                    )
-            }
-        }
+        label
+            .liquidGlassBackground(
+                shape,
+                highlightOpacity: 0.18,
+                highlightBlur: 26,
+                tint: .color(Color.white, opacity: 0.12),
+                fallbackColor: Color.black.opacity(0.6)
+            )
     }
 }
 

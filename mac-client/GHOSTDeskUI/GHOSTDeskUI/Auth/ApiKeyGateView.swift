@@ -212,25 +212,43 @@ struct ApiKeyGateView: View {
         
     }
     private var glassBackgroundClipped: some View {
-        RoundedRectangle(cornerRadius: 24, style: .continuous)
-            .fill(.ultraThinMaterial)
-            .overlay(                               // лёгкий внутренний свет
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-                    .blur(radius: 18)
-                    .blendMode(.plusLighter)
-                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous)) // критично!
+        Color.clear
+            .liquidGlassBackground(
+                RoundedRectangle(cornerRadius: 24, style: .continuous),
+                highlightOpacity: 0.30,
+                highlightBlur: 42,
+                tint: .gradient(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.32),
+                            Color.white.opacity(0.08)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    opacity: 1
+                ),
+                fallbackColor: Color.black.opacity(0.72)
             )
     }
     private var cardBackgroundClipped: some View {
-        RoundedRectangle(cornerRadius: GD.corner, style: .continuous)
-            .fill(.ultraThinMaterial)
-            .overlay(
-                RoundedRectangle(cornerRadius: GD.corner, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-                    .blur(radius: 18)
-                    .blendMode(.plusLighter)
-                    .clipShape(RoundedRectangle(cornerRadius: GD.corner, style: .continuous)) // 👈 критично!
+        Color.clear
+            .liquidGlassBackground(
+                RoundedRectangle(cornerRadius: GD.corner, style: .continuous),
+                highlightOpacity: 0.30,
+                highlightBlur: 46,
+                tint: .gradient(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.28),
+                            Color.white.opacity(0.06)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    opacity: 1
+                ),
+                fallbackColor: Color.black.opacity(0.72)
             )
     }
     private var cardBorderSoft: some View {
@@ -271,23 +289,24 @@ struct ApiKeyGateView: View {
 
 
     private var cardBackground: some View {
-        Group {
-            if reduceTransparency {
-                // Фолбэк под Reduce Transparency
-                RoundedRectangle(cornerRadius: GD.corner, style: .continuous)
-                    .fill(Color.black.opacity(0.78))
-            } else {
-                // Стекло
-                RoundedRectangle(cornerRadius: GD.corner, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay( // лёгкий внутренний glow — «liquid» эффект
-                        RoundedRectangle(cornerRadius: GD.corner, style: .continuous)
-                            .fill(Color.white.opacity(0.08))
-                            .blur(radius: 24)
-                            .blendMode(.plusLighter)
-                    )
-            }
-        }
+        Color.clear
+            .liquidGlassBackground(
+                RoundedRectangle(cornerRadius: GD.corner, style: .continuous),
+                highlightOpacity: 0.30,
+                highlightBlur: 46,
+                tint: .gradient(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.28),
+                            Color.white.opacity(0.06)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    opacity: 1
+                ),
+                fallbackColor: Color.black.opacity(0.78)
+            )
     }
 
     private var cardBorder: some View {

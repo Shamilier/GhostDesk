@@ -29,14 +29,31 @@ public struct LogoOrb: View {
                 .opacity(0.6)
 
             Circle()
-                .fill(.ultraThinMaterial)
+                .fill(Color.clear)
+                .frame(width: 36, height: 36)
+                .liquidGlassBackground(
+                    Circle(),
+                    highlightOpacity: 0.34,
+                    highlightBlur: 38,
+                    tint: .gradient(
+                        LinearGradient(
+                            colors: [
+                                Color.accentColor.opacity(0.45),
+                                Color.purple.opacity(0.32)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        opacity: 1
+                    ),
+                    fallbackColor: Color.black.opacity(0.72)
+                )
                 .overlay {
                     Image(systemName: "waveform")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.primary.opacity(0.9))
                 }
-                .frame(width: 36, height: 36)
-                .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
+                .glassLifted()
         }
     }
 }

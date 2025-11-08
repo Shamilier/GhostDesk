@@ -190,12 +190,23 @@ struct InsightsPanel: View {
                     .padding(.horizontal, 18)
                     .padding(.vertical, 14)
                 }
-                .background(
-                    shape
-                        .fill(Color.white.opacity(0.03))
-                        .overlay(shape.stroke(.white.opacity(0.08), lineWidth: 1))
+                .liquidGlassBackground(
+                    shape,
+                    highlightOpacity: 0.26,
+                    highlightBlur: 40,
+                    tint: .gradient(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.28),
+                                Color.white.opacity(0.05)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        opacity: 1
+                    ),
+                    fallbackColor: Color.black.opacity(0.68)
                 )
-                .clipShape(shape)
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)

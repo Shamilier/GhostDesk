@@ -17,8 +17,23 @@ public struct CopiedToast: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 1))
-        .shadow(color: .black.opacity(0.2), radius: 12, x: 0, y: 6)
+        .liquidGlassBackground(
+            Capsule(style: .continuous),
+            highlightOpacity: 0.24,
+            highlightBlur: 34,
+            tint: .gradient(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.24),
+                        Color.white.opacity(0.06)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                opacity: 1
+            ),
+            fallbackColor: Color.black.opacity(0.72)
+        )
+        .glassLifted()
     }
 }
