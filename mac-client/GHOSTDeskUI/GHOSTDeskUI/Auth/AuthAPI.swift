@@ -64,7 +64,17 @@ actor AuthAPI {
             throw APIError.unexpectedStatus(http.statusCode)
         }
 
-        return try Self.makeSession(from: data)
+        do {
+            #if DEBUG
+            print("[AuthAPI][DEBUG] Parsing token response...")
+            #endif
+            return try Self.makeSession(from: data)
+        } catch {
+            #if DEBUG
+            Self.logDecodeFailure(statusCode: http.statusCode, data: data)
+            #endif
+            throw error
+        }
     }
 
     func refreshTokens(refreshToken: String) async throws -> AuthSession {
@@ -89,7 +99,17 @@ actor AuthAPI {
             throw APIError.unexpectedStatus(http.statusCode)
         }
 
-        return try Self.makeSession(from: data)
+        do {
+            #if DEBUG
+            print("[AuthAPI][DEBUG] Parsing token response...")
+            #endif
+            return try Self.makeSession(from: data)
+        } catch {
+            #if DEBUG
+            Self.logDecodeFailure(statusCode: http.statusCode, data: data)
+            #endif
+            throw error
+        }
     }
 
     func fetchProfile(accessToken: String) async throws -> UserProfile {
@@ -110,9 +130,17 @@ actor AuthAPI {
             throw APIError.unexpectedStatus(http.statusCode)
         }
 
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(UserProfile.self, from: data)
+        do {
+            #if DEBUG
+            print("[AuthAPI][DEBUG] Parsing user profile...")
+            #endif
+            return try tolerantDecoder.decode(UserProfile.self, from: data)
+        } catch {
+            #if DEBUG
+            Self.logDecodeFailure(statusCode: http.statusCode, data: data)
+            #endif
+            throw error
+        }
     }
 
     func invalidateConfigurationCache() {
@@ -140,13 +168,18 @@ actor AuthAPI {
         guard let http = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
         }
+        if http.statusCode == 200,
+           let contentType = http.value(forHTTPHeaderField: "Content-Type"),
+           contentType.contains("application/json") == false {
+            #if DEBUG
+            print("[AuthAPI][DEBUG] Unexpected Content-Type: \(contentType)")
+            #endif
+        }
         return http
     }
 
     private static func makeSession(from data: Data) throws -> AuthSession {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let payload = try decoder.decode(TokenResponse.self, from: data)
+        let payload = try tolerantDecoder.decode(TokenResponse.self, from: data)
         let expiresAt: Date
         if let absolute = payload.expiresAt {
             expiresAt = absolute
@@ -156,6 +189,80 @@ actor AuthAPI {
             expiresAt = Date().addingTimeInterval(3600)
         }
         return AuthSession(accessToken: payload.accessToken, refreshToken: payload.refreshToken, expiresAt: expiresAt)
+    }
+}
+
+private extension AuthAPI {
+    static let tolerantDecoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            if let timestamp = try? container.decode(Double.self) {
+                return Date(timeIntervalSince1970: timestamp)
+            }
+
+            let value = try container.decode(String.self)
+            if let timestamp = Double(value) {
+                return Date(timeIntervalSince1970: timestamp)
+            }
+
+            if let flexible = parseRFC3339Flexible(value) {
+                return flexible
+            }
+
+            if let isoDate = iso8601Formatter.date(from: value) {
+                return isoDate
+            }
+
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unsupported date format"
+            )
+        }
+        return decoder
+    }()
+
+    static let iso8601Formatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    static let flexibleRFC3339Formatters: [DateFormatter] = {
+        let formats = [
+            "yyyy-MM-dd'T'HH:mm:ssXXXXX",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSXXXXX",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXXXX",
+            "yyyy-MM-dd'T'HH:mm:ss'Z'",
+            "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'"
+        ]
+
+        return formats.map { format in
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            formatter.dateFormat = format
+            return formatter
+        }
+    }()
+
+    static func parseRFC3339Flexible(_ string: String) -> Date? {
+        for formatter in flexibleRFC3339Formatters {
+            if let date = formatter.date(from: string) {
+                return date
+            }
+        }
+        return nil
+    }
+
+    static func logDecodeFailure(statusCode: Int, data: Data) {
+        if let body = String(data: data, encoding: .utf8) {
+            let preview = body.prefix(512)
+            print("[AuthAPI][DEBUG] Decode failed. Status=\(statusCode). Body prefix:\n\(preview)")
+        } else {
+            print("[AuthAPI][DEBUG] Decode failed. Status=\(statusCode). Body is non-UTF8 (\(data.count) bytes)")
+        }
     }
 }
 
