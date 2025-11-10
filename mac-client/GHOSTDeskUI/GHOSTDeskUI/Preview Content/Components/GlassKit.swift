@@ -1,5 +1,82 @@
 import SwiftUI
 
+@available(macOS 26.0, *)
+struct LiquidGlassDecoration<S: InsettableShape>: View {
+    var shape: S
+    var tint: Color?
+    var tintOpacity: Double
+    var highlightOpacity: Double
+    var rimOpacity: Double
+    var isPressed: Bool
+    var isHovering: Bool
+
+    init(
+        shape: S,
+        tint: Color? = nil,
+        tintOpacity: Double = 0.24,
+        highlightOpacity: Double = 0.18,
+        rimOpacity: Double = 0.36,
+        isPressed: Bool = false,
+        isHovering: Bool = false
+    ) {
+        self.shape = shape
+        self.tint = tint
+        self.tintOpacity = tintOpacity
+        self.highlightOpacity = highlightOpacity
+        self.rimOpacity = rimOpacity
+        self.isPressed = isPressed
+        self.isHovering = isHovering
+    }
+
+    private var surfaceBlur: CGFloat { isPressed ? 16 : 28 }
+    private var tintBlur: CGFloat { isPressed ? 20 : 32 }
+    private var rimWidth: CGFloat { isHovering ? 1.35 : 1.1 }
+
+    var body: some View {
+        let topHighlight = LinearGradient(
+            colors: [Color.white.opacity(isHovering ? 0.32 : 0.24), .clear],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+
+        return ZStack {
+            shape
+                .fill(Color.white.opacity(highlightOpacity * (isHovering ? 1.18 : 1)))
+                .blur(radius: surfaceBlur)
+                .blendMode(.plusLighter)
+
+            if let tint {
+                shape
+                    .fill(tint.opacity(tintOpacity * (isHovering ? 1.08 : 1)))
+                    .blur(radius: tintBlur)
+                    .blendMode(.plusLighter)
+            }
+
+            shape
+                .strokeBorder(Color.white.opacity(rimOpacity * (isHovering ? 1.12 : 1)), lineWidth: rimWidth)
+                .blendMode(.plusLighter)
+
+            shape
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1.2)
+                .blur(radius: 2.5)
+                .offset(y: -1.2)
+                .opacity(isHovering ? 0.95 : 0.7)
+
+            shape
+                .strokeBorder(Color.black.opacity(isPressed ? 0.16 : 0.22), lineWidth: 1.6)
+                .blur(radius: 11)
+                .offset(y: 2.8)
+                .mask(shape.fill(LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)))
+
+            shape
+                .strokeBorder(topHighlight, lineWidth: 1.0)
+                .blendMode(.screen)
+        }
+        .allowsHitTesting(false)
+        .compositingGroup()
+    }
+}
+
 // Универсальная стеклянная карточка — обновлена под Liquid Glass
 public struct GlassCard<Content: View>: View {
     @ViewBuilder private var content: () -> Content
@@ -15,8 +92,18 @@ public struct GlassCard<Content: View>: View {
             if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                 GlassEffectContainer {
                     VStack(spacing: 0) { content() }
-                        .padding(12)
-                        .glassEffect(.clear, in: .rect(cornerRadius: 16))
+                        .padding(16)
+                        .background(
+                            LiquidGlassDecoration(
+                                shape: RoundedRectangle(cornerRadius: 16, style: .continuous),
+                                tint: .accentColor,
+                                tintOpacity: 0.26,
+                                highlightOpacity: 0.2,
+                                rimOpacity: 0.48
+                            )
+                            .shadow(color: Color.black.opacity(0.22), radius: 24, x: 0, y: 14)
+                        )
+                        .glassEffect(.regular.tint(.accentColor).interactive(), in: .rect(cornerRadius: 16))
                         .glassEffectUnion(id: "card", namespace: glassNamespace)
                         .glassEffectID("card.surface", in: glassNamespace)
                         .glassEffectTransition(.matchedGeometry)
@@ -55,11 +142,7 @@ public struct MiniIconButton: ButtonStyle {
     public func makeBody(configuration: Configuration) -> some View {
         Group {
             if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
-                configuration.label
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .frame(width: 28, height: 28)
-                    .glassEffect(.clear, in: .rect(cornerRadius: 7))
-                    .scaleEffect(configuration.isPressed ? 0.94 : 1)
+                LiquidIconButton(configuration: configuration)
             } else {
                 configuration.label
                     .font(.system(size: 12.5, weight: .semibold))
@@ -75,6 +158,40 @@ public struct MiniIconButton: ButtonStyle {
                     .scaleEffect(configuration.isPressed ? 0.96 : 1)
             }
         }
+    }
+}
+
+@available(macOS 26.0, *)
+private struct LiquidIconButton: View {
+    let configuration: ButtonStyle.Configuration
+    @State private var hovering = false
+
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 9, style: .continuous) }
+
+    var body: some View {
+        configuration.label
+            .font(.system(size: 13, weight: .semibold))
+            .frame(width: 32, height: 32)
+            .foregroundStyle(.primary)
+            .padding(2)
+            .background(
+                LiquidGlassDecoration(
+                    shape: shape,
+                    tint: .accentColor,
+                    tintOpacity: 0.32,
+                    highlightOpacity: 0.22,
+                    rimOpacity: 0.52,
+                    isPressed: configuration.isPressed,
+                    isHovering: hovering
+                )
+                .shadow(color: Color.black.opacity(configuration.isPressed ? 0.18 : 0.22), radius: hovering ? 22 : 18, x: 0, y: 11)
+            )
+            .glassEffect(.regular.tint(.accentColor).interactive(), in: .rect(cornerRadius: 9))
+            .contentShape(shape)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .animation(.spring(response: 0.28, dampingFraction: 0.68), value: configuration.isPressed)
+            .animation(.spring(response: 0.34, dampingFraction: 0.86), value: hovering)
+            .onHover { hovering = $0 }
     }
 }
 
@@ -134,8 +251,18 @@ public struct GlassSection<Content: View>: View {
                 if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                     GlassEffectContainer {
                         VStack(spacing: 12) { content() }
-                            .padding(12)
-                            .glassEffect(.clear, in: .rect(cornerRadius: 12))
+                            .padding(16)
+                            .background(
+                                LiquidGlassDecoration(
+                                    shape: RoundedRectangle(cornerRadius: 12, style: .continuous),
+                                    tint: .accentColor,
+                                    tintOpacity: 0.22,
+                                    highlightOpacity: 0.18,
+                                    rimOpacity: 0.44
+                                )
+                                .shadow(color: Color.black.opacity(0.2), radius: 20, x: 0, y: 12)
+                            )
+                            .glassEffect(.regular.tint(.accentColor).interactive(), in: .rect(cornerRadius: 12))
                             .glassEffectUnion(id: "section", namespace: glassNamespace)
                             .glassEffectID("section.surface", in: glassNamespace)
                             .glassEffectTransition(.matchedGeometry)

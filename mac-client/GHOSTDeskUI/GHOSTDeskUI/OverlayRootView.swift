@@ -75,6 +75,10 @@ struct OverlayRootView: View {
 
     private var authorizedOverlay: some View {
         overlayIsland
+            .environment(
+                \.controlActiveState,
+                overlay.usesLiquidGlass ? .active : .automatic
+            )
     }
 
     private var overlayIsland: some View {
