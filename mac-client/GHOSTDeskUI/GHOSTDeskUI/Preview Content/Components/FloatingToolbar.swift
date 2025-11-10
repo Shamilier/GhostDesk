@@ -116,7 +116,7 @@ private struct ToolbarLogo: View {
                     .glassEffectUnion(id: "toolbar.shell", namespace: glassNamespace)
                     .glassEffectID("toolbar.logo", in: glassNamespace)
                     .glassEffectTransition(.matchedGeometry)
-                    .foregroundStyle(.accentColor)
+                    .foregroundStyle(Color.accentColor)
             } else {
                 ZStack {
                     Circle().fill(.ultraThinMaterial)

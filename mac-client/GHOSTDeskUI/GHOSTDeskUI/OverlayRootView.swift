@@ -780,6 +780,7 @@ struct OverlayRootView: View {
 
 private struct HintStrip: View {
     @ObservedObject var hint: HintAgent = .shared
+    @ObservedObject private var overlay = OverlayModel.shared
 
     private var iconName: String {
         (hint.activeIntent ?? hint.lastCompletedIntent)?.symbolName ?? "sparkles"
