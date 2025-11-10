@@ -120,6 +120,12 @@ private struct ToolbarLogo: View {
         Group {
             if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                 Image(systemName: "bolt.fill")
+                    .symbolVariant(.fill)
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(
+                        Color.white.opacity(0.96),
+                        Color.white.opacity(0.4)
+                    )
                     .font(.system(size: 14, weight: .semibold))
                     .frame(width: 32, height: 32)
                     .background(
@@ -210,8 +216,15 @@ private struct TabChip: View {
             Button(action: onTap) {
                 HStack(spacing: 8) {
                     Image(systemName: icon)
+                        .symbolVariant(.fill)
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(
+                            Color.white.opacity(isActive ? 0.96 : 0.88),
+                            Color.white.opacity(0.36)
+                        )
                         .font(.system(size: 12.5, weight: .semibold))
                     Text(title)
+                        .foregroundStyle(Color.white.opacity(isActive ? 0.94 : 0.84))
                 }
                 .font(.system(size: 12.5, weight: .semibold))
                 .padding(.horizontal, 16)
@@ -375,10 +388,17 @@ private struct LiquidKeyButton: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: system)
+                    .symbolVariant(.fill)
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(
+                        Color.white.opacity(0.95),
+                        Color.white.opacity(0.35)
+                    )
                     .font(.system(size: 13, weight: .semibold))
                 if !title.isEmpty {
                     Text(title)
                         .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.9))
                 }
                 if !key.isEmpty {
                     KeyPill(text: key)
@@ -450,6 +470,7 @@ private struct KeyPill: View {
             if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                 Text(text)
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.92))
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
                     .background(

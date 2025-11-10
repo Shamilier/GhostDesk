@@ -1,82 +1,5 @@
 import SwiftUI
 
-@available(macOS 26.0, *)
-struct LiquidGlassDecoration<S: InsettableShape>: View {
-    var shape: S
-    var tint: Color?
-    var tintOpacity: Double
-    var highlightOpacity: Double
-    var rimOpacity: Double
-    var isPressed: Bool
-    var isHovering: Bool
-
-    init(
-        shape: S,
-        tint: Color? = nil,
-        tintOpacity: Double = 0.24,
-        highlightOpacity: Double = 0.18,
-        rimOpacity: Double = 0.36,
-        isPressed: Bool = false,
-        isHovering: Bool = false
-    ) {
-        self.shape = shape
-        self.tint = tint
-        self.tintOpacity = tintOpacity
-        self.highlightOpacity = highlightOpacity
-        self.rimOpacity = rimOpacity
-        self.isPressed = isPressed
-        self.isHovering = isHovering
-    }
-
-    private var surfaceBlur: CGFloat { isPressed ? 16 : 28 }
-    private var tintBlur: CGFloat { isPressed ? 20 : 32 }
-    private var rimWidth: CGFloat { isHovering ? 1.35 : 1.1 }
-
-    var body: some View {
-        let topHighlight = LinearGradient(
-            colors: [Color.white.opacity(isHovering ? 0.32 : 0.24), .clear],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-
-        return ZStack {
-            shape
-                .fill(Color.white.opacity(highlightOpacity * (isHovering ? 1.18 : 1)))
-                .blur(radius: surfaceBlur)
-                .blendMode(.plusLighter)
-
-            if let tint {
-                shape
-                    .fill(tint.opacity(tintOpacity * (isHovering ? 1.08 : 1)))
-                    .blur(radius: tintBlur)
-                    .blendMode(.plusLighter)
-            }
-
-            shape
-                .strokeBorder(Color.white.opacity(rimOpacity * (isHovering ? 1.12 : 1)), lineWidth: rimWidth)
-                .blendMode(.plusLighter)
-
-            shape
-                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1.2)
-                .blur(radius: 2.5)
-                .offset(y: -1.2)
-                .opacity(isHovering ? 0.95 : 0.7)
-
-            shape
-                .strokeBorder(Color.black.opacity(isPressed ? 0.16 : 0.22), lineWidth: 1.6)
-                .blur(radius: 11)
-                .offset(y: 2.8)
-                .mask(shape.fill(LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)))
-
-            shape
-                .strokeBorder(topHighlight, lineWidth: 1.0)
-                .blendMode(.screen)
-        }
-        .allowsHitTesting(false)
-        .compositingGroup()
-    }
-}
-
 // Универсальная стеклянная карточка — обновлена под Liquid Glass
 public struct GlassCard<Content: View>: View {
     @ViewBuilder private var content: () -> Content
@@ -172,7 +95,9 @@ private struct LiquidIconButton: View {
         configuration.label
             .font(.system(size: 13, weight: .semibold))
             .frame(width: 32, height: 32)
-            .foregroundStyle(.primary)
+            .symbolVariant(.fill)
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(Color.white.opacity(0.96), Color.white.opacity(0.36))
             .padding(2)
             .background(
                 LiquidGlassDecoration(
