@@ -82,7 +82,7 @@ private struct CommandBar: View {
                         .background(
                             LiquidGlassDecoration(
                                 shape: Capsule(),
-                                tint: .accentColor,
+                                tint: Color.accentColor,
                                 tintOpacity: 0.24,
                                 highlightOpacity: 0.2,
                                 rimOpacity: 0.5
@@ -125,7 +125,7 @@ private struct ToolbarLogo: View {
                     .background(
                         LiquidGlassDecoration(
                             shape: Circle(),
-                            tint: .accentColor,
+                            tint: Color.accentColor,
                             tintOpacity: 0.34,
                             highlightOpacity: 0.22,
                             rimOpacity: 0.52
@@ -286,7 +286,7 @@ private struct LiquidTabButtonBody: View {
             .background(
                 LiquidGlassDecoration(
                     shape: shape,
-                    tint: .accentColor,
+                    tint: Color.accentColor,
                     tintOpacity: tintOpacity,
                     highlightOpacity: highlightOpacity,
                     rimOpacity: rimOpacity,
@@ -295,7 +295,7 @@ private struct LiquidTabButtonBody: View {
                 )
                 .shadow(color: Color.black.opacity(configuration.isPressed ? 0.18 : 0.2), radius: hovering ? 24 : 18, x: 0, y: 12)
             )
-            .glassEffect((isActive ? GlassEffect.Style.regular.tint(.accentColor).interactive() : .regular), in: .capsule)
+            .glassEffect((isActive ? GlassEffect.Style.regular.tint(Color.accentColor).interactive() : .regular), in: .capsule)
             .glassEffectUnion(id: "toolbar.shell", namespace: glassNamespace)
             .glassEffectID("toolbar.tab.\(title)", in: glassNamespace)
             .glassEffectTransition(.matchedGeometry)
@@ -420,7 +420,7 @@ private struct LiquidKeyButtonBody: View {
             .background(
                 LiquidGlassDecoration(
                     shape: shape,
-                    tint: .accentColor,
+                    tint: Color.accentColor,
                     tintOpacity: 0.24,
                     highlightOpacity: 0.2,
                     rimOpacity: 0.5,
@@ -455,7 +455,7 @@ private struct KeyPill: View {
                     .background(
                         LiquidGlassDecoration(
                             shape: RoundedRectangle(cornerRadius: 5, style: .continuous),
-                            tint: .accentColor,
+                            tint: Color.accentColor,
                             tintOpacity: 0.28,
                             highlightOpacity: 0.22,
                             rimOpacity: 0.52
