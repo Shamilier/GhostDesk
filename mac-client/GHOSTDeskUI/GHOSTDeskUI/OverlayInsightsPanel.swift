@@ -4,6 +4,7 @@ struct InsightsPanel: View {
     @ObservedObject var hint: HintAgent
     var onRequest: (HintAgent.Intent) -> Void
     var onClose: () -> Void
+    @ObservedObject private var overlay = OverlayModel.shared
 
     private var selection: HintAgent.Intent? {
         hint.activeIntent ?? hint.lastCompletedIntent
@@ -191,7 +192,7 @@ struct InsightsPanel: View {
             }
             .background(
                 Group {
-                    if #available(macOS 26.0, *) {
+                    if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                         shape
                             .fill(Color.clear)
                             .glassEffect(.clear, in: .rect(cornerRadius: 16))

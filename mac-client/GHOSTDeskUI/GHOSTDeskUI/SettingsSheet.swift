@@ -151,6 +151,28 @@ struct SettingsSheet: View {
                             }
                             .toggleStyle(.switch)
                             .tint(.accentColor)
+
+                            Toggle(
+                                isOn: Binding(
+                                    get: { overlay.prefersLiquidGlass },
+                                    set: { newValue in
+                                        overlay.prefersLiquidGlass = newValue
+                                        OverlayWindowManager.shared.scheduleResize(animate: true)
+                                    }
+                                )
+                            ) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Liquid Glass UI")
+                                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(ST.textPri)
+                                    Text("Экспериментальный дизайн с плавным стеклом. Доступен на macOS 15 Sequoia и новее.")
+                                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                                        .foregroundStyle(overlay.supportsLiquidGlass ? ST.textSec : ST.textTri)
+                                }
+                            }
+                            .toggleStyle(.switch)
+                            .tint(.accentColor)
+                            .disabled(!overlay.supportsLiquidGlass)
                         }
 
                         GlassSection("Горячие клавиши") {
@@ -188,7 +210,7 @@ struct SettingsSheet: View {
                                         .padding(16)
                                         .background(
                                             Group {
-                                                if #available(macOS 26.0, *) {
+                                                if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                                                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                                                         .fill(Color.clear)
                                                         .background(
@@ -741,9 +763,10 @@ private struct CopyableTokenField: View {
 // MARK: - Buttons
 
 private struct SecondaryButtonStyle: ButtonStyle {
+    @ObservedObject private var overlay = OverlayModel.shared
     func makeBody(configuration: Configuration) -> some View {
         Group {
-            if #available(macOS 26.0, *) {
+            if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                 configuration.label
                     .foregroundStyle(Color.white.opacity(0.92))
                     .padding(.vertical, 10)
@@ -772,9 +795,10 @@ private struct SecondaryButtonStyle: ButtonStyle {
 }
 
 private struct DestructiveOutlineButtonStyle: ButtonStyle {
+    @ObservedObject private var overlay = OverlayModel.shared
     func makeBody(configuration: Configuration) -> some View {
         Group {
-            if #available(macOS 26.0, *) {
+            if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                 configuration.label
                     .foregroundStyle(ST.redText)
                     .padding(.vertical, 10)
@@ -805,10 +829,11 @@ private struct DestructiveOutlineButtonStyle: ButtonStyle {
 private struct CloseButton: View {
     var action: () -> Void
     @State private var hover = false
+    @ObservedObject private var overlay = OverlayModel.shared
     var body: some View {
         Button(action: action) {
             Group {
-                if #available(macOS 26.0, *) {
+                if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                     Image(systemName: "xmark")
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundStyle(ST.textPri)

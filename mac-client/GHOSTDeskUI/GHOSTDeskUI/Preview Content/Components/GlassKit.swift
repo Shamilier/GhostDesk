@@ -4,6 +4,7 @@ import SwiftUI
 public struct GlassCard<Content: View>: View {
     @ViewBuilder private var content: () -> Content
     @Namespace private var glassNamespace
+    @ObservedObject private var overlay = OverlayModel.shared
 
     public init(@ViewBuilder content: @escaping () -> Content) {
         self.content = content
@@ -11,7 +12,7 @@ public struct GlassCard<Content: View>: View {
 
     public var body: some View {
         Group {
-            if #available(macOS 26.0, *) {
+            if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                 GlassEffectContainer {
                     VStack(spacing: 0) { content() }
                         .padding(12)
@@ -48,11 +49,12 @@ public struct GlassCard<Content: View>: View {
 
 // Кнопка-иконка (как в AIResponseCard)
 public struct MiniIconButton: ButtonStyle {
+    @ObservedObject private var overlay = OverlayModel.shared
     public init() {}
 
     public func makeBody(configuration: Configuration) -> some View {
         Group {
-            if #available(macOS 26.0, *) {
+            if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                 configuration.label
                     .font(.system(size: 12.5, weight: .semibold))
                     .frame(width: 28, height: 28)
@@ -77,17 +79,19 @@ public struct MiniIconButton: ButtonStyle {
 }
 
 // Единый стиль для инпутов (TextField/SecureField)
-public extension View {
-    func glassCapsuleField() -> some View {
+private struct GlassCapsuleFieldModifier: ViewModifier {
+    @ObservedObject private var overlay = OverlayModel.shared
+
+    func body(content: Content) -> some View {
         Group {
-            if #available(macOS 26.0, *) {
-                self
+            if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
+                content
                     .textFieldStyle(.plain)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .glassEffect(.clear, in: .capsule)
             } else {
-                self
+                content
                     .textFieldStyle(.plain)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
@@ -100,11 +104,18 @@ public extension View {
     }
 }
 
+public extension View {
+    func glassCapsuleField() -> some View {
+        modifier(GlassCapsuleFieldModifier())
+    }
+}
+
 // Секция формы с однотипным стеклянным фоном
 public struct GlassSection<Content: View>: View {
     private let title: String?
     @ViewBuilder private var content: () -> Content
     @Namespace private var glassNamespace
+    @ObservedObject private var overlay = OverlayModel.shared
 
     public init(_ title: String? = nil, @ViewBuilder content: @escaping () -> Content) {
         self.title = title
@@ -120,7 +131,7 @@ public struct GlassSection<Content: View>: View {
             }
 
             Group {
-                if #available(macOS 26.0, *) {
+                if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                     GlassEffectContainer {
                         VStack(spacing: 12) { content() }
                             .padding(12)

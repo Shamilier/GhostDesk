@@ -131,6 +131,7 @@ struct ApiKeyGateView: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @EnvironmentObject private var auth: AuthState
     @EnvironmentObject private var oauth: OAuthCoordinator
+    @ObservedObject private var overlay = OverlayModel.shared
 
     @State private var didAppear = false
 
@@ -213,7 +214,7 @@ struct ApiKeyGateView: View {
     }
     private var glassBackgroundClipped: some View {
         Group {
-            if #available(macOS 26.0, *) {
+            if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(Color.clear)
                     .overlay(
@@ -239,7 +240,7 @@ struct ApiKeyGateView: View {
     }
     private var cardBackgroundClipped: some View {
         Group {
-            if #available(macOS 26.0, *) {
+            if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                 RoundedRectangle(cornerRadius: GD.corner, style: .continuous)
                     .fill(Color.clear)
                     .overlay(
@@ -307,7 +308,7 @@ struct ApiKeyGateView: View {
                     .fill(Color.black.opacity(0.78))
             } else {
                 Group {
-                    if #available(macOS 26.0, *) {
+                    if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                         RoundedRectangle(cornerRadius: GD.corner, style: .continuous)
                             .fill(Color.clear)
                             .overlay(
