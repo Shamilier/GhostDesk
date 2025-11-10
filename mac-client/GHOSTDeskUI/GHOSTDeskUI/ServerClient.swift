@@ -10,7 +10,7 @@ import Foundation
 
 final class ServerClient {
     static let shared = ServerClient()
-    let baseURL = URL(string: "https://disciplaner.online")!
+    let baseURL = URL(string: "https://ghostai.ru")!
 
     private init() {}
 

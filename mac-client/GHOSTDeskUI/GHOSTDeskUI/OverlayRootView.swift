@@ -961,7 +961,32 @@ private struct AIResponseCard: View {
     }
 }
 
-// MARK: - AskField
+import SwiftUI
+
+private struct LegibilityScrim<S: Shape>: View {
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    let shape: S
+    var intensity: Double = 0.35   // было 0.9 — из-за этого «белило»
+
+    var body: some View {
+        let base = (scheme == .dark ? Color.white : Color.black)
+        let o1 = (reduceTransparency ? 0.12 : 0.08) * intensity
+        let o2 = (reduceTransparency ? 0.08 : 0.05) * intensity
+
+        return shape
+            .fill(
+                LinearGradient(
+                    colors: [base.opacity(o1), base.opacity(o2)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                )
+            )
+            .blendMode(.softLight)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
 
 private struct AskBar: View {
     @Binding var text: String
@@ -973,6 +998,7 @@ private struct AskBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            // блок с иконкой + TextField
             HStack(spacing: 10) {
                 Image(systemName: "text.magnifyingglass")
                     .font(.system(size: 14, weight: .semibold))
@@ -986,36 +1012,84 @@ private struct AskBar: View {
             }
             .padding(.horizontal, 14)
             .frame(height: 42)
+            .background(
+                Group {
+                    if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
+                        Capsule()
+                            .glassEffect(.clear, in: .capsule) // ← вернули стекло
+                            .overlay(LegibilityScrim(shape: Capsule(), intensity: 0.35))
+                    } else {
+                        Capsule().fill(.ultraThinMaterial)
+                    }
+                }
+            )
 
             Button(isSubmitting ? "Submitting…" : "Submit") {
                 Task { await onSubmit() }
             }
             .keyboardShortcut(.return, modifiers: [])
-            .buttonStyle(GlassPill(tint: .accentColor))
+            .buttonStyle(GlassPill())
             .disabled(isSubmitting)
         }
         .padding(8)
         .frame(height: 58)
+
+        // Фон всего бара: ВСЕГДА RoundedRectangle(16) + те же эффекты, но под прямоугольник
         .background(
             Group {
                 if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.clear)
+                    let rr = RoundedRectangle(cornerRadius: 16, style: .continuous)
+
+                    rr.fill(Color.clear)
                         .glassEffect(.clear, in: .rect(cornerRadius: 16))
+                        .overlay(
+                            rr.stroke(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.35), Color.white.opacity(0.10)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                            .blendMode(.screen)
+                            .allowsHitTesting(false)
+                        )
+                        .overlay(
+                            rr.inset(by: 1.5)
+                                .stroke(Color.white.opacity(0.40), lineWidth: 0.6)
+                                .blur(radius: 1.0)
+                                .opacity(0.7)
+                                .blendMode(.screen)
+                                .allowsHitTesting(false)
+                        )
+                        .glassEffectTransition(.matchedGeometry)
+                        .shadow(color: Color.black.opacity(0.12), radius: 12, y: 6)
+                        .overlay(
+                            rr.fill(
+                                LinearGradient(
+                                    colors: [Color.indigo.opacity(0.25), Color.purple.opacity(0.18)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                )
+                            )
+                            .blendMode(.softLight)
+                            .opacity(0.02)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                        )
                 } else {
-                    Color.clear.background(
-                        .ultraThinMaterial,
-                        in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    )
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                        )
                 }
             }
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(.white.opacity(0.18), lineWidth: 1)
-        )
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
+
+
 
 private struct AskInputBar: View {
     @Binding var text: String
@@ -1261,7 +1335,7 @@ final class AskVM: ObservableObject {
 
     private var streamTask: Task<Void, Never>?
     private var streamRunID = UUID()
-    private let baseURL = URL(string: "https://api.disciplaner.online")!
+    private let baseURL = URL(string: "https://api.ghostai.ru")!
     private let sessionId = UUID().uuidString
     private let auth: AuthState
     private let serverClient: ServerClient

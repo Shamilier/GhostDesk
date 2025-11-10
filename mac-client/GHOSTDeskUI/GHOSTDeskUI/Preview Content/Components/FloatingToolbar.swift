@@ -80,9 +80,42 @@ private struct CommandBar: View {
                         .frame(height: 48)
                         .padding(.horizontal, 14)
                         .glassEffect(.clear, in: .capsule)
+                        .overlay(
+                          Capsule().stroke(
+                            LinearGradient(
+                              colors: [Color.white.opacity(0.35), Color.white.opacity(0.10)],
+                              startPoint: .topLeading, endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                          )
+                          .blendMode(.screen)
+                        )
+                        .overlay(
+                          Capsule().inset(by: 1.5)
+                            .stroke(Color.white.opacity(0.40), lineWidth: 0.6)
+                            .blur(radius: 1.0)
+                            .opacity(0.7)
+                            .blendMode(.screen)
+                        )
+
+
                         .glassEffectUnion(id: "toolbar.shell", namespace: glassNamespace)
                         .glassEffectID("toolbar.shell", in: glassNamespace)
                         .glassEffectTransition(.matchedGeometry)
+                        .shadow(color: Color.black.opacity(0.12), radius: 12, y: 6)
+                        .overlay(
+                          Capsule()
+                            .fill(LinearGradient(
+                              colors: [Color.indigo.opacity(0.25), Color.purple.opacity(0.18)],
+                              startPoint: .topLeading, endPoint: .bottomTrailing
+                            ))
+                            .blendMode(.softLight)
+                            .opacity(0.02)              // ← общая прозрачность слоя ≈ невидимо
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                        )
+
+
                 }
             } else {
                 toolbarContent
