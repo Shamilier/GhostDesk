@@ -174,12 +174,14 @@ struct ApiKeyGateView: View {
             VStack(spacing: 16) {
                 Button("Зарегистрироваться", action: { openPortal(.signUp) })
                     .buttonStyle(GhostPrimaryButtonStyle())
+                    .disabled(oauth.isAuthorizing)
                     .keyboardShortcut(.defaultAction)   // Enter
                     .focusable(true)
                     .focusEffectDisabled(false)
 
                 Button("Войти", action: { openPortal(.signIn) })
                     .buttonStyle(GhostSecondaryButtonStyle())
+                    .disabled(oauth.isAuthorizing)
             }
             .frame(maxWidth: 440)
 

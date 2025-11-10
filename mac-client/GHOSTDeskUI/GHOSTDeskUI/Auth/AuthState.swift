@@ -215,7 +215,7 @@ final class AuthState: ObservableObject {
         // Если пришло nil — значит удаляем
         guard let value, let data = value.data(using: .utf8) else {
             if account == Keychain.accessAccount {
-                print("ACCESS TOKEN удалён из Keychain")
+                print("[AuthState] Access token removed from Keychain.")
             }
             return
         }
@@ -226,7 +226,7 @@ final class AuthState: ObservableObject {
             print("Failed to save keychain item: \(status)")
         } else {
             if account == Keychain.accessAccount {
-                print("ACCESS TOKEN сохранён в Keychain: \(value)")
+                print("[AuthState] Access token saved to Keychain.")
             }
         }
     }
@@ -246,9 +246,17 @@ final class AuthState: ObservableObject {
         return String(data: data, encoding: .utf8)
     }
     private func logAccessToken(_ token: String, context: String) {
-            guard !token.isEmpty else { return }
-            print("[AuthState] Access Token (\(context)): \(token)")
-        }
+        guard !token.isEmpty else { return }
+        let masked = Self.maskToken(token)
+        print("[AuthState] Access token (\(context)): \(masked)")
+    }
+
+    private static func maskToken(_ token: String) -> String {
+        guard token.count > 8 else { return String(repeating: "•", count: token.count) }
+        let prefix = token.prefix(4)
+        let suffix = token.suffix(4)
+        return "\(prefix)••••\(suffix)"
+    }
 
     private func scheduleRefreshTask() {
         refreshTask?.cancel()

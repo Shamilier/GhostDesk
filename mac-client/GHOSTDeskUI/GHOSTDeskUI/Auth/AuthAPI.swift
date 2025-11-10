@@ -3,21 +3,20 @@ import Foundation
 actor AuthAPI {
     static let shared = AuthAPI()
 
-    nonisolated var baseURL: URL { base }
+    nonisolated var baseURL: URL { ServerClient.shared.baseURL }
 
-    private let base: URL
     private let session: URLSession
-    private var cachedConfiguration: OAuthConfiguration?
+    private var cachedConfiguration: CachedConfiguration?
 
-    private init(baseURL: URL = ServerClient.shared.baseURL,
-                 session: URLSession = .shared) {
-        self.base = baseURL
+    private init(session: URLSession = .shared) {
         self.session = session
     }
 
     func fetchOAuthConfiguration() async throws -> OAuthConfiguration {
-        if let cachedConfiguration {
-            return cachedConfiguration
+        let base = ServerClient.shared.baseURL
+
+        if let cachedConfiguration, cachedConfiguration.baseURL == base {
+            return cachedConfiguration.configuration
         }
 
         let url = base.appendingPathComponent("/oauth/client-config")
@@ -34,7 +33,7 @@ actor AuthAPI {
 
         let decoder = JSONDecoder()
         let configuration = try decoder.decode(OAuthConfiguration.self, from: data)
-        cachedConfiguration = configuration
+        cachedConfiguration = CachedConfiguration(baseURL: base, configuration: configuration)
         return configuration
     }
 
@@ -43,6 +42,7 @@ actor AuthAPI {
         codeVerifier: String,
         configuration: OAuthConfiguration
     ) async throws -> AuthSession {
+        let base = ServerClient.shared.baseURL
         let url = base.appendingPathComponent("/oauth/token")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -68,6 +68,7 @@ actor AuthAPI {
     }
 
     func refreshTokens(refreshToken: String) async throws -> AuthSession {
+        let base = ServerClient.shared.baseURL
         let configuration = try await fetchOAuthConfiguration()
         let url = base.appendingPathComponent("/oauth/token")
         var request = URLRequest(url: url)
@@ -92,6 +93,7 @@ actor AuthAPI {
     }
 
     func fetchProfile(accessToken: String) async throws -> UserProfile {
+        let base = ServerClient.shared.baseURL
         let url = base.appendingPathComponent("/oauth/profile")
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -111,6 +113,10 @@ actor AuthAPI {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(UserProfile.self, from: data)
+    }
+
+    func invalidateConfigurationCache() {
+        cachedConfiguration = nil
     }
 
     private static func formURLEncoded(_ parameters: [String: String]) -> Data {
@@ -150,6 +156,13 @@ actor AuthAPI {
             expiresAt = Date().addingTimeInterval(3600)
         }
         return AuthSession(accessToken: payload.accessToken, refreshToken: payload.refreshToken, expiresAt: expiresAt)
+    }
+}
+
+private extension AuthAPI {
+    struct CachedConfiguration {
+        let baseURL: URL
+        let configuration: OAuthConfiguration
     }
 }
 
