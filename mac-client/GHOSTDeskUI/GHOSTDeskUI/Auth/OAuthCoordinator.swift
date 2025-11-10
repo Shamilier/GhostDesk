@@ -319,6 +319,9 @@ final class OAuthCoordinator: ObservableObject {
         if let localized = error as? LocalizedError, let description = localized.errorDescription {
             return description
         }
+        if let decodingError = error as? DecodingError {
+            return "Не удалось разобрать ответ сервера (\(decodingError)). Попробуйте снова."
+        }
         return "Не удалось выполнить авторизацию: \(error.localizedDescription)"
     }
 }
