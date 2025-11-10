@@ -50,6 +50,7 @@ private struct CommandBar: View {
     var onPrimaryTap: () -> Void    // оставим сигнатуру, но не используем
     var onEyeTap: () -> Void
     var onMenuTap: () -> Void
+    @ObservedObject private var overlay = OverlayModel.shared
 
     var body: some View {
         let toolbarContent = HStack(spacing: 10) {
@@ -73,7 +74,7 @@ private struct CommandBar: View {
 
         }
         Group {
-            if #available(macOS 26.0, *) {
+            if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                 GlassEffectContainer(spacing: 10) {
                     toolbarContent
                         .frame(height: 48)
@@ -103,10 +104,11 @@ private struct CommandBar: View {
 
 private struct ToolbarLogo: View {
     var glassNamespace: Namespace.ID
+    @ObservedObject private var overlay = OverlayModel.shared
 
     var body: some View {
         Group {
-            if #available(macOS 26.0, *) {
+            if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                 Image(systemName: "bolt.fill")
                     .font(.system(size: 14, weight: .semibold))
                     .frame(width: 28, height: 28)
@@ -178,11 +180,12 @@ private struct TabChip: View {
     var ns: Namespace.ID
     var glassNamespace: Namespace.ID
     var onTap: () -> Void
+    @ObservedObject private var overlay = OverlayModel.shared
 
     var body: some View {
         Button(action: onTap) {
             Group {
-                if #available(macOS 26.0, *) {
+                if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                     HStack(spacing: 6) {
                         Image(systemName: icon)
                             .font(.system(size: 12, weight: .semibold))
@@ -233,11 +236,12 @@ private struct KeyedIconButton: View {
     var key: String
     var glassNamespace: Namespace.ID
     var action: () -> Void
+    @ObservedObject private var overlay = OverlayModel.shared
 
     var body: some View {
         Button(action: action) {
             Group {
-                if #available(macOS 26.0, *) {
+                if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                     HStack(spacing: 6) {
                         Image(systemName: system)
                             .font(.system(size: 13, weight: .semibold))
@@ -284,9 +288,10 @@ private struct KeyedIconButton: View {
 
 private struct KeyPill: View {
     var text: String
+    @ObservedObject private var overlay = OverlayModel.shared
     var body: some View {
         Group {
-            if #available(macOS 26.0, *) {
+            if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                 Text(text)
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .padding(.horizontal, 6)

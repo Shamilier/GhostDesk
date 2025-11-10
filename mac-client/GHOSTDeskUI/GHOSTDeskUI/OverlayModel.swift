@@ -5,6 +5,14 @@ import Combine
 final class OverlayModel: ObservableObject {
     private enum Defaults {
         static let screenCaptureHidden = "overlay.screenCaptureHidden"
+        static let designStyle = "overlay.designStyle"
+    }
+
+    enum DesignStyle: String {
+        case classic
+        case liquid
+
+        static let `default`: DesignStyle = .classic
     }
 
     struct TranscriptMessage: Identifiable, Equatable {
@@ -73,6 +81,20 @@ final class OverlayModel: ObservableObject {
         }
     }
 
+    @Published var preferredDesignStyle: DesignStyle = {
+        let defaults = UserDefaults.standard
+        guard let rawValue = defaults.string(forKey: Defaults.designStyle),
+              let stored = DesignStyle(rawValue: rawValue) else {
+            return .default
+        }
+        return stored
+    }() {
+        didSet {
+            let defaults = UserDefaults.standard
+            defaults.set(preferredDesignStyle.rawValue, forKey: Defaults.designStyle)
+        }
+    }
+
     // Левый блок (заглушки)
     @Published var proLevel: String = "PRO"
     @Published var audioMinutesLeft: Int = 14
@@ -95,6 +117,24 @@ final class OverlayModel: ObservableObject {
     // Вычисляемые
     var alpha: CGFloat { transparencySteps[clamp(transparencyIndex, 0, transparencySteps.count - 1)] }
     var fontScale: CGFloat { fontScaleSteps[clamp(fontScaleIndex, 0, fontScaleSteps.count - 1)] }
+
+    var supportsLiquidGlass: Bool {
+        if #available(macOS 26.0, *) {
+            return true
+        } else {
+            return false
+        }
+    }
+
+    var usesLiquidGlass: Bool {
+        guard supportsLiquidGlass else { return false }
+        return preferredDesignStyle == .liquid
+    }
+
+    var prefersLiquidGlass: Bool {
+        get { preferredDesignStyle == .liquid }
+        set { preferredDesignStyle = newValue ? .liquid : .classic }
+    }
 
     private init() {
         transcriptionStates = Dictionary(uniqueKeysWithValues: AudioSourceKind.allCases.map { ($0, TranscriptionChannelState()) })

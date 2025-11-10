@@ -871,7 +871,7 @@ private struct HintStrip: View {
             .padding(12)
             .background(
                 Group {
-                    if #available(macOS 26.0, *) {
+                    if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .fill(Color.clear)
                             .glassEffect(.clear, in: .rect(cornerRadius: 12))
@@ -898,6 +898,7 @@ private struct AIResponseCard: View {
     var onCopy: () -> Void
     var onClose: () -> Void
     var onStop: () -> Void
+    @ObservedObject private var overlay = OverlayModel.shared
 
     var body: some View {
         GlassCard {
@@ -917,7 +918,7 @@ private struct AIResponseCard: View {
                             .padding(.vertical, 5)
                             .background(
                                 Group {
-                                    if #available(macOS 26.0, *) {
+                                    if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                                         Capsule()
                                             .fill(Color.clear)
                                             .glassEffect(.clear, in: .capsule)
@@ -967,6 +968,7 @@ private struct AskBar: View {
     var onSubmit: () async -> Void
 
     @FocusState private var focused: Bool
+    @ObservedObject private var overlay = OverlayModel.shared
 
     var body: some View {
         HStack(spacing: 12) {
@@ -995,7 +997,7 @@ private struct AskBar: View {
         .frame(height: 58)
         .background(
             Group {
-                if #available(macOS 26.0, *) {
+                if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(Color.clear)
                         .glassEffect(.clear, in: .rect(cornerRadius: 16))
@@ -1020,6 +1022,7 @@ private struct AskInputBar: View {
     var isSubmitting: Bool
     var focus: FocusState<Bool>.Binding
     var onSubmit: () -> Void
+    @ObservedObject private var overlay = OverlayModel.shared
 
     var body: some View {
         HStack(spacing: 10) {
@@ -1034,7 +1037,7 @@ private struct AskInputBar: View {
                 .padding(.horizontal, 10).padding(.vertical, 6)
                 .background(
                     Group {
-                        if #available(macOS 26.0, *) {
+                        if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
                                 .fill(Color.clear)
                                 .glassEffect(.clear, in: .rect(cornerRadius: 16))
@@ -1054,7 +1057,7 @@ private struct AskInputBar: View {
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .background(
                     Group {
-                        if #available(macOS 26.0, *) {
+                        if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                             Capsule()
                                 .fill(Color.clear)
                                 .glassEffect(.clear, in: .capsule)
@@ -1074,7 +1077,7 @@ private struct AskInputBar: View {
             .padding(.horizontal, 14).padding(.vertical, 9)
             .background(
                 Group {
-                    if #available(macOS 26.0, *) {
+                    if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                         Capsule()
                             .fill(Color.clear)
                             .glassEffect(.regular.tint(.accentColor).interactive(), in: .capsule)
@@ -1207,9 +1210,10 @@ struct AskField: View {
 
 struct GlassPill: ButtonStyle {
     var tint: Color? = nil
+    @ObservedObject private var overlay = OverlayModel.shared
     func makeBody(configuration: Configuration) -> some View {
         Group {
-            if #available(macOS 26.0, *) {
+            if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                 let resolvedTint = tint ?? .accentColor
                 configuration.label
                     .font(.system(size: 13, weight: .semibold))
