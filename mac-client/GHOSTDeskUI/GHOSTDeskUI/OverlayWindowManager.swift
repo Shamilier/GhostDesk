@@ -248,10 +248,18 @@ extension OverlayWindowManager {
         }
 
         // Текущая доступная ширина контента внутри окна
-        let contentRect = window.contentRect(forFrameRect: window.frame)
-        var chromeHeight = window.frame.height - contentRect.height
-        var chromeWidth = window.frame.width - contentRect.width
-        let availableWidth = max(minimumContentSize.width, floor(contentRect.width))
+        let layoutRect = window.contentLayoutRect
+        if abs(hosting.frame.origin.x) > 0.5 || abs(hosting.frame.origin.y) > 0.5 {
+            let origin = hosting.frame.origin
+            NSLog(
+                "OverlayWindowManager hosting offset — x: %.2f, y: %.2f",
+                origin.x,
+                origin.y
+            )
+        }
+        var layoutChromeHeight = window.frame.height - layoutRect.height
+        var layoutChromeWidth = window.frame.width - layoutRect.width
+        let availableWidth = max(minimumContentSize.width, floor(layoutRect.width))
 
         // Верхняя граница по высоте — видимая область экрана минус небольшой зазор
         let screen = window.screen ?? NSScreen.main
@@ -259,12 +267,7 @@ extension OverlayWindowManager {
         let hardMaxHeight = max(200, floor(screenMaxH - 20)) // clamp сверху
 
         // ✅ Измеряем: фиксируем ШИРИНУ и ставим БЕЗОПАСНУЮ "потолочную" высоту
-        let originalSize = hosting.frame.size
-        hosting.setFrameSize(NSSize(width: availableWidth, height: hardMaxHeight))
-        hosting.layoutSubtreeIfNeeded()
-        var measured = hosting.fittingSize
-        // вернуть как было (на всякий)
-        hosting.setFrameSize(originalSize)
+        var measured = hosting.sizeThatFits(in: NSSize(width: availableWidth, height: hardMaxHeight))
 
         // Санитизируем
         if !measured.width.isFinite || measured.width <= 0 { measured.width = availableWidth }
@@ -272,32 +275,25 @@ extension OverlayWindowManager {
 
         var targetW = max(measured.width,  minimumContentSize.width)
         var targetH = max(measured.height, minimumContentSize.height)
+        targetW = min(targetW, availableWidth)
         targetH = min(targetH, hardMaxHeight) // жёсткий потолок по высоте
 
-        // Уточняем chrome на основе желаемого размера контента
-        let targetContentRect = NSRect(origin: .zero, size: CGSize(width: targetW, height: targetH))
-        let frameForTargetContent = window.frameRect(forContentRect: targetContentRect)
-        let computedChromeHeight = frameForTargetContent.height - targetH
-        let computedChromeWidth = frameForTargetContent.width - targetW
-        if computedChromeHeight.isFinite { chromeHeight = max(chromeHeight, computedChromeHeight) }
-        if computedChromeWidth.isFinite { chromeWidth = max(chromeWidth, computedChromeWidth) }
-
         // Санитизируем chrome (на случай странностей у AppKit)
-        if !chromeHeight.isFinite { chromeHeight = 0 }
-        if !chromeWidth.isFinite { chromeWidth = 0 }
-        chromeHeight = max(0, chromeHeight)
-        chromeWidth = max(0, chromeWidth)
+        if !layoutChromeHeight.isFinite { layoutChromeHeight = 0 }
+        if !layoutChromeWidth.isFinite { layoutChromeWidth = 0 }
+        layoutChromeHeight = max(0, layoutChromeHeight)
+        layoutChromeWidth = max(0, layoutChromeWidth)
 
         // Финальный таргет по фрейму (контент + "chrome")
         var frame = window.frame
-        let targetFrameHeight = targetH + chromeHeight
-        let requestedFrameWidth = targetW + chromeWidth
+        let targetFrameHeight = targetH + layoutChromeHeight
+        let requestedFrameWidth = targetW + layoutChromeWidth
         let targetFrameWidth = max(frame.size.width, requestedFrameWidth)
 
         NSLog(
-            "OverlayWindowManager chrome delta — height: %.2f, width: %.2f",
-            chromeHeight,
-            chromeWidth
+            "OverlayWindowManager contentLayout delta — height: %.2f, width: %.2f",
+            layoutChromeHeight,
+            layoutChromeWidth
         )
 
         // Ранний выход, если почти не изменилось ни по контенту, ни по фрейму
