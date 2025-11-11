@@ -102,7 +102,6 @@ struct OverlayRootView: View {
                     }
                 }
             )
-            .padding(.top, 8)
 
             // ⬇️ ГЛАВНОЕ: если открыт Settings — показываем его вместо остальных панелей
             if isExpanded {

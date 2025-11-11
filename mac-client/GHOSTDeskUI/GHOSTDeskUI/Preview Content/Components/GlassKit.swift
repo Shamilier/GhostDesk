@@ -44,6 +44,10 @@ public struct GlassCard<Content: View>: View {
                 .contentShape(shape)
             }
         }
+        // Force the glass card to hug its intrinsic height so Liquid Glass
+        // containers don't introduce invisible top padding that would push
+        // the command bar down when Listen panel is expanded.
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 

@@ -267,14 +267,29 @@ extension OverlayWindowManager {
         let hardMaxHeight = max(200, floor(screenMaxH - 20)) // clamp сверху
 
         // ✅ Измеряем: фиксируем ШИРИНУ и ставим БЕЗОПАСНУЮ "потолочную" высоту
-        var measured = hosting.sizeThatFits(in: NSSize(width: availableWidth, height: hardMaxHeight))
+        let measured = hosting.sizeThatFits(in: NSSize(width: availableWidth, height: hardMaxHeight))
+        let intrinsic = hosting.intrinsicContentSize
 
-        // Санитизируем
-        if !measured.width.isFinite || measured.width <= 0 { measured.width = availableWidth }
-        if !measured.height.isFinite || measured.height <= 0 { measured.height = minimumContentSize.height }
+        var targetW = resolveDimension(
+            measured: measured.width,
+            intrinsic: intrinsic.width,
+            previous: lastContentSize.width,
+            minimum: minimumContentSize.width
+        )
 
-        var targetW = max(measured.width,  minimumContentSize.width)
-        var targetH = max(measured.height, minimumContentSize.height)
+        var targetH = resolveDimension(
+            measured: measured.height,
+            intrinsic: intrinsic.height,
+            previous: lastContentSize.height,
+            minimum: minimumContentSize.height
+        )
+
+        if !targetW.isFinite || targetW <= 0 { targetW = minimumContentSize.width }
+        if !targetH.isFinite || targetH <= 0 { targetH = minimumContentSize.height }
+
+        targetW = max(targetW, minimumContentSize.width)
+        targetH = max(targetH, minimumContentSize.height)
+
         targetW = min(targetW, availableWidth)
         targetH = min(targetH, hardMaxHeight) // жёсткий потолок по высоте
 
