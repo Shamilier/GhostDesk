@@ -134,7 +134,7 @@ actor AuthAPI {
             #if DEBUG
             print("[AuthAPI][DEBUG] Parsing user profile...")
             #endif
-            return try tolerantDecoder.decode(UserProfile.self, from: data)
+            return try AuthAPI.tolerantDecoder.decode(UserProfile.self, from: data)
         } catch {
             #if DEBUG
             Self.logDecodeFailure(statusCode: http.statusCode, data: data)
