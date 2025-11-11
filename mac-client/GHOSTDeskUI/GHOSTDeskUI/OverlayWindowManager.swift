@@ -228,7 +228,9 @@ extension OverlayWindowManager {
         hosting.layoutSubtreeIfNeeded()
 
         // Текущая доступная ширина контента внутри окна
-        let contentRect = window.contentLayoutRect
+        let contentRect = window.contentRect(forFrameRect: window.frame)
+        var chromeHeight = window.frame.height - contentRect.height
+        var chromeWidth = window.frame.width - contentRect.width
         let availableWidth = max(minimumContentSize.width, floor(contentRect.width))
 
         // Верхняя граница по высоте — видимая область экрана минус небольшой зазор
@@ -252,19 +254,46 @@ extension OverlayWindowManager {
         var targetH = max(measured.height, minimumContentSize.height)
         targetH = min(targetH, hardMaxHeight) // жёсткий потолок по высоте
 
-        // Ранний выход, если почти не изменилось
-        if abs(targetW - lastContentSize.width) < 0.5 &&
-           abs(targetH - lastContentSize.height) < 0.5 {
+        // Уточняем chrome на основе желаемого размера контента
+        let targetContentRect = NSRect(origin: .zero, size: CGSize(width: targetW, height: targetH))
+        let frameForTargetContent = window.frameRect(forContentRect: targetContentRect)
+        let computedChromeHeight = frameForTargetContent.height - targetH
+        let computedChromeWidth = frameForTargetContent.width - targetW
+        if computedChromeHeight.isFinite { chromeHeight = max(chromeHeight, computedChromeHeight) }
+        if computedChromeWidth.isFinite { chromeWidth = max(chromeWidth, computedChromeWidth) }
+
+        // Санитизируем chrome (на случай странностей у AppKit)
+        if !chromeHeight.isFinite { chromeHeight = 0 }
+        if !chromeWidth.isFinite { chromeWidth = 0 }
+        chromeHeight = max(0, chromeHeight)
+        chromeWidth = max(0, chromeWidth)
+
+        // Финальный таргет по фрейму (контент + "chrome")
+        var frame = window.frame
+        let targetFrameHeight = targetH + chromeHeight
+        let requestedFrameWidth = targetW + chromeWidth
+        let targetFrameWidth = max(frame.size.width, requestedFrameWidth)
+
+        NSLog(
+            "OverlayWindowManager chrome delta — height: %.2f, width: %.2f",
+            chromeHeight,
+            chromeWidth
+        )
+
+        // Ранний выход, если почти не изменилось ни по контенту, ни по фрейму
+        let contentStable = abs(targetW - lastContentSize.width) < 0.5 &&
+            abs(targetH - lastContentSize.height) < 0.5
+        let frameStable = abs(frame.size.height - targetFrameHeight) < 0.5 &&
+            abs(frame.size.width - targetFrameWidth) < 0.5
+        if contentStable && frameStable {
             return
         }
 
-        // Якорим верх окна (чтобы при сжатии не «падало» вниз)
         // Якорим верх окна (верх остаётся на месте, низ растёт/сжимается)
-        var frame = window.frame
-        let deltaH = targetH - frame.size.height
+        let deltaH = targetFrameHeight - frame.size.height
         frame.origin.y -= deltaH            // ← всегда двигаем origin.y на разницу высот
-        frame.size.height = targetH
-        frame.size.width  = max(frame.size.width, targetW)
+        frame.size.height = targetFrameHeight
+        frame.size.width  = targetFrameWidth
 
         // выставляем фрейм (лучше через анимационный контекст)
         if animate {
