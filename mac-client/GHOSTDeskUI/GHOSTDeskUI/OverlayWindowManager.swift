@@ -3,12 +3,19 @@ import AppKit
 import SwiftUI
 import Carbon.HIToolbox
 
+private final class OverlayHostingView<Content: View>: NSHostingView<Content> {
+    override var safeAreaInsets: NSEdgeInsets { .zero }
+
+    /// Фактический safe-area, который выдаёт базовый NSHostingView (до принудительного обнуления).
+    func measuredSafeAreaInsets() -> NSEdgeInsets { super.safeAreaInsets }
+}
+
 final class OverlayWindowManager {
     static let shared = OverlayWindowManager()
     private init() {}
 
     private var window: OverlayPanel?
-    private var hostingView: NSHostingView<AnyView>?   // ✅ конкретный тип
+    private var hostingView: OverlayHostingView<AnyView>?   // ✅ конкретный тип
     private var lastContentSize: CGSize = .zero
     private var anchorInWindow: CGPoint?
     private let minimumContentSize = CGSize(width: 320, height: 60)
@@ -74,8 +81,22 @@ final class OverlayWindowManager {
                     .background(WindowDragHandle())   // drag только по «пустому» месту
             )
 
-            let hosting = NSHostingView(rootView: root)
-            panel.contentView = hosting
+            let container = NSView(frame: panel.contentLayoutRect)
+            container.autoresizingMask = [.width, .height]
+            panel.contentView = container
+
+            let hosting = OverlayHostingView(rootView: root)
+            hosting.translatesAutoresizingMaskIntoConstraints = false
+            hosting.insetsLayoutMarginsFromSafeArea = false
+            container.addSubview(hosting)
+
+            let guide = panel.contentLayoutGuide
+            NSLayoutConstraint.activate([
+                hosting.leadingAnchor.constraint(equalTo: guide.leadingAnchor),
+                hosting.trailingAnchor.constraint(equalTo: guide.trailingAnchor),
+                hosting.topAnchor.constraint(equalTo: guide.topAnchor),
+                hosting.bottomAnchor.constraint(equalTo: guide.bottomAnchor)
+            ])
             hostingView = hosting
             lastContentSize = .zero
             anchorInWindow = nil
@@ -110,8 +131,31 @@ final class OverlayWindowManager {
             window?.setIsVisible(true)
             updateScreenCaptureVisibility(hidden: hidesFromScreenCapture)
 
-            if hostingView == nil, let existing = window?.contentView as? NSHostingView<AnyView> {
-                hostingView = existing
+            if hostingView == nil {
+                if let container = window?.contentView {
+                    if let existing = container.subviews.compactMap({ $0 as? OverlayHostingView<AnyView> }).first {
+                        existing.translatesAutoresizingMaskIntoConstraints = false
+                        existing.insetsLayoutMarginsFromSafeArea = false
+
+                        let guide = window?.contentLayoutGuide
+                        if let guide {
+                            NSLayoutConstraint.activate([
+                                existing.leadingAnchor.constraint(equalTo: guide.leadingAnchor),
+                                existing.trailingAnchor.constraint(equalTo: guide.trailingAnchor),
+                                existing.topAnchor.constraint(equalTo: guide.topAnchor),
+                                existing.bottomAnchor.constraint(equalTo: guide.bottomAnchor)
+                            ])
+                        } else {
+                            NSLayoutConstraint.activate([
+                                existing.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                                existing.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                                existing.topAnchor.constraint(equalTo: container.topAnchor),
+                                existing.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+                            ])
+                        }
+                        hostingView = existing
+                    }
+                }
             }
 
             // ✅ на всякий случай подгоняем и тут, если до этого окно «раздулось»
@@ -221,17 +265,36 @@ extension OverlayWindowManager {
     func resizeToFitContent(animate: Bool = true) {
         guard let window = window else { return }
 
-        // Берём уже существующий NSHostingView<AnyView>
-        let hosting = hostingView ?? (window.contentView as? NSHostingView<AnyView>)
+        // Берём уже существующий hosting view с обнулённым safe-area
+        let hosting = hostingView ?? (window.contentView as? OverlayHostingView<AnyView>)
         guard let hosting else { return }
 
         hosting.layoutSubtreeIfNeeded()
 
+        let safe = hosting.measuredSafeAreaInsets()
+        if safe.top > 0.01 || safe.bottom > 0.01 || safe.left > 0.01 || safe.right > 0.01 {
+            NSLog(
+                "OverlayWindowManager safe-area insets — top: %.2f, bottom: %.2f, left: %.2f, right: %.2f",
+                safe.top,
+                safe.bottom,
+                safe.left,
+                safe.right
+            )
+        }
+
         // Текущая доступная ширина контента внутри окна
-        let contentRect = window.contentRect(forFrameRect: window.frame)
-        var chromeHeight = window.frame.height - contentRect.height
-        var chromeWidth = window.frame.width - contentRect.width
-        let availableWidth = max(minimumContentSize.width, floor(contentRect.width))
+        let layoutRect = window.contentLayoutRect
+        if abs(hosting.frame.origin.x) > 0.5 || abs(hosting.frame.origin.y) > 0.5 {
+            let origin = hosting.frame.origin
+            NSLog(
+                "OverlayWindowManager hosting offset — x: %.2f, y: %.2f",
+                origin.x,
+                origin.y
+            )
+        }
+        var layoutChromeHeight = window.frame.height - layoutRect.height
+        var layoutChromeWidth = window.frame.width - layoutRect.width
+        let availableWidth = max(minimumContentSize.width, floor(layoutRect.width))
 
         // Верхняя граница по высоте — видимая область экрана минус небольшой зазор
         let screen = window.screen ?? NSScreen.main
@@ -239,12 +302,7 @@ extension OverlayWindowManager {
         let hardMaxHeight = max(200, floor(screenMaxH - 20)) // clamp сверху
 
         // ✅ Измеряем: фиксируем ШИРИНУ и ставим БЕЗОПАСНУЮ "потолочную" высоту
-        let originalSize = hosting.frame.size
-        hosting.setFrameSize(NSSize(width: availableWidth, height: hardMaxHeight))
-        hosting.layoutSubtreeIfNeeded()
-        var measured = hosting.fittingSize
-        // вернуть как было (на всякий)
-        hosting.setFrameSize(originalSize)
+        var measured = hosting.sizeThatFits(in: NSSize(width: availableWidth, height: hardMaxHeight))
 
         // Санитизируем
         if !measured.width.isFinite || measured.width <= 0 { measured.width = availableWidth }
@@ -252,32 +310,25 @@ extension OverlayWindowManager {
 
         var targetW = max(measured.width,  minimumContentSize.width)
         var targetH = max(measured.height, minimumContentSize.height)
+        targetW = min(targetW, availableWidth)
         targetH = min(targetH, hardMaxHeight) // жёсткий потолок по высоте
 
-        // Уточняем chrome на основе желаемого размера контента
-        let targetContentRect = NSRect(origin: .zero, size: CGSize(width: targetW, height: targetH))
-        let frameForTargetContent = window.frameRect(forContentRect: targetContentRect)
-        let computedChromeHeight = frameForTargetContent.height - targetH
-        let computedChromeWidth = frameForTargetContent.width - targetW
-        if computedChromeHeight.isFinite { chromeHeight = max(chromeHeight, computedChromeHeight) }
-        if computedChromeWidth.isFinite { chromeWidth = max(chromeWidth, computedChromeWidth) }
-
         // Санитизируем chrome (на случай странностей у AppKit)
-        if !chromeHeight.isFinite { chromeHeight = 0 }
-        if !chromeWidth.isFinite { chromeWidth = 0 }
-        chromeHeight = max(0, chromeHeight)
-        chromeWidth = max(0, chromeWidth)
+        if !layoutChromeHeight.isFinite { layoutChromeHeight = 0 }
+        if !layoutChromeWidth.isFinite { layoutChromeWidth = 0 }
+        layoutChromeHeight = max(0, layoutChromeHeight)
+        layoutChromeWidth = max(0, layoutChromeWidth)
 
         // Финальный таргет по фрейму (контент + "chrome")
         var frame = window.frame
-        let targetFrameHeight = targetH + chromeHeight
-        let requestedFrameWidth = targetW + chromeWidth
+        let targetFrameHeight = targetH + layoutChromeHeight
+        let requestedFrameWidth = targetW + layoutChromeWidth
         let targetFrameWidth = max(frame.size.width, requestedFrameWidth)
 
         NSLog(
-            "OverlayWindowManager chrome delta — height: %.2f, width: %.2f",
-            chromeHeight,
-            chromeWidth
+            "OverlayWindowManager contentLayout delta — height: %.2f, width: %.2f",
+            layoutChromeHeight,
+            layoutChromeWidth
         )
 
         // Ранний выход, если почти не изменилось ни по контенту, ни по фрейму
