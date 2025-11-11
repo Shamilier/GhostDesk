@@ -3,12 +3,19 @@ import AppKit
 import SwiftUI
 import Carbon.HIToolbox
 
+private final class OverlayHostingView<Content: View>: NSHostingView<Content> {
+    override var safeAreaInsets: NSEdgeInsets { .zero }
+
+    /// Фактический safe-area, который выдаёт базовый NSHostingView (до принудительного обнуления).
+    func measuredSafeAreaInsets() -> NSEdgeInsets { super.safeAreaInsets }
+}
+
 final class OverlayWindowManager {
     static let shared = OverlayWindowManager()
     private init() {}
 
     private var window: OverlayPanel?
-    private var hostingView: NSHostingView<AnyView>?   // ✅ конкретный тип
+    private var hostingView: OverlayHostingView<AnyView>?   // ✅ конкретный тип
     private var lastContentSize: CGSize = .zero
     private var anchorInWindow: CGPoint?
     private let minimumContentSize = CGSize(width: 320, height: 60)
@@ -74,7 +81,8 @@ final class OverlayWindowManager {
                     .background(WindowDragHandle())   // drag только по «пустому» месту
             )
 
-            let hosting = NSHostingView(rootView: root)
+            let hosting = OverlayHostingView(rootView: root)
+            hosting.insetsLayoutMarginsFromSafeArea = false
             panel.contentView = hosting
             hostingView = hosting
             lastContentSize = .zero
@@ -110,7 +118,8 @@ final class OverlayWindowManager {
             window?.setIsVisible(true)
             updateScreenCaptureVisibility(hidden: hidesFromScreenCapture)
 
-            if hostingView == nil, let existing = window?.contentView as? NSHostingView<AnyView> {
+            if hostingView == nil, let existing = window?.contentView as? OverlayHostingView<AnyView> {
+                existing.insetsLayoutMarginsFromSafeArea = false
                 hostingView = existing
             }
 
@@ -221,11 +230,22 @@ extension OverlayWindowManager {
     func resizeToFitContent(animate: Bool = true) {
         guard let window = window else { return }
 
-        // Берём уже существующий NSHostingView<AnyView>
-        let hosting = hostingView ?? (window.contentView as? NSHostingView<AnyView>)
+        // Берём уже существующий hosting view с обнулённым safe-area
+        let hosting = hostingView ?? (window.contentView as? OverlayHostingView<AnyView>)
         guard let hosting else { return }
 
         hosting.layoutSubtreeIfNeeded()
+
+        let safe = hosting.measuredSafeAreaInsets()
+        if safe.top > 0.01 || safe.bottom > 0.01 || safe.left > 0.01 || safe.right > 0.01 {
+            NSLog(
+                "OverlayWindowManager safe-area insets — top: %.2f, bottom: %.2f, left: %.2f, right: %.2f",
+                safe.top,
+                safe.bottom,
+                safe.left,
+                safe.right
+            )
+        }
 
         // Текущая доступная ширина контента внутри окна
         let contentRect = window.contentRect(forFrameRect: window.frame)
