@@ -81,22 +81,9 @@ final class OverlayWindowManager {
                     .background(WindowDragHandle())   // drag только по «пустому» месту
             )
 
-            let container = NSView(frame: panel.contentLayoutRect)
-            container.autoresizingMask = [.width, .height]
-            panel.contentView = container
-
             let hosting = OverlayHostingView(rootView: root)
-            hosting.translatesAutoresizingMaskIntoConstraints = false
             hosting.insetsLayoutMarginsFromSafeArea = false
-            container.addSubview(hosting)
-
-            let guide = panel.contentLayoutGuide
-            NSLayoutConstraint.activate([
-                hosting.leadingAnchor.constraint(equalTo: guide.leadingAnchor),
-                hosting.trailingAnchor.constraint(equalTo: guide.trailingAnchor),
-                hosting.topAnchor.constraint(equalTo: guide.topAnchor),
-                hosting.bottomAnchor.constraint(equalTo: guide.bottomAnchor)
-            ])
+            panel.contentView = hosting
             hostingView = hosting
             lastContentSize = .zero
             anchorInWindow = nil
@@ -131,31 +118,9 @@ final class OverlayWindowManager {
             window?.setIsVisible(true)
             updateScreenCaptureVisibility(hidden: hidesFromScreenCapture)
 
-            if hostingView == nil {
-                if let container = window?.contentView {
-                    if let existing = container.subviews.compactMap({ $0 as? OverlayHostingView<AnyView> }).first {
-                        existing.translatesAutoresizingMaskIntoConstraints = false
-                        existing.insetsLayoutMarginsFromSafeArea = false
-
-                        let guide = window?.contentLayoutGuide
-                        if let guide {
-                            NSLayoutConstraint.activate([
-                                existing.leadingAnchor.constraint(equalTo: guide.leadingAnchor),
-                                existing.trailingAnchor.constraint(equalTo: guide.trailingAnchor),
-                                existing.topAnchor.constraint(equalTo: guide.topAnchor),
-                                existing.bottomAnchor.constraint(equalTo: guide.bottomAnchor)
-                            ])
-                        } else {
-                            NSLayoutConstraint.activate([
-                                existing.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-                                existing.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                                existing.topAnchor.constraint(equalTo: container.topAnchor),
-                                existing.bottomAnchor.constraint(equalTo: container.bottomAnchor)
-                            ])
-                        }
-                        hostingView = existing
-                    }
-                }
+            if hostingView == nil, let existing = window?.contentView as? OverlayHostingView<AnyView> {
+                existing.insetsLayoutMarginsFromSafeArea = false
+                hostingView = existing
             }
 
             // ✅ на всякий случай подгоняем и тут, если до этого окно «раздулось»
