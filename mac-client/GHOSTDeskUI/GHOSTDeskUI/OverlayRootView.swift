@@ -71,6 +71,12 @@ struct OverlayRootView: View {
             .environmentObject(auth)
             .padding(.horizontal, 8)
             .environmentObject(overlay)
+            .onAppear {
+                OverlayDebug.log("settingsPanel appear. selectedTab=\(selectedTab) isExpanded=\(isExpanded)")
+            }
+            .onDisappear {
+                OverlayDebug.log("settingsPanel disappear. selectedTab=\(selectedTab) isExpanded=\(isExpanded)")
+            }
     }
 
     private var authorizedOverlay: some View {
@@ -82,14 +88,20 @@ struct OverlayRootView: View {
             FloatingToolbar(
                 isRecording: overlay.anyChannelIsTranscribing,
                 selected: $selectedTab,
-                onPrimaryTap: { isExpanded = true },
+                onPrimaryTap: {
+                    OverlayDebug.log("Toolbar primary tapped. wasExpanded=\(isExpanded) selectedTab=\(selectedTab)")
+                    isExpanded = true
+                },
                 onEyeTap: {
+                    OverlayDebug.log("Toolbar eye tapped. before toggle isExpanded=\(isExpanded) selectedTab=\(selectedTab)")
                     OverlayWindowManager.shared.withResizeSuspended(0.86, finalAnimate: true)
                     withAnimation(.spring(response: 0.2, dampingFraction: 0.86)) {
                         isExpanded.toggle()
+                        OverlayDebug.log("Toolbar eye toggled. after toggle isExpanded=\(isExpanded) selectedTab=\(selectedTab)")
                     }
                 },
                 onMenuTap: {
+                    OverlayDebug.log("Toolbar menu tapped. selectedTab=\(selectedTab) lastNonSettingsTab=\(lastNonSettingsTab) isExpanded=\(isExpanded)")
                     OverlayWindowManager.shared.withResizeSuspended(0.2, finalAnimate: true)
                     withAnimation(.spring(response: 0.2, dampingFraction: 0.86)) {
                         if selectedTab == .settings {
@@ -99,6 +111,7 @@ struct OverlayRootView: View {
                             selectedTab = .settings
                             isExpanded = true
                         }
+                        OverlayDebug.log("Toolbar menu handled. selectedTab=\(selectedTab) lastNonSettingsTab=\(lastNonSettingsTab) isExpanded=\(isExpanded)")
                     }
                 }
             )
@@ -124,6 +137,7 @@ struct OverlayRootView: View {
         .animation(.spring(response: 0.2, dampingFraction: 0.86), value: isExpanded)
         .animation(.spring(response: 0.2, dampingFraction: 0.86), value: selectedTab)
         .onChange(of: overlay.askSolveTrigger) { _ in
+            OverlayDebug.log("askSolveTrigger -> expand Ask. prevExpanded=\(isExpanded) prevTab=\(selectedTab)")
             isExpanded = true
             selectedTab = .ask
             question = ""
@@ -132,27 +146,31 @@ struct OverlayRootView: View {
             let transcriptTail = makeTranscriptTail(seconds: 40, maxChars: 900)
             Task { await askVM.submitWithoutQuery(transcript: transcriptTail) }
 
-            OverlayWindowManager.shared.scheduleResize(animate: false)
-            OverlayWindowManager.shared.kickFinalResize(after: 0.2)
+            OverlayWindowManager.shared.scheduleResize(animate: false, reason: "askSolveTrigger")
+            OverlayWindowManager.shared.kickFinalResize(after: 0.2, reason: "askSolveTrigger")
         }
-        .onChange(of: isExpanded) { _ in
+        .onChange(of: isExpanded) { newValue in
+            OverlayDebug.log("isExpanded changed -> \(newValue) for tab=\(selectedTab)")
             if isExpanded && selectedTab == .ask { askFocused = true }
-            OverlayWindowManager.shared.scheduleResize(animate: false)
-            OverlayWindowManager.shared.kickFinalResize(after: 0.2)
+            OverlayWindowManager.shared.scheduleResize(animate: false, reason: "isExpanded change")
+            OverlayWindowManager.shared.kickFinalResize(after: 0.2, reason: "isExpanded change")
         }
         .onChange(of: selectedTab) { tab in
+            OverlayDebug.log("selectedTab changed -> \(tab) isExpanded=\(isExpanded)")
             if isExpanded && tab == .ask { askFocused = true }
-            OverlayWindowManager.shared.scheduleResize(animate: false)
-            OverlayWindowManager.shared.kickFinalResize(after: 0.2)
+            OverlayWindowManager.shared.scheduleResize(animate: false, reason: "selectedTab change -> \(tab)")
+            OverlayWindowManager.shared.kickFinalResize(after: 0.2, reason: "selectedTab change -> \(tab)")
         }
 
-        .onChange(of: showTranscript) { _ in
-            OverlayWindowManager.shared.scheduleResize(animate: false)
-            OverlayWindowManager.shared.kickFinalResize(after: 0.2)
+        .onChange(of: showTranscript) { newValue in
+            OverlayDebug.log("showTranscript toggled -> \(newValue)")
+            OverlayWindowManager.shared.scheduleResize(animate: false, reason: "showTranscript toggle")
+            OverlayWindowManager.shared.kickFinalResize(after: 0.2, reason: "showTranscript toggle")
         }
         .onAppear {
-            OverlayWindowManager.shared.scheduleResize(animate: false)
-            OverlayWindowManager.shared.kickFinalResize(after: 0.2)
+            OverlayDebug.log("OverlayRootView onAppear. isExpanded=\(isExpanded) selectedTab=\(selectedTab)")
+            OverlayWindowManager.shared.scheduleResize(animate: false, reason: "OverlayRootView onAppear")
+            OverlayWindowManager.shared.kickFinalResize(after: 0.2, reason: "OverlayRootView onAppear")
         }
     }
 
@@ -184,11 +202,12 @@ struct OverlayRootView: View {
                     Spacer(minLength: 8)
 
                     Button(showTranscript ? "Инсайты" : "Транскрипт") {
+                        OverlayDebug.log("Listen panel toggle pressed. showTranscript -> \(!showTranscript)")
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
                             showTranscript.toggle()
                         }
-                        OverlayWindowManager.shared.scheduleResize(animate: false)
-                        OverlayWindowManager.shared.kickFinalResize(after: 0.30)
+                        OverlayWindowManager.shared.scheduleResize(animate: false, reason: "Listen panel transcript toggle")
+                        OverlayWindowManager.shared.kickFinalResize(after: 0.30, reason: "Listen panel transcript toggle")
                     }
                     .buttonStyle(GlassPill())
 
@@ -252,6 +271,12 @@ struct OverlayRootView: View {
         }
         .frame(maxWidth: 600)
         .padding(.horizontal, 8)
+        .onAppear {
+            OverlayDebug.log("listenPanel appear. showTranscript=\(showTranscript) isExpanded=\(isExpanded) selectedTab=\(selectedTab)")
+        }
+        .onDisappear {
+            OverlayDebug.log("listenPanel disappear. showTranscript=\(showTranscript) isExpanded=\(isExpanded) selectedTab=\(selectedTab)")
+        }
     }
     
     
@@ -630,6 +655,12 @@ struct OverlayRootView: View {
         .frame(maxWidth: 600)  // Фиксируем максимальную ширину всей панели
 
         .padding(.horizontal, 8)
+        .onAppear {
+            OverlayDebug.log("askPanel appear. questionChars=\(question.count) isExpanded=\(isExpanded)")
+        }
+        .onDisappear {
+            OverlayDebug.log("askPanel disappear. questionChars=\(question.count) isExpanded=\(isExpanded)")
+        }
     }
 
     // MARK: - Header (не используется в текущем лэйауте, оставлен как заготовка)
@@ -1695,10 +1726,14 @@ private struct OverlayAutoResize: ViewModifier {
             )
          .onPreferenceChange(OverlaySizeKey.self) { new in
              if abs(new.width - last.width) > 0.5 || abs(new.height - last.height) > 0.5 {
+                 OverlayDebug.log("OverlayAutoResize geometry change. new=\(new) last=\(last)")
                  last = new
                  // Если подавление включено — пропускаем тик
                  if !OverlayWindowManager.shared.isAutoResizeSuppressed {
-                     OverlayWindowManager.shared.scheduleResize(animate: false, coalesce: 0.02)
+                     OverlayDebug.log("OverlayAutoResize scheduling resize")
+                     OverlayWindowManager.shared.scheduleResize(animate: false, coalesce: 0.02, reason: "OverlayAutoResize geometry change")
+                 } else {
+                     OverlayDebug.log("OverlayAutoResize resize suppressed")
                  }
              }
          }

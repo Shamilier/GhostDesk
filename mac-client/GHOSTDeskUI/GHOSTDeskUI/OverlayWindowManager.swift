@@ -26,12 +26,17 @@ final class OverlayWindowManager {
     var isAutoResizeSuppressed: Bool { suppressAutoResize }
 
     /// Коалесим частые ресайзы (используется из overlayAutoResize).
-    func scheduleResize(animate: Bool = false, coalesce: TimeInterval = 0.02) {
-        // Если подавление включено — просто игнорируем текущий тик
-        guard !suppressAutoResize else { return }
+    func scheduleResize(animate: Bool = false, coalesce: TimeInterval = 0.02, reason: String? = nil) {
+        if suppressAutoResize {
+            OverlayDebug.log("scheduleResize ignored (suppressed). reason=\(reason ?? "<none>")")
+            return
+        }
+        OverlayDebug.log("scheduleResize queued. animate=\(animate) coalesce=\(coalesce) reason=\(reason ?? "<none>") lastSize=\(lastContentSize)")
         resizeWorkItem?.cancel()
         let item = DispatchWorkItem { [weak self] in
-            self?.resizeToFitContent(animate: animate)
+            guard let self else { return }
+            OverlayDebug.log("scheduleResize firing. animate=\(animate) reason=\(reason ?? "<none>")")
+            self.resizeToFitContent(animate: animate)
         }
         resizeWorkItem = item
         DispatchQueue.main.asyncAfter(deadline: .now() + coalesce, execute: item)
@@ -39,6 +44,7 @@ final class OverlayWindowManager {
 
     /// На время анимации блокируем авто-ресайзы и делаем один финальный.
     func withResizeSuspended(_ duration: TimeInterval, finalAnimate: Bool = true) {
+        OverlayDebug.log("withResizeSuspended enter. duration=\(duration) finalAnimate=\(finalAnimate)")
         suppressAutoResize = true
         // Сбросим отложенный коалессер, чтобы не мигал
         resizeWorkItem?.cancel()
@@ -47,13 +53,17 @@ final class OverlayWindowManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
             guard let self else { return }
             self.suppressAutoResize = false
+            OverlayDebug.log("withResizeSuspended exit. duration=\(duration) finalAnimate=\(finalAnimate)")
             self.resizeToFitContent(animate: finalAnimate)
         }
     }
     /// Один финальный анимированный ресайз после завершения spring-анимации SwiftUI.
-    func kickFinalResize(after delay: TimeInterval = 0.38) {
+    func kickFinalResize(after delay: TimeInterval = 0.38, reason: String? = nil) {
+        OverlayDebug.log("kickFinalResize scheduled. delay=\(delay) reason=\(reason ?? "<none>")")
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            self?.resizeToFitContent(animate: true)
+            guard let self else { return }
+            OverlayDebug.log("kickFinalResize firing. delay=\(delay) reason=\(reason ?? "<none>")")
+            self.resizeToFitContent(animate: true)
         }
     }
     
@@ -65,6 +75,8 @@ final class OverlayWindowManager {
         model.attachAuth(auth)
 
         if window == nil {
+            let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
+            OverlayDebug.log("show -> creating panel. model.alpha=\(model.alpha) isFocusable=\(model.isFocusable) os=\(osVersion)")
             let panel = OverlayPanel(contentRect: NSRect(x: 0, y: 0, width: 920, height: 160))
 
             let root = AnyView(
@@ -90,20 +102,34 @@ final class OverlayWindowManager {
             applyFocus(model.isFocusable)
 
             // 1) стартовая позиция — под меню-баром, по центру экрана (как по ⌘3)
-            centerTop(on: NSScreen.main!, topInset: 12, animate: false)
+            if let screen = NSScreen.main {
+                OverlayDebug.log("show -> initial centerTop on main screen. frame=\(panel.frame)")
+                centerTop(on: screen, topInset: 12, animate: false)
+            } else {
+                OverlayDebug.log("show -> no main screen available for centerTop")
+            }
 
             // 2) подгоняем размер под контент
+            OverlayDebug.log("show -> initial resizeToFitContent")
             resizeToFitContent(animate: false)
 
             // 3) один корректирующий шаг после первого layout SwiftUI (на случай, если размер изменится)
             if !didApplyInitialPlacement {
                 didApplyInitialPlacement = true
                 DispatchQueue.main.async { [weak self] in
-                    self?.centerTop(on: NSScreen.main!, topInset: 12, animate: false)
+                    guard let self else { return }
+                    if let screen = NSScreen.main {
+                        OverlayDebug.log("show -> deferred centerTop after initial layout")
+                        self.centerTop(on: screen, topInset: 12, animate: false)
+                    } else {
+                        OverlayDebug.log("show -> deferred centerTop skipped (no screen)")
+                    }
                 }
             }
 
         } else {
+            let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
+            OverlayDebug.log("show -> reuse existing panel. model.alpha=\(model.alpha) isFocusable=\(model.isFocusable) os=\(osVersion)")
             window?.alphaValue = model.alpha
             NSApp.activate(ignoringOtherApps: true)
             window?.makeKeyAndOrderFront(nil)
@@ -120,11 +146,13 @@ final class OverlayWindowManager {
     }
 
     func updateSize(to newContentSize: CGSize, animate: Bool = true) {
+        OverlayDebug.log("updateSize requested. newContentSize=\(newContentSize) animate=\(animate)")
         lastContentSize = newContentSize
         resizeToFitContent(animate: animate)
     }
 
     func hide() {
+        OverlayDebug.log("hide window")
         window?.orderOut(nil)
         window?.setIsVisible(false)
     }
@@ -132,26 +160,35 @@ final class OverlayWindowManager {
     @discardableResult
     func toggleVisibility() -> Bool {
         if isVisible {
+            OverlayDebug.log("toggleVisibility -> hide")
             hide()
             return false
         } else {
             guard let auth = authState else { return false }
+            OverlayDebug.log("toggleVisibility -> show")
             show(model: OverlayModel.shared, auth: auth)
             return true
         }
     }
 
     func nudge(dx: CGFloat, dy: CGFloat) {
-        guard let w = window, let screen = w.screen ?? NSScreen.main else { return }
+        guard let w = window, let screen = w.screen ?? NSScreen.main else {
+            OverlayDebug.log("nudge skipped (missing window or screen)")
+            return
+        }
         var f = w.frame
         f.origin.x += dx
         f.origin.y += dy
-        f = clamped(f, to: screen.visibleFrame)
-        w.setFrame(f, display: true, animate: false)
+        let clampedFrame = clamped(f, to: screen.visibleFrame)
+        OverlayDebug.log("nudge applied. dx=\(dx) dy=\(dy) requestedFrame=\(f) clampedFrame=\(clampedFrame)")
+        w.setFrame(clampedFrame, display: true, animate: false)
     }
 
     func center(on screen: NSScreen) {
-        guard let w = window else { return }
+        guard let w = window else {
+            OverlayDebug.log("center(on:) skipped (no window)")
+            return
+        }
         let rect = screen.visibleFrame
         var f = w.frame
         let contentSize = lastContentSize == .zero ? f.size : lastContentSize
@@ -159,16 +196,23 @@ final class OverlayWindowManager {
         let anchor = anchorInWindow ?? fallbackAnchor
         f.origin.x = rect.midX - anchor.x
         f.origin.y = rect.midY - anchor.y
-        w.setFrame(clamped(f, to: rect), display: true, animate: false)
+        let target = clamped(f, to: rect)
+        OverlayDebug.log("center(on:) -> targetFrame=\(target) visibleFrame=\(rect) anchor=\(anchor)")
+        w.setFrame(target, display: true, animate: false)
     }
 
-    func setAlpha(_ a: CGFloat) { window?.alphaValue = a }
+    func setAlpha(_ a: CGFloat) {
+        OverlayDebug.log("setAlpha -> \(a)")
+        window?.alphaValue = a
+    }
 
     func applyFocus(_ focusable: Bool) {
+        OverlayDebug.log("applyFocus -> focusable=\(focusable)")
         window?.ignoresMouseEvents = !focusable
     }
 
     func updateScreenCaptureVisibility(hidden: Bool) {
+        OverlayDebug.log("updateScreenCaptureVisibility -> hidden=\(hidden)")
         hidesFromScreenCapture = hidden
         window?.sharingType = hidden ? .none : .readOnly
     }
@@ -219,11 +263,17 @@ private extension OverlayWindowManager {
 extension OverlayWindowManager {
     /// Подгоняет NSPanel под intrinsic-размер SwiftUI-контента (без бесконечных высот).
     func resizeToFitContent(animate: Bool = true) {
-        guard let window = window else { return }
+        guard let window = window else {
+            OverlayDebug.log("resizeToFitContent skipped (no window)")
+            return
+        }
 
         // Берём уже существующий NSHostingView<AnyView>
         let hosting = hostingView ?? (window.contentView as? NSHostingView<AnyView>)
-        guard let hosting else { return }
+        guard let hosting else {
+            OverlayDebug.log("resizeToFitContent skipped (no hosting view)")
+            return
+        }
 
         hosting.layoutSubtreeIfNeeded()
 
@@ -244,6 +294,8 @@ extension OverlayWindowManager {
         // вернуть как было (на всякий)
         hosting.setFrameSize(originalSize)
 
+        OverlayDebug.log("resizeToFitContent measured. availableWidth=\(availableWidth) hardMaxHeight=\(hardMaxHeight) measured=\(measured) originalSize=\(originalSize) lastContentSize=\(lastContentSize)")
+
         // Санитизируем
         if !measured.width.isFinite || measured.width <= 0 { measured.width = availableWidth }
         if !measured.height.isFinite || measured.height <= 0 { measured.height = minimumContentSize.height }
@@ -255,6 +307,7 @@ extension OverlayWindowManager {
         // Ранний выход, если почти не изменилось
         if abs(targetW - lastContentSize.width) < 0.5 &&
            abs(targetH - lastContentSize.height) < 0.5 {
+            OverlayDebug.log("resizeToFitContent early-exit (delta < 0.5). targetW=\(targetW) targetH=\(targetH)")
             return
         }
 
@@ -266,6 +319,8 @@ extension OverlayWindowManager {
         frame.size.height = targetH
         frame.size.width  = max(frame.size.width, targetW)
 
+        OverlayDebug.log("resizeToFitContent applying frame. targetW=\(targetW) targetH=\(targetH) deltaH=\(deltaH) animate=\(animate) currentFrame=\(window.frame) newFrame=\(frame)")
+
         // выставляем фрейм (лучше через анимационный контекст)
         if animate {
             NSAnimationContext.runAnimationGroup { ctx in
@@ -276,6 +331,7 @@ extension OverlayWindowManager {
         } else {
             window.setFrame(frame, display: true)
         }
+        OverlayDebug.log("resizeToFitContent completed. finalFrame=\(window.frame)")
         lastContentSize = CGSize(width: targetW, height: targetH)
     }
 }
@@ -393,10 +449,15 @@ extension OverlayWindowManager {
     /// Центрирует окно так, чтобы ВЕРХНЯЯ КРОМКА была выровнена по центру экрана.
     /// topInset — если нужно опустить якорь чуть ниже верхней кромки (например, на высоту паддинга тулбара).
     func centerTop(on screen: NSScreen, topInset: CGFloat = 12, animate: Bool = false) {
-        guard let w = window else { return }
+        guard let w = window else {
+            OverlayDebug.log("centerTop skipped (no window)")
+            return
+        }
             // Экран — тот, на котором сейчас окно; fallback на main
             let screen = w.screen ?? NSScreen.main!
             let vf = screen.visibleFrame
+
+            OverlayDebug.log("centerTop start. topInset=\(topInset) animate=\(animate) screen=\(String(describing: screen.localizedName)) visibleFrame=\(vf) windowFrame=\(w.frame)")
 
             var f = w.frame
             let size = f.size // берем фактический размер окна
@@ -408,6 +469,8 @@ extension OverlayWindowManager {
 
             f = clamped(f, to: vf)
 
+            OverlayDebug.log("centerTop computed frame=\(f)")
+
             if animate {
                 NSAnimationContext.runAnimationGroup { ctx in
                     ctx.duration = 0.25
@@ -417,5 +480,6 @@ extension OverlayWindowManager {
             } else {
                 w.setFrame(f, display: true)
             }
+            OverlayDebug.log("centerTop finished. newFrame=\(w.frame)")
     }
 }
