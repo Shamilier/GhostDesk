@@ -22,6 +22,7 @@ db.serialize(() => {
       password_hash TEXT NOT NULL,
       token TEXT NOT NULL,
       plan TEXT NOT NULL DEFAULT 'free',
+      token_balance INTEGER NOT NULL DEFAULT 0,
       referral TEXT DEFAULT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`
@@ -30,6 +31,28 @@ db.serialize(() => {
   db.run(
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)`
   );
+
+  db.all('PRAGMA table_info(users)', (err, columns) => {
+    if (err) {
+      console.error('Failed to inspect users table for migrations', err);
+      return;
+    }
+
+    const hasTokenBalance = Array.isArray(columns)
+      ? columns.some((column) => column && column.name === 'token_balance')
+      : false;
+
+    if (!hasTokenBalance) {
+      db.run(
+        `ALTER TABLE users ADD COLUMN token_balance INTEGER NOT NULL DEFAULT 0`,
+        (alterErr) => {
+          if (alterErr) {
+            console.error('Failed to add token_balance column to users table', alterErr);
+          }
+        }
+      );
+    }
+  });
 });
 
 module.exports = db;

@@ -21,6 +21,7 @@ const GHOSTAI_API_BASE = 'https://api.ghostai.ru';
 const ASK_TIMEOUT_MS = 60_000;
 const PORT = process.env.PORT || 3000;
 const SESSION_SECRET = process.env.SESSION_SECRET || 'ghostai_super_secret';
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || null;
 const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 32);
 
 const YOOKASSA_SHOP_ID = process.env.YOOKASSA_SHOP_ID || '1205952';
@@ -137,6 +138,115 @@ const loadUserById = (userId) =>
         return reject(err);
       }
       return resolve(row || null);
+    });
+  });
+
+class InsufficientTokensError extends Error {
+  constructor(tokenBalance) {
+    super('Insufficient tokens');
+    this.name = 'InsufficientTokensError';
+    this.tokenBalance = tokenBalance;
+  }
+}
+
+const getUserTokenBalance = (userId) =>
+  new Promise((resolve, reject) => {
+    if (!userId) {
+      return reject(new Error('User id is required to load token balance'));
+    }
+
+    db.get('SELECT token_balance FROM users WHERE id = ?', [userId], (err, row) => {
+      if (err) {
+        return reject(err);
+      }
+      if (!row) {
+        return reject(new Error('User not found'));
+      }
+      return resolve(Number(row.token_balance) || 0);
+    });
+  });
+
+const debitUserTokens = (userId, amount) =>
+  new Promise((resolve, reject) => {
+    if (!userId) {
+      return reject(new Error('User id is required to debit tokens'));
+    }
+
+    const parsedAmount = Number(amount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      return reject(new Error('Amount must be a positive number'));
+    }
+
+    const debitAmount = Math.floor(parsedAmount);
+    if (debitAmount !== parsedAmount) {
+      return reject(new Error('Amount must be an integer number of tokens'));
+    }
+
+    db.serialize(() => {
+      db.run('BEGIN IMMEDIATE TRANSACTION', (beginErr) => {
+        if (beginErr) {
+          return reject(beginErr);
+        }
+
+        db.get('SELECT token_balance FROM users WHERE id = ?', [userId], (selectErr, row) => {
+          if (selectErr) {
+            return db.run('ROLLBACK', (rollbackErr) => {
+              if (rollbackErr) {
+                console.error('Failed to rollback transaction after select error', rollbackErr);
+              }
+              return reject(selectErr);
+            });
+          }
+
+          if (!row) {
+            return db.run('ROLLBACK', (rollbackErr) => {
+              if (rollbackErr) {
+                console.error('Failed to rollback transaction after missing user', rollbackErr);
+              }
+              return reject(new Error('User not found'));
+            });
+          }
+
+          const currentBalance = Number(row.token_balance) || 0;
+          if (currentBalance < debitAmount) {
+            return db.run('ROLLBACK', (rollbackErr) => {
+              if (rollbackErr) {
+                console.error('Failed to rollback transaction after insufficient tokens', rollbackErr);
+              }
+              return reject(new InsufficientTokensError(currentBalance));
+            });
+          }
+
+          const newBalance = currentBalance - debitAmount;
+          db.run(
+            'UPDATE users SET token_balance = ? WHERE id = ?',
+            [newBalance, userId],
+            (updateErr) => {
+              if (updateErr) {
+                return db.run('ROLLBACK', (rollbackErr) => {
+                  if (rollbackErr) {
+                    console.error('Failed to rollback transaction after update error', rollbackErr);
+                  }
+                  return reject(updateErr);
+                });
+              }
+
+              db.run('COMMIT', (commitErr) => {
+                if (commitErr) {
+                  return db.run('ROLLBACK', (rollbackErr) => {
+                    if (rollbackErr) {
+                      console.error('Failed to rollback transaction after commit error', rollbackErr);
+                    }
+                    return reject(commitErr);
+                  });
+                }
+
+                return resolve({ token_balance: newBalance });
+              });
+            }
+          );
+        });
+      });
     });
   });
 
@@ -1636,6 +1746,48 @@ app.post('/oauth/revoke', async (req, res) => {
   } catch (err) {
     console.error('OAuth revoke endpoint error', err);
     return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+app.post('/internal/users/:id/tokens/debit', async (req, res) => {
+  const providedSecret = req.get('X-Internal-Secret');
+  if (!INTERNAL_API_SECRET || providedSecret !== INTERNAL_API_SECRET) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+
+  const userId = Number.parseInt(req.params.id, 10);
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return res.status(400).json({ error: 'invalid_user_id' });
+  }
+
+  const { amount } = req.body || {};
+  if (typeof amount === 'undefined') {
+    return res.status(400).json({ error: 'invalid_amount', message: 'Amount is required' });
+  }
+
+  const amountNumber = Number(amount);
+  if (!Number.isFinite(amountNumber) || amountNumber <= 0 || !Number.isInteger(amountNumber)) {
+    return res.status(400).json({ error: 'invalid_amount', message: 'Amount must be a positive integer' });
+  }
+
+  try {
+    const result = await debitUserTokens(userId, amountNumber);
+    return res.status(200).json({ token_balance: result.token_balance });
+  } catch (err) {
+    if (err instanceof InsufficientTokensError) {
+      return res.status(409).json({ error: 'insufficient_tokens', token_balance: err.tokenBalance });
+    }
+    if (err && err.message === 'User not found') {
+      return res.status(404).json({ error: 'user_not_found' });
+    }
+
+    console.error('Failed to debit user tokens', {
+      userId,
+      amount: amountNumber,
+      error: err,
+    });
+
+    return res.status(500).json({ error: 'internal_error' });
   }
 });
 
