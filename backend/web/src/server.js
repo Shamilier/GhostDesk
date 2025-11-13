@@ -1,7 +1,7 @@
 require('ts-node/register/transpile-only');
 
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '..', '.env.local') });
+require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
@@ -23,6 +23,212 @@ const PORT = process.env.PORT || 3000;
 const SESSION_SECRET = process.env.SESSION_SECRET || 'ghostai_super_secret';
 const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 32);
 
+const YOOKASSA_SHOP_ID = process.env.YOOKASSA_SHOP_ID || '1205952';
+const YOOKASSA_API_KEY = process.env.YOOKASSA_API_KEY || process.env.YOOKASSA_SECRET_KEY || null;
+const YOOKASSA_API_BASE = 'https://api.yookassa.ru/v3';
+const BILLING_RETURN_BASE_URL = process.env.BILLING_RETURN_BASE_URL || process.env.APP_BASE_URL || null;
+const PLAN_REFRESH_INTERVAL_MS = 60_000;
+
+const BILLING_PLANS = {
+  plus: {
+    label: 'Plus',
+    prices: {
+      monthly: {
+        amount: { value: '1199.00', currency: 'RUB' },
+        description: 'Ghostdesk Plus — ежемесячная подписка',
+      },
+      annual: {
+        amount: { value: '11990.00', currency: 'RUB' },
+        description: 'Ghostdesk Plus — годовая подписка',
+      },
+    },
+  },
+  pro: {
+    label: 'Pro',
+    prices: {
+      monthly: {
+        amount: { value: '4999.00', currency: 'RUB' },
+        description: 'Ghostdesk Pro — ежемесячная подписка',
+      },
+      annual: {
+        amount: { value: '49990.00', currency: 'RUB' },
+        description: 'Ghostdesk Pro — годовая подписка',
+      },
+    },
+  },
+};
+
+const PLAN_LABELS = {
+  free: 'Free',
+  plus_monthly: 'Plus — Месячная подписка',
+  plus_annual: 'Plus — Годовая подписка',
+  pro_monthly: 'Pro — Месячная подписка',
+  pro_annual: 'Pro — Годовая подписка',
+};
+
+const isBillingConfigured = () => Boolean(YOOKASSA_SHOP_ID && YOOKASSA_API_KEY);
+
+const buildPlanValue = (planId, cycle) => `${planId}_${cycle}`;
+
+const isSupportedPlanSelection = (planId, cycle) => {
+  if (!planId || !cycle) {
+    return false;
+  }
+
+  const normalizedPlanId = String(planId).toLowerCase();
+  const normalizedCycle = String(cycle).toLowerCase();
+  const plan = BILLING_PLANS[normalizedPlanId];
+
+  if (!plan) {
+    return false;
+  }
+
+  return Boolean(plan.prices[normalizedCycle]);
+};
+
+const getPlanPricing = (planId, cycle) => {
+  if (!isSupportedPlanSelection(planId, cycle)) {
+    return null;
+  }
+
+  return BILLING_PLANS[String(planId).toLowerCase()].prices[String(cycle).toLowerCase()];
+};
+
+const buildYookassaAuthHeader = () => {
+  const credentials = Buffer.from(`${YOOKASSA_SHOP_ID}:${YOOKASSA_API_KEY}`).toString('base64');
+  return `Basic ${credentials}`;
+};
+
+const getPlanLabel = (planValue) => {
+  if (!planValue) {
+    return '';
+  }
+
+  const key = String(planValue);
+  if (PLAN_LABELS[key]) {
+    return PLAN_LABELS[key];
+  }
+
+  return key
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ');
+};
+
+const persistUserPlan = (userId, planValue) =>
+  new Promise((resolve, reject) => {
+    if (!userId) {
+      return reject(new Error('User id is required to update plan'));
+    }
+
+    db.run('UPDATE users SET plan = ? WHERE id = ?', [planValue, userId], (err) => {
+      if (err) {
+        return reject(err);
+      }
+      return resolve();
+    });
+  });
+
+const loadUserById = (userId) =>
+  new Promise((resolve, reject) => {
+    db.get('SELECT id, email, token, plan, referral, created_at FROM users WHERE id = ?', [userId], (err, row) => {
+      if (err) {
+        return reject(err);
+      }
+      return resolve(row || null);
+    });
+  });
+
+const isValidYookassaWebhookAuth = (authorizationHeader) => {
+  if (!authorizationHeader || typeof authorizationHeader !== 'string') {
+    return false;
+  }
+
+  if (!authorizationHeader.startsWith('Basic ')) {
+    return false;
+  }
+
+  try {
+    const decoded = Buffer.from(authorizationHeader.slice(6), 'base64').toString('utf8');
+    return decoded === `${YOOKASSA_SHOP_ID}:${YOOKASSA_API_KEY}`;
+  } catch (err) {
+    return false;
+  }
+};
+
+const createYookassaPayment = async ({ planId, cycle, userId, returnUrl }) => {
+  const pricing = getPlanPricing(planId, cycle);
+  if (!pricing) {
+    throw new Error('Unsupported plan or billing cycle');
+  }
+
+  const idempotenceKey = crypto.randomUUID();
+
+  const body = {
+    amount: pricing.amount, // { value: '...', currency: 'RUB' } — как у тебя в getPlanPricing
+    capture: true,
+    confirmation: {
+      type: 'redirect',
+      return_url: returnUrl,
+    },
+    description: pricing.description,
+    metadata: {
+      user_id: String(userId),
+      plan: String(planId).toLowerCase(),
+      cycle: String(cycle).toLowerCase(),
+    },
+  };
+
+  const response = await fetch(`${YOOKASSA_API_BASE}/payments`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Idempotence-Key': idempotenceKey,
+      Authorization: buildYookassaAuthHeader(),
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+
+    console.error(
+      '[YooKassa] Failed to create payment',
+      {
+        status: response.status,
+        body: errorBody,
+        requestBody: body,
+      }
+    );
+
+    const error = new Error('Failed to create YooKassa payment');
+    error.status = response.status;
+    error.details = errorBody;
+    throw error;
+  }
+
+  return await response.json();
+};
+
+
+const fetchYookassaPayment = async (paymentId) => {
+  const response = await fetch(`${YOOKASSA_API_BASE}/payments/${paymentId}`, {
+    headers: {
+      Authorization: buildYookassaAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    const error = new Error('Failed to fetch YooKassa payment');
+    error.status = response.status;
+    error.details = await response.text();
+    throw error;
+  }
+
+  return response.json();
+};
+
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, '..', 'views'));
 app.set('trust proxy', 1);
@@ -32,17 +238,43 @@ app.use(
     contentSecurityPolicy: {
       useDefaults: true,
       directives: {
-        "img-src": ["'self'", 'data:', 'https://images.unsplash.com'],
+        "img-src": [
+          "'self'",
+          "data:",
+          "https://images.unsplash.com",
+        ],
         "script-src": ["'self'"],
-        "style-src": ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-        "font-src": ["'self'", 'https://fonts.gstatic.com', 'data:'],
-        "form-action": ["'self'", 'https://disciplaner.online', 'https://app.disciplaner.online'],
-        "navigate-to": ["'self'", 'ghostai:'],
+        "style-src": [
+          "'self'",
+          "'unsafe-inline'",
+          "https://fonts.googleapis.com",
+        ],
+        "font-src": [
+          "'self'",
+          "https://fonts.gstatic.com",
+          "data:",
+        ],
+        "form-action": [
+          "'self'",
+          "https://disciplaner.online",
+          "https://app.disciplaner.online",
+          "https://yookassa.ru",
+          "https://yoomoney.ru",
+          "https://checkout.yookassa.ru",
+        ],
+        "navigate-to": [
+          "'self'",
+          "ghostai:",
+          "https://yookassa.ru",
+          "https://yoomoney.ru",
+          "https://checkout.yookassa.ru",
+        ],
       },
     },
     crossOriginEmbedderPolicy: false,
   })
 );
+
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -74,8 +306,43 @@ app.use(
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+app.use(async (req, res, next) => {
+  if (!req.session?.user?.id) {
+    return next();
+  }
+
+  const now = Date.now();
+  const lastRefreshedAt = req.session.userPlanRefreshedAt || 0;
+  if (now - lastRefreshedAt < PLAN_REFRESH_INTERVAL_MS) {
+    return next();
+  }
+
+  try {
+    const freshUser = await loadUserById(req.session.user.id);
+    req.session.userPlanRefreshedAt = now;
+
+    if (freshUser) {
+      req.session.user = {
+        id: freshUser.id,
+        email: freshUser.email,
+        token: freshUser.token,
+        plan: freshUser.plan,
+        referral: freshUser.referral,
+        created_at: freshUser.created_at,
+      };
+      res.locals.currentUser = req.session.user;
+      res.locals.currentUserPlanLabel = getPlanLabel(freshUser.plan);
+    }
+  } catch (err) {
+    console.error('Failed to refresh user plan from session', err);
+  }
+
+  return next();
+});
+
 app.use((req, res, next) => {
   res.locals.currentUser = req.session.user || null;
+  res.locals.currentUserPlanLabel = req.session.user ? getPlanLabel(req.session.user.plan) : null;
   res.locals.flash = req.session.flash || null;
   delete req.session.flash;
   next();
@@ -479,6 +746,190 @@ const requireAuth = (req, res, next) => {
   return next();
 };
 
+app.post('/api/billing/checkout', requireAuth, async (req, res) => {
+  // 1. Проверяем, вообще настроен ли биллинг
+  if (!isBillingConfigured()) {
+    return res.status(503).json({ error: 'billing_not_configured' });
+  }
+
+  // 2. Достаём план и цикл из тела запроса
+  const { plan, cycle } = req.body || {};
+  const normalizedCycle = cycle === 'annual' ? 'annual' : 'monthly';
+
+  if (!isSupportedPlanSelection(plan, normalizedCycle)) {
+    return res.status(400).json({ error: 'invalid_plan_selection' });
+  }
+
+  // 3. Формируем returnUrl
+  const baseUrl = BILLING_RETURN_BASE_URL
+    ? BILLING_RETURN_BASE_URL.replace(/\/$/, '')
+    : `${req.protocol}://${req.get('host')}`;
+  const returnUrl = `${baseUrl}/billing/return`;
+
+  try {
+    // 4. Создаём платёж в YooKassa
+    const payment = await createYookassaPayment({
+      planId: plan,
+      cycle: normalizedCycle,
+      userId: req.session.user.id,
+      returnUrl,
+    });
+
+    const confirmationUrl = payment?.confirmation?.confirmation_url;
+    if (!confirmationUrl) {
+      console.error('YooKassa response missing confirmation URL', payment);
+      return res.status(502).json({ error: 'missing_confirmation_url' });
+    }
+
+    // 5. Сохраняем последний платеж в сессию — пригодится в /billing/return
+    req.session.lastYookassaPayment = {
+      id: payment.id,
+      plan: String(plan),
+      cycle: normalizedCycle,
+      createdAt: Date.now(),
+    };
+
+    // 6. Отдаём фронту URL для редиректа
+    return res.json({
+      confirmationUrl,
+      paymentId: payment.id,
+    });
+  } catch (err) {
+    console.error('Failed to create YooKassa payment', {
+      message: err.message,
+      status: err.status,
+      details: err.details,
+    });
+    return res.status(502).json({ error: 'payment_creation_failed' });
+  }
+});
+
+
+app.get('/billing/return', requireAuth, async (req, res) => {
+  // 1. Проверяем, вообще настроен ли биллинг
+  if (!isBillingConfigured()) {
+    req.session.flash = {
+      type: 'error',
+      message: 'Оплата временно недоступна. Попробуйте позже.',
+    };
+    return res.redirect('/dashboard');
+  }
+
+  // 2. Пытаемся достать paymentId:
+  //    сначала из query (payment_id/paymentId),
+  //    потом из сессии (куда мы его положили при создании платежа)
+  let paymentId = req.query.payment_id || req.query.paymentId;
+  const lastPayment = req.session.lastYookassaPayment;
+
+  if (!paymentId && lastPayment && lastPayment.id) {
+    paymentId = lastPayment.id;
+  }
+
+  if (!paymentId) {
+    req.session.flash = {
+      type: 'error',
+      message: 'Не удалось определить платеж YooKassa.',
+    };
+    return res.redirect('/dashboard');
+  }
+
+  try {
+    const payment = await fetchYookassaPayment(paymentId);
+
+    if (!payment || payment.status !== 'succeeded') {
+      req.session.flash = {
+        type: 'error',
+        message: 'Платеж не был завершен.',
+      };
+      return res.redirect('/dashboard');
+    }
+
+    const metadata = payment.metadata || {};
+    const planId = metadata.plan;
+    const cycle = metadata.cycle;
+    const userId = metadata.user_id ? Number(metadata.user_id) : null;
+
+    if (!userId || userId !== req.session.user.id || !isSupportedPlanSelection(planId, cycle)) {
+      req.session.flash = {
+        type: 'error',
+        message: 'Не удалось применить тариф по платежу.',
+      };
+      return res.redirect('/dashboard');
+    }
+
+    const planValue = buildPlanValue(planId, cycle);
+    await persistUserPlan(userId, planValue);
+
+    // Обновляем сессию и locals, чтобы на /dashboard сразу был новый план
+    req.session.user.plan = planValue;
+    req.session.userPlanRefreshedAt = Date.now();
+    res.locals.currentUser = req.session.user;
+    res.locals.currentUserPlanLabel = getPlanLabel(planValue);
+
+    // Можно почистить сохранённый платеж — он больше не нужен
+    req.session.lastYookassaPayment = null;
+
+    req.session.flash = {
+      type: 'success',
+      message: `Подписка «${getPlanLabel(planValue)}» активирована.`,
+    };
+
+    return res.redirect('/dashboard');
+  } catch (err) {
+    console.error('Failed to finalize YooKassa payment', err);
+
+    req.session.flash = {
+      type: 'error',
+      message: 'Не удалось подтвердить оплату. Свяжитесь с поддержкой.',
+    };
+    return res.redirect('/dashboard');
+  }
+});
+
+
+app.post('/webhooks/yookassa', async (req, res) => {
+  if (!isBillingConfigured()) {
+    return res.status(503).json({ error: 'billing_not_configured' });
+  }
+
+  if (!isValidYookassaWebhookAuth(req.get('authorization'))) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+
+  const event = req.body;
+  if (!event || event.event !== 'payment.succeeded') {
+    return res.status(200).json({ received: true });
+  }
+
+  const payment = event.object;
+  if (!payment || payment.status !== 'succeeded') {
+    return res.status(200).json({ received: true });
+  }
+
+  const metadata = payment.metadata || {};
+  const planId = metadata.plan;
+  const cycle = metadata.cycle;
+  const userId = metadata.user_id ? Number(metadata.user_id) : null;
+
+  if (!userId || !isSupportedPlanSelection(planId, cycle)) {
+    return res.status(200).json({ received: true });
+  }
+
+  try {
+    const planValue = buildPlanValue(planId, cycle);
+    await persistUserPlan(userId, planValue);
+    console.info('YooKassa webhook applied plan', {
+      userId,
+      planValue,
+      paymentId: payment.id,
+    });
+    return res.status(200).json({ received: true });
+  } catch (err) {
+    console.error('Failed to persist plan from YooKassa webhook', err);
+    return res.status(500).json({ error: 'plan_update_failed' });
+  }
+});
+
 const buildGhostAiAuthHeader = (user) => {
   if (!user) {
     return null;
@@ -689,6 +1140,7 @@ app.post('/register', async (req, res) => {
           }
 
           req.session.user = { id: this.lastID, email: email.toLowerCase(), token, plan: 'free', referral: referral || null };
+          req.session.userPlanRefreshedAt = Date.now();
           req.session.flash = { type: 'success', message: 'Добро пожаловать в Ghost AI!' };
 
           if (oauthContinue) {
@@ -795,6 +1247,7 @@ app.post('/login', (req, res) => {
       referral: user.referral,
       created_at: user.created_at,
     };
+    req.session.userPlanRefreshedAt = Date.now();
     req.session.flash = { type: 'success', message: 'С возвращением!' };
 
     if (oauthContinue) {
@@ -832,10 +1285,30 @@ app.post('/logout', (req, res) => {
   });
 });
 
-app.get('/dashboard', requireAuth, (req, res) => {
-  res.render('dashboard', {
+app.get('/dashboard', requireAuth, async (req, res, next) => {
+  try {
+    const freshUser = await loadUserById(req.session.user.id);
+    if (freshUser) {
+      req.session.user = {
+        id: freshUser.id,
+        email: freshUser.email,
+        token: freshUser.token,
+        plan: freshUser.plan,
+        referral: freshUser.referral,
+        created_at: freshUser.created_at,
+      };
+      res.locals.currentUser = req.session.user;
+      res.locals.currentUserPlanLabel = getPlanLabel(freshUser.plan);
+    }
+  } catch (err) {
+    console.error('Failed to refresh user data before dashboard render', err);
+    return next(err);
+  }
+
+  return res.render('dashboard', {
     title: 'Личный кабинет',
     user: req.session.user,
+    planLabel: getPlanLabel(req.session.user?.plan),
   });
 });
 

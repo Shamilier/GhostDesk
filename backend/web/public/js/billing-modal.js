@@ -1,16 +1,20 @@
 const modal = document.querySelector('#billing-modal');
+
 if (modal) {
   const openTrigger = document.querySelector('[data-open-billing]');
   const closeTriggers = modal.querySelectorAll('[data-close-billing]');
   const dialog = modal.querySelector('.billing-modal__dialog');
-  const cycleButtons = modal.querySelectorAll('[data-cycle]');
-  const priceTargets = modal.querySelectorAll('[data-plan-card]');
+  const cycleButtons = Array.from(modal.querySelectorAll('[data-cycle]'));
+  const priceTargets = Array.from(modal.querySelectorAll('[data-plan-card]'));
+  const planButtons = Array.from(modal.querySelectorAll('[data-plan-action]'));
+  const feedbackElement = modal.querySelector('[data-billing-feedback]');
 
   if (!dialog) {
     console.warn('Billing modal dialog element not found.');
   } else {
-    const initializeModal = () => {
-      let lastFocusedElement = null;
+    let lastFocusedElement = null;
+    let currentCycle = 'monthly';
+    let isSubmitting = false;
 
     const focusableSelector = [
       'a[href]',
@@ -20,13 +24,28 @@ if (modal) {
       'input[type="radio"]:not([disabled])',
       'input[type="checkbox"]:not([disabled])',
       'select:not([disabled])',
-      '[tabindex]:not([tabindex="-1"])'
+      '[tabindex]:not([tabindex="-1"])',
     ].join(', ');
 
-    const getFocusableElements = () => {
-      return Array.from(dialog.querySelectorAll(focusableSelector)).filter(
-        (element) => element.offsetParent !== null
-      );
+    const getFocusableElements = () =>
+      Array.from(dialog.querySelectorAll(focusableSelector)).filter((element) => element.offsetParent !== null);
+
+    const setFeedback = (message, type = 'error') => {
+      if (!feedbackElement) {
+        return;
+      }
+
+      if (!message) {
+        feedbackElement.textContent = '';
+        feedbackElement.setAttribute('hidden', '');
+        feedbackElement.classList.remove('is-error', 'is-success');
+        return;
+      }
+
+      feedbackElement.textContent = message;
+      feedbackElement.classList.toggle('is-error', type === 'error');
+      feedbackElement.classList.toggle('is-success', type === 'success');
+      feedbackElement.removeAttribute('hidden');
     };
 
     const toggleVisibility = (shouldShow) => {
@@ -45,6 +64,7 @@ if (modal) {
         if (lastFocusedElement) {
           lastFocusedElement.focus({ preventScroll: true });
         }
+        setFeedback('');
       }
     };
 
@@ -53,7 +73,9 @@ if (modal) {
         const monthlyPrice = card.getAttribute('data-monthly-price');
         const annualPrice = card.getAttribute('data-annual-price');
         const priceElement = card.querySelector('[data-plan-price]');
-        if (!priceElement) return;
+        if (!priceElement) {
+          return;
+        }
 
         priceElement.textContent = billingCycle === 'annual' ? annualPrice : monthlyPrice;
       });
@@ -67,9 +89,60 @@ if (modal) {
       if (annualNote) {
         annualNote.style.opacity = billingCycle === 'annual' ? '1' : '0.45';
       }
+
+      currentCycle = billingCycle;
     };
 
-    openTrigger?.addEventListener('click', () => toggleVisibility(true));
+    const handleCheckout = async (planId, trigger) => {
+      if (!planId || isSubmitting) {
+        return;
+      }
+
+      isSubmitting = true;
+      setFeedback('');
+
+      if (trigger) {
+        trigger.setAttribute('data-loading', 'true');
+        trigger.disabled = true;
+      }
+
+      try {
+        const response = await fetch('/api/billing/checkout', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ plan: planId, cycle: currentCycle }),
+        });
+
+        if (response.status === 401) {
+          window.location.href = '/login';
+          return;
+        }
+
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok || !payload.confirmationUrl) {
+          throw new Error(payload.error || 'payment_creation_failed');
+        }
+
+        window.location.href = payload.confirmationUrl;
+      } catch (error) {
+        console.error('Failed to initialize YooKassa payment', error);
+        setFeedback('Не удалось инициировать оплату. Попробуйте еще раз или напишите на support@ghostai.ru.', 'error');
+      } finally {
+        isSubmitting = false;
+        if (trigger) {
+          trigger.removeAttribute('data-loading');
+          trigger.disabled = false;
+        }
+      }
+    };
+
+    openTrigger?.addEventListener('click', () => {
+      toggleVisibility(true);
+      setFeedback('');
+    });
 
     closeTriggers.forEach((trigger) => {
       trigger.addEventListener('click', () => toggleVisibility(false));
@@ -85,6 +158,13 @@ if (modal) {
       button.addEventListener('click', () => {
         const nextCycle = button.dataset.cycle === 'annual' ? 'annual' : 'monthly';
         updatePrices(nextCycle);
+      });
+    });
+
+    planButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const planId = button.dataset.planAction;
+        handleCheckout(planId, button);
       });
     });
 
@@ -119,9 +199,6 @@ if (modal) {
       }
     });
 
-    updatePrices('monthly');
-    };
-
-    initializeModal();
+    updatePrices(currentCycle);
   }
 }
