@@ -2278,18 +2278,15 @@ body.landing-body::after {
 
 .billing-modal__dialog {
   position: relative;
-  width: min(920px, 100%);
-  max-height: min(90vh, 720px);
+  width: min(960px, 100%);
   background: rgba(19, 19, 30, 0.94);
   border: 1px solid rgba(160, 106, 255, 0.4);
   border-radius: 28px;
-  padding: 32px 36px;
+  padding: 40px;
   box-shadow: 0 32px 80px rgba(10, 10, 20, 0.65);
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+  gap: 32px;
 }
 
 .billing-modal__dialog:focus-visible {
@@ -2324,7 +2321,7 @@ body.landing-body::after {
 .billing-modal__header {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .billing-modal__eyebrow {
@@ -2343,8 +2340,8 @@ body.landing-body::after {
 
 .billing-modal__subtitle {
   color: var(--text-secondary);
-  max-width: 520px;
-  line-height: 1.5;
+  max-width: 540px;
+  line-height: 1.6;
 }
 
 .billing-modal__cycle {
@@ -2390,7 +2387,7 @@ body.landing-body::after {
 
 .billing-modal__plans {
   display: grid;
-  gap: 16px;
+  gap: 20px;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
@@ -2400,10 +2397,10 @@ body.landing-body::after {
   background: rgba(24, 24, 36, 0.88);
   border: 1px solid rgba(91, 140, 255, 0.28);
   border-radius: 24px;
-  padding: 24px;
+  padding: 28px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 20px;
   transition: transform 0.25s ease, border 0.25s ease, box-shadow 0.25s ease;
 }
 
@@ -2477,7 +2474,7 @@ body.landing-body::after {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   color: var(--text-primary);
   padding-left: 0;
 }
@@ -2485,7 +2482,7 @@ body.landing-body::after {
 .plan-card__features li {
   position: relative;
   padding-left: 26px;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 
 .plan-card__features li::before {
@@ -2514,7 +2511,7 @@ body.landing-body::after {
   }
 
   .billing-modal__dialog {
-    padding: 28px 20px;
+    padding: 32px 20px;
   }
 
   .billing-modal__plans {
