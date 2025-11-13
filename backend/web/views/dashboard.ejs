@@ -20,7 +20,7 @@
           <h3>Тариф</h3>
           <p class="stat-value"><%= user.plan %></p>
           <p class="stat-description">Обновите тариф, чтобы получить доступ к расширенной аналитике и API.</p>
-          <a class="ghost-button" href="/#plans">Выбрать тариф</a>
+          <button class="primary-button" type="button" data-open-billing>Оплатить подписку</button>
         </article>
         <article class="stat-card">
           <h3>Токен доступа</h3>
@@ -41,8 +41,88 @@
         </article>
       </section>
     </main>
+    <div class="billing-modal" id="billing-modal" hidden>
+      <div class="billing-modal__backdrop" data-close-billing></div>
+      <div class="billing-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="billing-modal-title" tabindex="-1">
+        <button class="billing-modal__close" type="button" data-close-billing aria-label="Закрыть окно">
+          <span aria-hidden="true">×</span>
+        </button>
+        <header class="billing-modal__header">
+          <p class="billing-modal__eyebrow">Выберите тариф</p>
+          <h2 class="billing-modal__title" id="billing-modal-title">Инвестируйте в продуктивность команды</h2>
+          <p class="billing-modal__subtitle">
+            Невидимость включена во всех планах. Оплата за использование — по токенам, без скрытых комиссий.
+          </p>
+          <div class="billing-modal__cycle">
+            <span>Период</span>
+            <div class="billing-cycle-toggle" role="group" aria-label="Период оплаты">
+              <button class="billing-cycle-toggle__option is-active" type="button" data-cycle="monthly">Monthly</button>
+              <button class="billing-cycle-toggle__option" type="button" data-cycle="annual">Annually</button>
+            </div>
+            <span class="billing-modal__cycle-note" data-annual-note>2 месяца бесплатно при годовой оплате</span>
+          </div>
+        </header>
+        <div class="billing-modal__plans">
+          <article class="plan-card" data-plan-card data-plan="free" data-monthly-price="Free" data-annual-price="Free">
+            <div class="plan-card__header">
+              <p class="plan-card__eyebrow">Starter / Free</p>
+              <h3 class="plan-card__title">Free</h3>
+              <p class="plan-card__price" data-plan-price>Free</p>
+              <p class="plan-card__description">
+                Все базовые функции. Невидимость включена. Без пост-обработки.
+              </p>
+            </div>
+            <ul class="plan-card__features">
+              <li>Невидимость (режим скрытия) — включено</li>
+              <li>Лимит: 25 токенов в неделю (≈100/мес)</li>
+              <li>Транскрибация и RT-подсказки в пределах лимита</li>
+              <li>Пост-анализ: недоступен</li>
+              <li>Докупить токены можно в любой момент</li>
+            </ul>
+            <p class="plan-card__footnote">Лимит обновляется еженедельно. Токены Free не накапливаются.</p>
+          </article>
+          <article class="plan-card plan-card--highlight" data-plan-card data-plan="plus" data-monthly-price="1 199 ₽ / месяц" data-annual-price="11 990 ₽ / год (2 мес. бесплатно)">
+            <div class="plan-card__badge">Most popular</div>
+            <div class="plan-card__header">
+              <p class="plan-card__eyebrow">Plus</p>
+              <h3 class="plan-card__title">Plus</h3>
+              <p class="plan-card__price" data-plan-price>1 199 ₽ / месяц</p>
+              <p class="plan-card__description">
+                Оптимальный план для регулярных звонков и подсказок. Невидимость включена.
+              </p>
+            </div>
+            <ul class="plan-card__features">
+              <li>1 000 токенов в месяц (обновляется ежемесячно)</li>
+              <li>Реальные-временные подсказки (RT)</li>
+              <li>Интеллект-заметки / сводки / фоллоу-апы</li>
+              <li>Поддержка по приоритету стандарт</li>
+            </ul>
+            <p class="plan-card__footnote">Токены не переносятся на следующий месяц. PAYG-докупка доступна всегда.</p>
+            <button class="primary-button plan-card__cta" type="button">Оформить Plus</button>
+          </article>
+          <article class="plan-card plan-card--lux" data-plan-card data-plan="pro" data-monthly-price="4 999 ₽ / месяц" data-annual-price="49 990 ₽ / год (2 мес. бесплатно)">
+            <div class="plan-card__badge plan-card__badge--outline">Pro — Unlimited</div>
+            <div class="plan-card__header">
+              <p class="plan-card__eyebrow">Pro — Unlimited</p>
+              <h3 class="plan-card__title">Pro</h3>
+              <p class="plan-card__price" data-plan-price>4 999 ₽ / месяц</p>
+              <p class="plan-card__description">
+                Для команд и power-users. Невидимость, пост-анализ и повышенные лимиты.
+              </p>
+            </div>
+            <ul class="plan-card__features">
+              <li>“Безлимит” по модели Fair-Use: 10 000 токенов/мес</li>
+              <li>Всё из Plus: транскрибация, пост-анализ, RT-подсказки</li>
+              <li>Приоритетная поддержка</li>
+            </ul>
+            <button class="ghost-button plan-card__cta" type="button">Оформить Pro</button>
+          </article>
+        </div>
+      </div>
+    </div>
     <%- include('partials/footer') %>
     <script src="/js/password-toggle.js" defer></script>
     <script src="/js/token-copy.js" defer></script>
+    <script src="/js/billing-modal.js" defer></script>
   </body>
 </html>
