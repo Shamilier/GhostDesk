@@ -1791,15 +1791,22 @@ app.post('/internal/users/:id/tokens/debit', async (req, res) => {
   }
 });
 
+// вверху файла не забудь:
+// const db = require('./db');
+
 app.get('/oauth/profile', async (req, res) => {
-  const auth = req.headers.authorization;
-  if (auth && auth.startsWith('Bearer web-user-')) {
-    const userId = auth.replace('Bearer web-user-', '').trim();
+  const authHeader = req.headers.authorization || '';
+
+  // Ветка для внутренних web-user-* токенов
+  if (authHeader.startsWith('Bearer web-user-')) {
+    const userId = authHeader.replace('Bearer web-user-', '').trim();
+
     if (!userId) {
       return res.status(400).json({ error: 'invalid_token' });
     }
+
     return res.json({
-      id: userId,
+      id: String(userId),
       email: null,
       plan: 'free',
       referral: null,
@@ -1807,7 +1814,7 @@ app.get('/oauth/profile', async (req, res) => {
     });
   }
 
-  const authHeader = req.headers.authorization || '';
+  // Дальше оставь как было у тебя:
   const tokenMatch = authHeader.match(/^Bearer\s+(\S+)$/i);
 
   if (!tokenMatch) {
@@ -1837,6 +1844,8 @@ app.get('/oauth/profile', async (req, res) => {
     return res.status(500).json({ error: 'server_error' });
   }
 });
+
+
 
 app.get('/api/recordings', async (req, res) => {
   const user = req.session.user;
