@@ -597,28 +597,42 @@ struct OverlayRootView: View {
             .frame(maxWidth: 600)
 
             if showResponse {
-                AIResponseCard(
-                    title: "AI Response",
-                    query: question,
-                    markdown: askVM.answerDraft.isEmpty ? "Генерация ответа…" : askVM.answerDraft,
-                    isStreaming: askVM.isSubmitting,
-                    canStop: askVM.canStop,
-                    onCopy: {
-                        #if os(macOS)
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(askVM.answerDraft, forType: .string)
-                        #endif
-                    },
-                    onClose: {
-                        askVM.cancelStream()
-                        askVM.answerDraft = ""
-                        askVM.answerError = nil
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) { showResponse = false }
-                    },
-                    onStop: { askVM.cancelStream() }
-                )
-                .frame(maxWidth: 600, minHeight: 220)
-                .transition(.move(edge: .top).combined(with: .opacity))
+                if let error = askVM.answerError {
+                    AskErrorCard(
+                        message: error,
+                        onClose: {
+                            askVM.cancelStream()
+                            askVM.answerDraft = ""
+                            askVM.answerError = nil
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) { showResponse = false }
+                        }
+                    )
+                    .frame(maxWidth: 600)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                } else {
+                    AIResponseCard(
+                        title: "AI Response",
+                        query: question,
+                        markdown: askVM.answerDraft.isEmpty ? "Генерация ответа…" : askVM.answerDraft,
+                        isStreaming: askVM.isSubmitting,
+                        canStop: askVM.canStop,
+                        onCopy: {
+                            #if os(macOS)
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(askVM.answerDraft, forType: .string)
+                            #endif
+                        },
+                        onClose: {
+                            askVM.cancelStream()
+                            askVM.answerDraft = ""
+                            askVM.answerError = nil
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) { showResponse = false }
+                        },
+                        onStop: { askVM.cancelStream() }
+                    )
+                    .frame(maxWidth: 600, minHeight: 220)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
         }
         .onChange(of: askVM.isSubmitting) { v in
@@ -626,6 +640,9 @@ struct OverlayRootView: View {
         }
         .onChange(of: askVM.answerDraft) { v in
             if !v.isEmpty { showResponse = true }
+        }
+        .onChange(of: askVM.answerError) { err in
+            if err != nil { withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) { showResponse = true } }
         }
         .frame(maxWidth: 600)  // Фиксируем максимальную ширину всей панели
 
@@ -886,6 +903,47 @@ private struct HintStrip: View {
                     }
                 }
             )
+        }
+    }
+}
+
+private struct AskErrorCard: View {
+    var message: String
+    var onClose: () -> Void
+
+    var body: some View {
+        GlassCard {
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    Label("Ошибка", systemImage: "exclamationmark.triangle.fill")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.red)
+
+                    Spacer()
+
+                    Button(action: onClose) { Image(systemName: "xmark") }
+                        .buttonStyle(MiniIconButton())
+                }
+                .padding(.bottom, 8)
+
+                Divider().overlay(Color.white.opacity(0.10))
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(message)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.red.opacity(0.9))
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let url = URL(string: "https://ghostai.ru") {
+                        Link("Перейти на ghostai.ru", destination: url)
+                            .font(.subheadline.weight(.semibold))
+                            .tint(.accentColor)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+            }
+            .padding(12)
         }
     }
 }
@@ -1328,10 +1386,17 @@ struct GlassPill: ButtonStyle {
 
 @MainActor
 final class AskVM: ObservableObject {
+    private struct TokenBalanceError: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
+
     @Published var isSubmitting: Bool = false
     @Published var answerDraft: String = ""
     @Published var answerError: String? = nil
     @Published var canStop: Bool = false
+
+    private static let insufficientTokensFallbackMessage = "У вас недостаточно токенов. Пополните баланс на сайте ghostai.ru."
 
     private var streamTask: Task<Void, Never>?
     private var streamRunID = UUID()
@@ -1487,12 +1552,18 @@ final class AskVM: ObservableObject {
         }
 
         if !(200..<300).contains(http.statusCode) {
-            var errText = "HTTP \(http.statusCode) \(HTTPURLResponse.localizedString(forStatusCode: http.statusCode))"
             var data = Data()
             do {
                 for try await b in bytes { data.append(b) }
-                if let s = String(data: data, encoding: .utf8), !s.isEmpty { errText += "\n\(s)" }
             } catch {}
+
+            if http.statusCode == 402,
+               let message = Self.parseInsufficientTokensMessage(from: data) {
+                throw TokenBalanceError(message: message)
+            }
+
+            var errText = "HTTP \(http.statusCode) \(HTTPURLResponse.localizedString(forStatusCode: http.statusCode))"
+            if let s = String(data: data, encoding: .utf8), !s.isEmpty { errText += "\n\(s)" }
             throw NSError(domain: "net", code: http.statusCode,
                           userInfo: [NSLocalizedDescriptionKey: errText])
         }
@@ -1539,6 +1610,37 @@ final class AskVM: ObservableObject {
 }
 
 private extension AskVM {
+    static func parseInsufficientTokensMessage(from data: Data) -> String? {
+        struct Payload: Decodable {
+            let error: String?
+            let message: String?
+        }
+
+        if let payload = try? JSONDecoder().decode(Payload.self, from: data),
+           payload.error == "insufficient_tokens" {
+            let trimmed = payload.message?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let trimmed, !trimmed.isEmpty {
+                return trimmed
+            }
+            return insufficientTokensFallbackMessage
+        }
+
+        if data.isEmpty {
+            return insufficientTokensFallbackMessage
+        }
+
+        if let raw = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !raw.isEmpty {
+            if raw.localizedCaseInsensitiveContains("недостаточно") ||
+                raw.localizedCaseInsensitiveContains("insufficient") ||
+                raw.localizedCaseInsensitiveContains("token") {
+                return raw
+            }
+        }
+
+        return nil
+    }
+
     static let fallbackAutoAskPrompt = """
     Ты — Ghost AI-помощник. Пользователь нажал горячую клавишу без голосового контекста. Проанализируй приложенный скриншот, опиши, что на нём происходит, какие проблемы заметны и какие шаги стоит предпринять, чтобы их решить. Отвечай кратко и по делу.
     """
@@ -1684,6 +1786,7 @@ private enum Snapshot {
             }
         }
     }
+
 }
 
 #if os(macOS)
