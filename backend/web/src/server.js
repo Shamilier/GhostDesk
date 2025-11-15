@@ -14,6 +14,7 @@ const recordingsService = require('./services/recordings');
 
 const db = require('./db');
 const oauth = require('./oauth');
+const { getTokensForPlan, hasPlanTokenConfig } = require('./planTokens');
 const { store: sessionStore, shutdownSessionStore } = require('./sessionStore');
 
 const app = express();
@@ -123,17 +124,29 @@ const persistUserPlan = (userId, planValue) =>
       return reject(new Error('User id is required to update plan'));
     }
 
-    db.run('UPDATE users SET plan = ? WHERE id = ?', [planValue, userId], (err) => {
+    const baseTokens = getTokensForPlan(planValue);
+    const hasConfiguredPlan = hasPlanTokenConfig(planValue);
+    const updateSql = baseTokens > 0
+      ? 'UPDATE users SET plan = ?, token_balance = ? WHERE id = ?'
+      : 'UPDATE users SET plan = ? WHERE id = ?';
+    const params = baseTokens > 0 ? [planValue, baseTokens, userId] : [planValue, userId];
+
+    db.run(updateSql, params, (err) => {
       if (err) {
         return reject(err);
       }
-      return resolve();
+
+      if (!hasConfiguredPlan && planValue) {
+        console.warn('No token configuration found for plan', { userId, plan: planValue });
+      }
+
+      return resolve({ tokenBalance: baseTokens > 0 ? baseTokens : null });
     });
   });
 
 const loadUserById = (userId) =>
   new Promise((resolve, reject) => {
-    db.get('SELECT id, email, token, plan, referral, created_at FROM users WHERE id = ?', [userId], (err, row) => {
+    db.get('SELECT id, email, token, plan, referral, created_at, token_balance FROM users WHERE id = ?', [userId], (err, row) => {
       if (err) {
         return reject(err);
       }
@@ -439,6 +452,7 @@ app.use(async (req, res, next) => {
         plan: freshUser.plan,
         referral: freshUser.referral,
         created_at: freshUser.created_at,
+        token_balance: freshUser.token_balance,
       };
       res.locals.currentUser = req.session.user;
       res.locals.currentUserPlanLabel = getPlanLabel(freshUser.plan);
@@ -968,10 +982,13 @@ app.get('/billing/return', requireAuth, async (req, res) => {
     }
 
     const planValue = buildPlanValue(planId, cycle);
-    await persistUserPlan(userId, planValue);
+    const { tokenBalance: updatedTokenBalance } = await persistUserPlan(userId, planValue);
 
     // Обновляем сессию и locals, чтобы на /dashboard сразу был новый план
     req.session.user.plan = planValue;
+    if (typeof updatedTokenBalance === 'number') {
+      req.session.user.token_balance = updatedTokenBalance;
+    }
     req.session.userPlanRefreshedAt = Date.now();
     res.locals.currentUser = req.session.user;
     res.locals.currentUserPlanLabel = getPlanLabel(planValue);
@@ -1239,9 +1256,18 @@ app.post('/register', async (req, res) => {
     try {
       const passwordHash = await bcrypt.hash(password, 12);
       const token = nanoid();
+      const planValue = 'free';
+      const initialTokenBalance = getTokensForPlan(planValue);
       db.run(
-        'INSERT INTO users (email, password_hash, token, plan, referral) VALUES (?, ?, ?, ?, ?)',
-        [email.toLowerCase(), passwordHash, token, 'free', referral || null],
+        'INSERT INTO users (email, password_hash, token, plan, referral, token_balance) VALUES (?, ?, ?, ?, ?, ?)',
+        [
+          email.toLowerCase(),
+          passwordHash,
+          token,
+          planValue,
+          referral || null,
+          initialTokenBalance,
+        ],
         function (insertErr) {
           if (insertErr) {
             console.error('Error inserting user', insertErr);
@@ -1249,7 +1275,14 @@ app.post('/register', async (req, res) => {
             return res.redirect('/register');
           }
 
-          req.session.user = { id: this.lastID, email: email.toLowerCase(), token, plan: 'free', referral: referral || null };
+          req.session.user = {
+            id: this.lastID,
+            email: email.toLowerCase(),
+            token,
+            plan: planValue,
+            referral: referral || null,
+            token_balance: initialTokenBalance,
+          };
           req.session.userPlanRefreshedAt = Date.now();
           req.session.flash = { type: 'success', message: 'Добро пожаловать в Ghost AI!' };
 
@@ -1356,6 +1389,7 @@ app.post('/login', (req, res) => {
       plan: user.plan,
       referral: user.referral,
       created_at: user.created_at,
+      token_balance: user.token_balance,
     };
     req.session.userPlanRefreshedAt = Date.now();
     req.session.flash = { type: 'success', message: 'С возвращением!' };
@@ -1406,6 +1440,7 @@ app.get('/dashboard', requireAuth, async (req, res, next) => {
         plan: freshUser.plan,
         referral: freshUser.referral,
         created_at: freshUser.created_at,
+        token_balance: freshUser.token_balance,
       };
       res.locals.currentUser = req.session.user;
       res.locals.currentUserPlanLabel = getPlanLabel(freshUser.plan);
@@ -1797,6 +1832,41 @@ app.post('/internal/users/:id/tokens/debit', async (req, res) => {
 app.get('/oauth/profile', async (req, res) => {
   const authHeader = req.headers.authorization || '';
 
+  if (authHeader.startsWith('Bearer web-userid-')) {
+    const rawUserId = authHeader.replace('Bearer web-userid-', '').trim();
+    const userId = Number.parseInt(rawUserId, 10);
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+      res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
+      return res.status(401).json({ error: 'invalid_token' });
+    }
+
+    try {
+      const user = await loadUserById(userId);
+
+      if (!user) {
+        res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
+        return res.status(401).json({ error: 'invalid_token' });
+      }
+
+      const createdAt = formatAsIso8601(user.created_at);
+      const tokenBalance = Number.isFinite(Number(user.token_balance)) ? Number(user.token_balance) : 0;
+
+      return res.json({
+        id: String(user.id),
+        email: user.email,
+        plan: user.plan,
+        referral: user.referral,
+        created_at: createdAt || null,
+        token: user.token,
+        token_balance: tokenBalance,
+      });
+    } catch (err) {
+      console.error('Failed to load user for oauth profile', err);
+      return res.status(500).json({ error: 'server_error' });
+    }
+  }
+
   // Ветка для внутренних web-user-* токенов
   if (authHeader.startsWith('Bearer web-user-')) {
     const userId = authHeader.replace('Bearer web-user-', '').trim();
@@ -1838,6 +1908,7 @@ app.get('/oauth/profile', async (req, res) => {
       referral: tokenRow.referral,
       created_at: createdAt || null,
       token: tokenRow.user_token,
+      token_balance: Number.isFinite(Number(tokenRow.token_balance)) ? Number(tokenRow.token_balance) : 0,
     });
   } catch (err) {
     console.error('OAuth profile endpoint error', err);

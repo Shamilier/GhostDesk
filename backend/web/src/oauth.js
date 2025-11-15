@@ -209,7 +209,7 @@ function getUserByAccessToken(accessToken) {
 
   return new Promise((resolve, reject) => {
     db.get(
-      `SELECT oauth_tokens.*, users.email, users.plan, users.referral, users.created_at, users.token AS user_token
+      `SELECT oauth_tokens.*, users.email, users.plan, users.referral, users.created_at, users.token AS user_token, users.token_balance
        FROM oauth_tokens
        JOIN users ON users.id = oauth_tokens.user_id
        WHERE oauth_tokens.access_token_hash = ? AND oauth_tokens.access_token_expires_at > ? AND oauth_tokens.revoked = 0`,
