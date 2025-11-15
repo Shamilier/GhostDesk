@@ -3,3 +3,4 @@
 3. Introduced INTERNAL_API_SECRET configuration and protected POST /internal/users/:id/tokens/debit endpoint that consumes tokens using the new helper and returns structured errors.
 4. Added plan-based token configuration and automatic token_balance assignment during registration and plan changes.
 5. Extended GET /oauth/profile to include token_balance for both web-user-* tokens and regular OAuth access tokens.
+6. Converted token_balance handling to use REAL precision in SQLite with fractional-safe helpers and migration.
