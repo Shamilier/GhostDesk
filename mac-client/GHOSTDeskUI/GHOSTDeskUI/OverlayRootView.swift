@@ -36,13 +36,14 @@ struct OverlayRootView: View {
 
 
     // наш безопасный ленивый транскрайбер
-    @StateObject private var transcriptionCoordinator = TranscriptionCoordinator()
+    @StateObject private var transcriptionCoordinator: TranscriptionCoordinator
 
     // NEW: вью-модель для снапшота/отправки
     @StateObject private var askVM: AskVM
     @ObservedObject private var oauthCoordinator = OAuthCoordinator.shared
 
     init(auth: AuthState) {
+        _transcriptionCoordinator = StateObject(wrappedValue: TranscriptionCoordinator(authState: auth))
         _askVM = StateObject(wrappedValue: AskVM(auth: auth))
         OAuthCoordinator.shared.configure(authState: auth)
     }

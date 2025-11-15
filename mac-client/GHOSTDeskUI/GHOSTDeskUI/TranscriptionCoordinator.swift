@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import AppKit
 import os.log
 
 final class TranscriptionCoordinator: ObservableObject {
@@ -9,6 +10,8 @@ final class TranscriptionCoordinator: ObservableObject {
     private let overlay: OverlayModel
     private let systemTranscriber: SpeechTranscriber
     private let microphoneTranscriber: SpeechTranscriber
+    private let asrUsageTicker: AsrUsageTicker
+    private weak var authState: AuthState?
     private let recordingManager = RecordingManager.shared
     private let audioRecorder = AudioRecorder.shared
     private let outbox = OutboxService.shared
@@ -18,13 +21,23 @@ final class TranscriptionCoordinator: ObservableObject {
     private var shouldResetMicrophoneAfterStop = false
     private var activeRecordingId: String?
 
-    init(overlay: OverlayModel = .shared) {
+    init(
+        overlay: OverlayModel = .shared,
+        usageTicker: AsrUsageTicker = .shared,
+        authState: AuthState? = nil
+    ) {
         self.overlay = overlay
         self.systemTranscriber = SpeechTranscriber(captureMode: .systemAudio)
         self.microphoneTranscriber = SpeechTranscriber(captureMode: .microphone)
+        self.asrUsageTicker = usageTicker
+        self.authState = authState
         bind(transcriber: systemTranscriber, to: .system)
         bind(transcriber: microphoneTranscriber, to: .microphone)
         updateOverallPhase()
+    }
+
+    func attachAuthState(_ auth: AuthState) {
+        authState = auth
     }
 
     deinit {
@@ -41,9 +54,18 @@ final class TranscriptionCoordinator: ObservableObject {
         if isMicrophoneArmed {
             microphoneTranscriber.start()
         }
+
+        if let authState {
+            asrUsageTicker.onInsufficientTokens = { [weak self] in
+                self?.handleInsufficientTokens()
+            }
+            asrUsageTicker.start(authState: authState)
+        }
     }
 
     func stopAll() {
+        asrUsageTicker.stop()
+        asrUsageTicker.onInsufficientTokens = nil
         systemTranscriber.stop()
         microphoneTranscriber.stop()
         shouldResetMicrophoneAfterStop = true
@@ -72,6 +94,28 @@ final class TranscriptionCoordinator: ObservableObject {
 
     func combinedTranscript(includePartials: Bool = true) -> String {
         overlay.combinedTranscript(includePartials: includePartials)
+    }
+
+    private func handleInsufficientTokens() {
+        let message = asrUsageTicker.lastInsufficientTokensMessage
+            ?? UsageAPIClient.insufficientTokensFallbackMessage
+        asrUsageTicker.onInsufficientTokens = nil
+        stopAll()
+        presentInsufficientTokensAlert(message: message)
+    }
+
+    private func presentInsufficientTokensAlert(message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Закончились токены"
+        alert.informativeText = message
+        alert.addButton(withTitle: "ОК")
+
+        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+            alert.beginSheetModal(for: window) { _ in }
+        } else {
+            alert.runModal()
+        }
     }
 
     private func bind(transcriber: SpeechTranscriber, to source: OverlayModel.AudioSourceKind) {
