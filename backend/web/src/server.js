@@ -31,6 +31,21 @@ const YOOKASSA_API_BASE = 'https://api.yookassa.ru/v3';
 const BILLING_RETURN_BASE_URL = process.env.BILLING_RETURN_BASE_URL || process.env.APP_BASE_URL || null;
 const PLAN_REFRESH_INTERVAL_MS = 60_000;
 
+const TOKEN_DECIMAL_PLACES = 4;
+const TOKEN_SCALE = 10 ** TOKEN_DECIMAL_PLACES;
+
+const toTokenUnits = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return 0;
+  }
+  return Math.round(numeric * TOKEN_SCALE);
+};
+
+const fromTokenUnits = (units) => units / TOKEN_SCALE;
+
+const normalizeTokenValue = (value) => fromTokenUnits(toTokenUnits(value));
+
 const BILLING_PLANS = {
   plus: {
     label: 'Plus',
@@ -125,11 +140,14 @@ const persistUserPlan = (userId, planValue) =>
     }
 
     const baseTokens = getTokensForPlan(planValue);
+    const baseTokenUnits = toTokenUnits(baseTokens);
     const hasConfiguredPlan = hasPlanTokenConfig(planValue);
-    const updateSql = baseTokens > 0
+    const updateSql = baseTokenUnits > 0
       ? 'UPDATE users SET plan = ?, token_balance = ? WHERE id = ?'
       : 'UPDATE users SET plan = ? WHERE id = ?';
-    const params = baseTokens > 0 ? [planValue, baseTokens, userId] : [planValue, userId];
+    const params = baseTokenUnits > 0
+      ? [planValue, fromTokenUnits(baseTokenUnits), userId]
+      : [planValue, userId];
 
     db.run(updateSql, params, (err) => {
       if (err) {
@@ -140,7 +158,9 @@ const persistUserPlan = (userId, planValue) =>
         console.warn('No token configuration found for plan', { userId, plan: planValue });
       }
 
-      return resolve({ tokenBalance: baseTokens > 0 ? baseTokens : null });
+      return resolve({
+        tokenBalance: baseTokenUnits > 0 ? fromTokenUnits(baseTokenUnits) : null,
+      });
     });
   });
 
@@ -150,7 +170,14 @@ const loadUserById = (userId) =>
       if (err) {
         return reject(err);
       }
-      return resolve(row || null);
+      if (!row) {
+        return resolve(null);
+      }
+
+      return resolve({
+        ...row,
+        token_balance: normalizeTokenValue(row.token_balance),
+      });
     });
   });
 
@@ -175,7 +202,7 @@ const getUserTokenBalance = (userId) =>
       if (!row) {
         return reject(new Error('User not found'));
       }
-      return resolve(Number(row.token_balance) || 0);
+      return resolve(normalizeTokenValue(row.token_balance));
     });
   });
 
@@ -190,9 +217,9 @@ const debitUserTokens = (userId, amount) =>
       return reject(new Error('Amount must be a positive number'));
     }
 
-    const debitAmount = Math.floor(parsedAmount);
-    if (debitAmount !== parsedAmount) {
-      return reject(new Error('Amount must be an integer number of tokens'));
+    const debitUnits = toTokenUnits(parsedAmount);
+    if (debitUnits <= 0) {
+      return reject(new Error('Amount must be a positive number'));
     }
 
     db.serialize(() => {
@@ -220,17 +247,18 @@ const debitUserTokens = (userId, amount) =>
             });
           }
 
-          const currentBalance = Number(row.token_balance) || 0;
-          if (currentBalance < debitAmount) {
+          const currentBalanceUnits = toTokenUnits(row.token_balance);
+          if (currentBalanceUnits < debitUnits) {
             return db.run('ROLLBACK', (rollbackErr) => {
               if (rollbackErr) {
                 console.error('Failed to rollback transaction after insufficient tokens', rollbackErr);
               }
-              return reject(new InsufficientTokensError(currentBalance));
+              return reject(new InsufficientTokensError(fromTokenUnits(currentBalanceUnits)));
             });
           }
 
-          const newBalance = currentBalance - debitAmount;
+          const newBalanceUnits = currentBalanceUnits - debitUnits;
+          const newBalance = fromTokenUnits(newBalanceUnits);
           db.run(
             'UPDATE users SET token_balance = ? WHERE id = ?',
             [newBalance, userId],
@@ -1257,7 +1285,8 @@ app.post('/register', async (req, res) => {
       const passwordHash = await bcrypt.hash(password, 12);
       const token = nanoid();
       const planValue = 'free';
-      const initialTokenBalance = getTokensForPlan(planValue);
+      const initialTokenUnits = toTokenUnits(getTokensForPlan(planValue));
+      const initialTokenBalance = fromTokenUnits(initialTokenUnits);
       db.run(
         'INSERT INTO users (email, password_hash, token, plan, referral, token_balance) VALUES (?, ?, ?, ?, ?, ?)',
         [
@@ -1389,7 +1418,7 @@ app.post('/login', (req, res) => {
       plan: user.plan,
       referral: user.referral,
       created_at: user.created_at,
-      token_balance: user.token_balance,
+      token_balance: normalizeTokenValue(user.token_balance),
     };
     req.session.userPlanRefreshedAt = Date.now();
     req.session.flash = { type: 'success', message: 'С возвращением!' };
@@ -1801,12 +1830,19 @@ app.post('/internal/users/:id/tokens/debit', async (req, res) => {
   }
 
   const amountNumber = Number(amount);
-  if (!Number.isFinite(amountNumber) || amountNumber <= 0 || !Number.isInteger(amountNumber)) {
-    return res.status(400).json({ error: 'invalid_amount', message: 'Amount must be a positive integer' });
+  if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+    return res.status(400).json({ error: 'invalid_amount', message: 'Amount must be a positive number' });
   }
 
+  const amountUnits = toTokenUnits(amountNumber);
+  if (amountUnits <= 0) {
+    return res.status(400).json({ error: 'invalid_amount', message: 'Amount is too small' });
+  }
+
+  const normalizedAmount = fromTokenUnits(amountUnits);
+
   try {
-    const result = await debitUserTokens(userId, amountNumber);
+    const result = await debitUserTokens(userId, normalizedAmount);
     return res.status(200).json({ token_balance: result.token_balance });
   } catch (err) {
     if (err instanceof InsufficientTokensError) {
@@ -1850,7 +1886,7 @@ app.get('/oauth/profile', async (req, res) => {
       }
 
       const createdAt = formatAsIso8601(user.created_at);
-      const tokenBalance = Number.isFinite(Number(user.token_balance)) ? Number(user.token_balance) : 0;
+      const tokenBalance = normalizeTokenValue(user.token_balance);
 
       return res.json({
         id: String(user.id),
@@ -1908,7 +1944,7 @@ app.get('/oauth/profile', async (req, res) => {
       referral: tokenRow.referral,
       created_at: createdAt || null,
       token: tokenRow.user_token,
-      token_balance: Number.isFinite(Number(tokenRow.token_balance)) ? Number(tokenRow.token_balance) : 0,
+      token_balance: normalizeTokenValue(tokenRow.token_balance),
     });
   } catch (err) {
     console.error('OAuth profile endpoint error', err);
