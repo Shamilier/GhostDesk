@@ -1,3 +1,5 @@
 1. Added token_balance support in SQLite initialization (backend/web/src/db.js), including schema update for new deployments and in-place migration via PRAGMA inspection plus ALTER TABLE.
 2. Implemented user token helpers and InsufficientTokensError in backend/web/src/server.js to expose getUserTokenBalance and transactional debitUserTokens with balance validation.
 3. Introduced INTERNAL_API_SECRET configuration and protected POST /internal/users/:id/tokens/debit endpoint that consumes tokens using the new helper and returns structured errors.
+4. Added plan-based token configuration and automatic token_balance assignment during registration and plan changes.
+5. Extended GET /oauth/profile to include token_balance for both web-user-* tokens and regular OAuth access tokens.
