@@ -14,6 +14,50 @@ const db = new sqlite3.Database(dbPath, (err) => {
   }
 });
 
+const ensureSubscriptionColumns = (initialColumns) => {
+  const applyEnsures = (columns) => {
+    const columnNames = new Set(
+      Array.isArray(columns)
+        ? columns
+            .map((column) => (column && typeof column.name === 'string' ? column.name : null))
+            .filter(Boolean)
+        : []
+    );
+
+    const ensureColumn = (columnName) => {
+      if (columnNames.has(columnName)) {
+        return;
+      }
+
+      db.run(
+        `ALTER TABLE users ADD COLUMN ${columnName} TEXT DEFAULT NULL`,
+        (alterErr) => {
+          if (alterErr) {
+            console.error(`Failed to add ${columnName} column to users table`, alterErr);
+          }
+        }
+      );
+    };
+
+    ensureColumn('plan_renews_at');
+    ensureColumn('free_tokens_refresh_at');
+  };
+
+  if (initialColumns) {
+    applyEnsures(initialColumns);
+    return;
+  }
+
+  db.all('PRAGMA table_info(users)', (err, columns) => {
+    if (err) {
+      console.error('Failed to inspect users table for subscription columns', err);
+      return;
+    }
+
+    applyEnsures(columns);
+  });
+};
+
 db.serialize(() => {
   db.run(
     `CREATE TABLE IF NOT EXISTS users (
@@ -23,6 +67,8 @@ db.serialize(() => {
       token TEXT NOT NULL,
       plan TEXT NOT NULL DEFAULT 'free',
       token_balance REAL NOT NULL DEFAULT 0,
+      plan_renews_at TEXT DEFAULT NULL,
+      free_tokens_refresh_at TEXT DEFAULT NULL,
       referral TEXT DEFAULT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`
@@ -48,7 +94,9 @@ db.serialize(() => {
         (alterErr) => {
           if (alterErr) {
             console.error('Failed to add token_balance column to users table', alterErr);
+            return;
           }
+          ensureSubscriptionColumns();
         }
       );
       return;
@@ -59,6 +107,7 @@ db.serialize(() => {
       : '';
 
     if (columnType === 'REAL') {
+      ensureSubscriptionColumns(columns);
       return;
     }
 
@@ -73,13 +122,15 @@ db.serialize(() => {
           token TEXT NOT NULL,
           plan TEXT NOT NULL DEFAULT 'free',
           token_balance REAL NOT NULL DEFAULT 0,
+          plan_renews_at TEXT DEFAULT NULL,
+          free_tokens_refresh_at TEXT DEFAULT NULL,
           referral TEXT DEFAULT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )`,
       },
       {
-        sql: `INSERT INTO users (id, email, password_hash, token, plan, token_balance, referral, created_at)
-              SELECT id, email, password_hash, token, plan, CAST(token_balance AS REAL), referral, created_at
+        sql: `INSERT INTO users (id, email, password_hash, token, plan, token_balance, plan_renews_at, free_tokens_refresh_at, referral, created_at)
+              SELECT id, email, password_hash, token, plan, CAST(token_balance AS REAL), NULL AS plan_renews_at, NULL AS free_tokens_refresh_at, referral, created_at
               FROM users_old`,
       },
       { sql: 'DROP TABLE IF EXISTS users_old' },
@@ -90,6 +141,7 @@ db.serialize(() => {
     const runMigrationStep = (index) => {
       if (index >= migrationStatements.length) {
         console.info('Migrated users.token_balance column to REAL type');
+        ensureSubscriptionColumns();
         return;
       }
 

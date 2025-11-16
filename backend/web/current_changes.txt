@@ -4,3 +4,6 @@
 4. Added plan-based token configuration and automatic token_balance assignment during registration and plan changes.
 5. Extended GET /oauth/profile to include token_balance for both web-user-* tokens and regular OAuth access tokens.
 6. Converted token_balance handling to use REAL precision in SQLite with fractional-safe helpers and migration.
+7. Added plan_renews_at and free_tokens_refresh_at columns to the users table with automatic migrations to support subscription lifecycle tracking.
+8. Implemented ensureUserSubscriptionFresh to lazily downgrade expired paid plans, refresh free tokens every 7 days, and wired it into session refresh, dashboard rendering, and /oauth/profile responses.
+9. Updated plan change logic (registration, billing, persistUserPlan) to set base token balances and renewal/refresh dates so paid plans expire after one month and free plans always receive their weekly token top-up schedule.
