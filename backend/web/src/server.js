@@ -46,6 +46,40 @@ const fromTokenUnits = (units) => units / TOKEN_SCALE;
 
 const normalizeTokenValue = (value) => fromTokenUnits(toTokenUnits(value));
 
+const MS_IN_DAY = 24 * 60 * 60 * 1000;
+
+const addDays = (date, days) => new Date(date.getTime() + days * MS_IN_DAY);
+
+const addMonths = (date, months) => {
+  const result = new Date(date.getTime());
+  result.setMonth(result.getMonth() + months);
+  return result;
+};
+
+const isPaidPlan = (plan) =>
+  typeof plan === 'string' && (plan.startsWith('plus_') || plan.startsWith('pro_'));
+
+const buildSubscriptionLifecycleForPlan = (planValue, referenceDate = new Date()) => {
+  if (isPaidPlan(planValue)) {
+    return {
+      planRenewsAt: addMonths(referenceDate, 1).toISOString(),
+      freeTokensRefreshAt: null,
+    };
+  }
+
+  if (planValue === 'free') {
+    return {
+      planRenewsAt: null,
+      freeTokensRefreshAt: addDays(referenceDate, 7).toISOString(),
+    };
+  }
+
+  return {
+    planRenewsAt: null,
+    freeTokensRefreshAt: null,
+  };
+};
+
 const BILLING_PLANS = {
   plus: {
     label: 'Plus',
@@ -142,12 +176,14 @@ const persistUserPlan = (userId, planValue) =>
     const baseTokens = getTokensForPlan(planValue);
     const baseTokenUnits = toTokenUnits(baseTokens);
     const hasConfiguredPlan = hasPlanTokenConfig(planValue);
+    const now = new Date();
+    const { planRenewsAt, freeTokensRefreshAt } = buildSubscriptionLifecycleForPlan(planValue, now);
     const updateSql = baseTokenUnits > 0
-      ? 'UPDATE users SET plan = ?, token_balance = ? WHERE id = ?'
-      : 'UPDATE users SET plan = ? WHERE id = ?';
+      ? 'UPDATE users SET plan = ?, token_balance = ?, plan_renews_at = ?, free_tokens_refresh_at = ? WHERE id = ?'
+      : 'UPDATE users SET plan = ?, plan_renews_at = ?, free_tokens_refresh_at = ? WHERE id = ?';
     const params = baseTokenUnits > 0
-      ? [planValue, fromTokenUnits(baseTokenUnits), userId]
-      : [planValue, userId];
+      ? [planValue, fromTokenUnits(baseTokenUnits), planRenewsAt, freeTokensRefreshAt, userId]
+      : [planValue, planRenewsAt, freeTokensRefreshAt, userId];
 
     db.run(updateSql, params, (err) => {
       if (err) {
@@ -166,20 +202,89 @@ const persistUserPlan = (userId, planValue) =>
 
 const loadUserById = (userId) =>
   new Promise((resolve, reject) => {
-    db.get('SELECT id, email, token, plan, referral, created_at, token_balance FROM users WHERE id = ?', [userId], (err, row) => {
-      if (err) {
-        return reject(err);
-      }
-      if (!row) {
-        return resolve(null);
-      }
+    db.get(
+      'SELECT id, email, token, plan, referral, created_at, token_balance, plan_renews_at, free_tokens_refresh_at FROM users WHERE id = ?',
+      [userId],
+      (err, row) => {
+        if (err) {
+          return reject(err);
+        }
+        if (!row) {
+          return resolve(null);
+        }
 
-      return resolve({
-        ...row,
-        token_balance: normalizeTokenValue(row.token_balance),
-      });
-    });
+        return resolve({
+          ...row,
+          token_balance: normalizeTokenValue(row.token_balance),
+        });
+      }
+    );
   });
+
+const ensureUserSubscriptionFresh = async (userId) => {
+  if (!userId) {
+    return null;
+  }
+
+  const user = await loadUserById(userId);
+  if (!user) {
+    return null;
+  }
+
+  const parseDate = (value) => {
+    if (!value) {
+      return null;
+    }
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const now = new Date();
+  let needsUpdate = false;
+
+  const planRenewsAt = parseDate(user.plan_renews_at);
+  if (isPaidPlan(user.plan) && planRenewsAt && planRenewsAt <= now) {
+    user.plan = 'free';
+    user.token_balance = normalizeTokenValue(getTokensForPlan('free'));
+    user.plan_renews_at = null;
+    user.free_tokens_refresh_at = addDays(now, 7).toISOString();
+    needsUpdate = true;
+  }
+
+  if (user.plan === 'free') {
+    const freeRefreshAt = parseDate(user.free_tokens_refresh_at);
+    if (!freeRefreshAt) {
+      user.free_tokens_refresh_at = addDays(now, 7).toISOString();
+      if (!(user.token_balance > 0)) {
+        user.token_balance = normalizeTokenValue(getTokensForPlan('free'));
+      }
+      needsUpdate = true;
+    } else if (freeRefreshAt <= now) {
+      user.token_balance = normalizeTokenValue(getTokensForPlan('free'));
+      user.free_tokens_refresh_at = addDays(now, 7).toISOString();
+      needsUpdate = true;
+    }
+  }
+
+  if (!needsUpdate) {
+    return user;
+  }
+
+  await new Promise((resolve, reject) => {
+    db.run(
+      'UPDATE users SET plan = ?, token_balance = ?, plan_renews_at = ?, free_tokens_refresh_at = ? WHERE id = ?',
+      [user.plan, user.token_balance, user.plan_renews_at, user.free_tokens_refresh_at, user.id],
+      (err) => {
+        if (err) {
+          return reject(err);
+        }
+        return resolve();
+      }
+    );
+  });
+
+  return user;
+};
 
 class InsufficientTokensError extends Error {
   constructor(tokenBalance) {
@@ -469,7 +574,7 @@ app.use(async (req, res, next) => {
   }
 
   try {
-    const freshUser = await loadUserById(req.session.user.id);
+    const freshUser = await ensureUserSubscriptionFresh(req.session.user.id);
     req.session.userPlanRefreshedAt = now;
 
     if (freshUser) {
@@ -1287,8 +1392,9 @@ app.post('/register', async (req, res) => {
       const planValue = 'free';
       const initialTokenUnits = toTokenUnits(getTokensForPlan(planValue));
       const initialTokenBalance = fromTokenUnits(initialTokenUnits);
+      const { planRenewsAt, freeTokensRefreshAt } = buildSubscriptionLifecycleForPlan(planValue, new Date());
       db.run(
-        'INSERT INTO users (email, password_hash, token, plan, referral, token_balance) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO users (email, password_hash, token, plan, referral, token_balance, plan_renews_at, free_tokens_refresh_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         [
           email.toLowerCase(),
           passwordHash,
@@ -1296,6 +1402,8 @@ app.post('/register', async (req, res) => {
           planValue,
           referral || null,
           initialTokenBalance,
+          planRenewsAt,
+          freeTokensRefreshAt,
         ],
         function (insertErr) {
           if (insertErr) {
@@ -1460,7 +1568,7 @@ app.post('/logout', (req, res) => {
 
 app.get('/dashboard', requireAuth, async (req, res, next) => {
   try {
-    const freshUser = await loadUserById(req.session.user.id);
+    const freshUser = await ensureUserSubscriptionFresh(req.session.user.id);
     if (freshUser) {
       req.session.user = {
         id: freshUser.id,
@@ -1878,7 +1986,7 @@ app.get('/oauth/profile', async (req, res) => {
     }
 
     try {
-      const user = await loadUserById(userId);
+      const user = await ensureUserSubscriptionFresh(userId);
 
       if (!user) {
         res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
@@ -1886,7 +1994,6 @@ app.get('/oauth/profile', async (req, res) => {
       }
 
       const createdAt = formatAsIso8601(user.created_at);
-      const tokenBalance = normalizeTokenValue(user.token_balance);
 
       return res.json({
         id: String(user.id),
@@ -1895,7 +2002,7 @@ app.get('/oauth/profile', async (req, res) => {
         referral: user.referral,
         created_at: createdAt || null,
         token: user.token,
-        token_balance: tokenBalance,
+        token_balance: normalizeTokenValue(user.token_balance),
       });
     } catch (err) {
       console.error('Failed to load user for oauth profile', err);
@@ -1935,16 +2042,27 @@ app.get('/oauth/profile', async (req, res) => {
       return res.status(401).json({ error: 'invalid_token' });
     }
 
-    const createdAt = formatAsIso8601(tokenRow.created_at);
-
-    return res.json({
-      id: String(tokenRow.user_id),
+    const freshUser = await ensureUserSubscriptionFresh(tokenRow.user_id);
+    const effectiveUser = freshUser || {
+      id: tokenRow.user_id,
       email: tokenRow.email,
       plan: tokenRow.plan,
       referral: tokenRow.referral,
-      created_at: createdAt || null,
+      created_at: tokenRow.created_at,
       token: tokenRow.user_token,
       token_balance: normalizeTokenValue(tokenRow.token_balance),
+    };
+
+    const createdAt = formatAsIso8601(effectiveUser.created_at);
+
+    return res.json({
+      id: String(effectiveUser.id),
+      email: effectiveUser.email,
+      plan: effectiveUser.plan,
+      referral: effectiveUser.referral,
+      created_at: createdAt || null,
+      token: effectiveUser.token ?? tokenRow.user_token,
+      token_balance: normalizeTokenValue(effectiveUser.token_balance),
     });
   } catch (err) {
     console.error('OAuth profile endpoint error', err);
