@@ -1,8 +1,8 @@
 const PLAN_TOKENS = {
   free: 50,
-  plus_monthly: 1000,
+  plus_monthly: 1500,
   plus_annual: 12000,
-  pro_monthly: 3000,
+  pro_monthly: 4000,
   pro_annual: 36000,
 };
 
