@@ -3,6 +3,7 @@ import Combine
 import AppKit
 import os.log
 
+@MainActor
 final class TranscriptionCoordinator: ObservableObject {
     @Published private(set) var overallPhase: OverlayModel.AudioChannelPhase = .idle
     @Published var isMicrophoneArmed = false
@@ -39,7 +40,7 @@ final class TranscriptionCoordinator: ObservableObject {
     func attachAuthState(_ auth: AuthState) {
         authState = auth
     }
-
+@MainActor
     deinit {
         stopAll()
     }
@@ -48,7 +49,7 @@ final class TranscriptionCoordinator: ObservableObject {
         overlay.anyChannelIsTranscribing
     }
 
-    func startRecording() {
+    @MainActor func startRecording() {
         startLocalRecording()
         systemTranscriber.start()
         if isMicrophoneArmed {
@@ -96,7 +97,7 @@ final class TranscriptionCoordinator: ObservableObject {
         overlay.combinedTranscript(includePartials: includePartials)
     }
 
-    private func handleInsufficientTokens() {
+    @MainActor private func handleInsufficientTokens() {
         let message = asrUsageTicker.lastInsufficientTokensMessage
             ?? UsageAPIClient.insufficientTokensFallbackMessage
         asrUsageTicker.onInsufficientTokens = nil

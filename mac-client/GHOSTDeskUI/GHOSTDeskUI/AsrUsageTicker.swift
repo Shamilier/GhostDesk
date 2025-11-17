@@ -36,7 +36,7 @@ final class AsrUsageTicker {
         isRunning = true
         lastKnownTokenBalance = nil
         scheduleTimer()
-        logger.debug("ASR usage ticker started at \(String(describing: startDate), privacy: .public)")
+        logger.debug("ASR usage ticker started at \(String(describing: self.startDate), privacy: .public)")
     }
 
     func stop() {
