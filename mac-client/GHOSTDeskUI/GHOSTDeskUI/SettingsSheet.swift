@@ -100,7 +100,7 @@ struct SettingsSheet: View {
 
                         // === Пример секции с ключом API ===
                         GlassSection("Аккаунт") {
-                            VStack(alignment: .leading, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 12) {
                                 // Статус
                                 HStack(spacing: 8) {
                                     if auth.isAuthorized {
@@ -116,25 +116,35 @@ struct SettingsSheet: View {
                                 if let email = auth.email {
                                     LabeledContent("Email") { Text(email).monospaced() }
                                 }
+
                                 LabeledContent("Тариф") {
-                                    Text(planLineText)
-                                        .font(.system(size: 14, weight: .medium, design: .rounded))
-                                        .foregroundStyle(planString.isEmpty ? ST.textTri : ST.textPri)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(planLineText)
+                                            .font(.system(size: 14, weight: .medium, design: .rounded))
+                                            .foregroundStyle(planString.isEmpty ? ST.textTri : ST.textPri)
+                                        if let planDateMessage {
+                                            Text(planDateMessage)
+                                                .font(.system(size: 12.5, weight: .regular, design: .rounded))
+                                                .foregroundStyle(ST.textSec)
+                                        }
+                                    }
                                 }
-                                if let created = auth.createdAt {
-                                    LabeledContent("Аккаунт с") { Text(created.formatted(date: .abbreviated, time: .omitted)) }
-                                }
+
                                 if let expires = auth.expiresAt {
                                     LabeledContent("Сессия истекает") { Text(expires.formatted(date: .abbreviated, time: .shortened)) }
                                 }
 
-                                // Замаскированный access token (нередактируемый)
-                                LabeledContent("Access Token") {
-                                    TextField("", text: .constant(maskedAccessToken))
-                                        .font(.system(size: 14, weight: .medium, design: .monospaced))
-                                        .glassCapsuleField()
-                                        .disabled(true)
-                                        .textSelection(.enabled)
+                                if auth.profile != nil {
+                                    LabeledContent("Токены") {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("\(tokenBalanceValue) токенов")
+                                                .font(.system(size: 14, weight: .medium, design: .rounded))
+                                                .foregroundStyle(ST.textPri)
+                                            Text("≈ \(approximateMinutes) минут записи")
+                                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                                .foregroundStyle(ST.textSec)
+                                        }
+                                    }
                                 }
 
                                 // Действия
@@ -143,39 +153,11 @@ struct SettingsSheet: View {
                                         Button("Выйти") { auth.signOut() }
                                             .buttonStyle(GlassPill(tint: .secondary))
                                     }
-                                    Spacer()
-                                    Button("Готово") { isShown = false }
-                                        .buttonStyle(GlassPill(tint: .accentColor))
                                 }
 
                                 // Сообщение об ошибке/проблеме
                                 if let issue = auth.authorizationIssue ?? auth.lastError {
                                     Text(issue).font(.caption).foregroundStyle(.red)
-                                }
-                            }
-                        }
-
-                        if auth.profile != nil {
-                            GlassSection("Тариф и токены") {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("Тариф: \(planLineText)")
-                                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                                        .foregroundStyle(ST.textPri)
-
-                                    Text("Баланс: \(tokenBalanceValue) токенов")
-                                        .font(.system(size: 15, weight: .medium, design: .rounded))
-                                        .foregroundStyle(ST.textPri)
-
-                                    Text("Примерно \(approximateMinutes) минут записи")
-                                        .font(.system(size: 14, weight: .medium, design: .rounded))
-                                        .foregroundStyle(ST.textSec)
-
-                                    if let planDateMessage {
-                                        Text(planDateMessage)
-                                            .font(.system(size: 13, weight: .regular, design: .rounded))
-                                            .foregroundStyle(ST.textSec)
-                                            .padding(.top, 2)
-                                    }
                                 }
                             }
                         }
@@ -310,18 +292,6 @@ struct SettingsSheet: View {
         .frame(maxWidth: 620)
     }
     
-    private var maskedAccessToken: String {
-        guard let t = auth.accessToken, !t.isEmpty else { return "—" }
-        return maskMiddle(t)
-    }
-
-    private func maskMiddle(_ s: String, keep: Int = 6) -> String {
-        guard s.count > keep * 2 else { return s }
-        let start = s.prefix(keep)
-        let end   = s.suffix(keep)
-        return "\(start)••••••••••\(end)"
-    }
-
     private func formatSubscriptionDate(_ date: Date) -> String {
         SettingsSheet.subscriptionDateFormatter.string(from: date)
     }
