@@ -10,6 +10,7 @@
         <p class="auth-subtitle">Получите персональный токен и подключите ассистента за пару минут.</p>
         <%- include('partials/flash') %>
         <form action="/register" method="post" class="auth-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
           <label for="email">Email</label>
           <input type="email" id="email" name="email" placeholder="name@company.com" required />
 

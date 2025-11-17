@@ -20,6 +20,9 @@
           <p class="dashboard-subtitle">Контролируйте подписку, расход токенов и подготовку к встречам из одного окна.</p>
         </div>
         <form action="/logout" method="post">
+          <% if (csrfToken) { %>
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <% } %>
           <button type="submit" class="ghost-button">Выйти</button>
         </form>
       </section>

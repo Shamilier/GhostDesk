@@ -18,6 +18,11 @@
     minute: '2-digit',
   });
 
+  function getCsrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') : null;
+  }
+
   function formatRecordingTitle(item) {
     if (!item || !item.started_at) {
       return 'Запись';
@@ -695,10 +700,12 @@
       });
 
       try {
+        const csrfToken = getCsrfToken();
         const response = await fetch(`/api/recordings/${encodeURIComponent(recordingId)}/ask`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
           },
           body: JSON.stringify({ prompt: text, conversation_id: conversationId }),
         });
