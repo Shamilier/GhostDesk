@@ -586,6 +586,8 @@ app.use(async (req, res, next) => {
         referral: freshUser.referral,
         created_at: freshUser.created_at,
         token_balance: freshUser.token_balance,
+        plan_renews_at: freshUser.plan_renews_at,
+        free_tokens_refresh_at: freshUser.free_tokens_refresh_at,
       };
       res.locals.currentUser = req.session.user;
       res.locals.currentUserPlanLabel = getPlanLabel(freshUser.plan);
@@ -1122,6 +1124,9 @@ app.get('/billing/return', requireAuth, async (req, res) => {
     if (typeof updatedTokenBalance === 'number') {
       req.session.user.token_balance = updatedTokenBalance;
     }
+    const lifecycle = buildSubscriptionLifecycleForPlan(planValue, new Date());
+    req.session.user.plan_renews_at = lifecycle.planRenewsAt;
+    req.session.user.free_tokens_refresh_at = lifecycle.freeTokensRefreshAt;
     req.session.userPlanRefreshedAt = Date.now();
     res.locals.currentUser = req.session.user;
     res.locals.currentUserPlanLabel = getPlanLabel(planValue);
@@ -1419,6 +1424,8 @@ app.post('/register', async (req, res) => {
             plan: planValue,
             referral: referral || null,
             token_balance: initialTokenBalance,
+            plan_renews_at: planRenewsAt,
+            free_tokens_refresh_at: freeTokensRefreshAt,
           };
           req.session.userPlanRefreshedAt = Date.now();
           req.session.flash = { type: 'success', message: 'Добро пожаловать в Ghost AI!' };
@@ -1527,6 +1534,8 @@ app.post('/login', (req, res) => {
       referral: user.referral,
       created_at: user.created_at,
       token_balance: normalizeTokenValue(user.token_balance),
+      plan_renews_at: user.plan_renews_at,
+      free_tokens_refresh_at: user.free_tokens_refresh_at,
     };
     req.session.userPlanRefreshedAt = Date.now();
     req.session.flash = { type: 'success', message: 'С возвращением!' };
@@ -1578,6 +1587,8 @@ app.get('/dashboard', requireAuth, async (req, res, next) => {
         referral: freshUser.referral,
         created_at: freshUser.created_at,
         token_balance: freshUser.token_balance,
+        plan_renews_at: freshUser.plan_renews_at,
+        free_tokens_refresh_at: freshUser.free_tokens_refresh_at,
       };
       res.locals.currentUser = req.session.user;
       res.locals.currentUserPlanLabel = getPlanLabel(freshUser.plan);
@@ -1587,10 +1598,55 @@ app.get('/dashboard', requireAuth, async (req, res, next) => {
     return next(err);
   }
 
+  const planValue = req.session.user?.plan || null;
+  const rawTokenBalance = Number(req.session.user?.token_balance ?? 0);
+  const normalizedTokenBalance = Number.isFinite(rawTokenBalance) ? Math.max(rawTokenBalance, 0) : 0;
+  const planTokenCapacity = getTokensForPlan(planValue);
+  const hasTokenLimit = planTokenCapacity > 0;
+  const limitedBalance = hasTokenLimit
+    ? Math.min(normalizedTokenBalance, planTokenCapacity)
+    : normalizedTokenBalance;
+  const tokensUsed = hasTokenLimit ? Math.max(planTokenCapacity - limitedBalance, 0) : null;
+  const remainingPercent = hasTokenLimit && planTokenCapacity > 0
+    ? Math.min(100, Math.max(0, (limitedBalance / planTokenCapacity) * 100))
+    : null;
+
+  const toIsoOrNull = (value) => {
+    if (!value) {
+      return null;
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return null;
+    }
+    return parsed.toISOString();
+  };
+
+  const nextEventRaw = isPaidPlan(planValue)
+    ? req.session.user?.plan_renews_at
+    : planValue === 'free'
+      ? req.session.user?.free_tokens_refresh_at
+      : null;
+
+  const planLabelValue = getPlanLabel(planValue);
+
   return res.render('dashboard', {
     title: 'Личный кабинет',
     user: req.session.user,
-    planLabel: getPlanLabel(req.session.user?.plan),
+    planLabel: planLabelValue,
+    tokenInsights: {
+      hasLimit: hasTokenLimit,
+      capacity: hasTokenLimit ? planTokenCapacity : null,
+      remaining: limitedBalance,
+      used: tokensUsed,
+      remainingPercent,
+    },
+    subscriptionMeta: {
+      nextEventAt: toIsoOrNull(nextEventRaw),
+      nextEventType: isPaidPlan(planValue) ? 'billing' : planValue === 'free' ? 'refresh' : null,
+      isPaid: isPaidPlan(planValue),
+      plan: planValue,
+    },
   });
 });
 
