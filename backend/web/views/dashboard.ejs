@@ -5,10 +5,19 @@
     <div class="background-gradient"></div>
     <%- include('partials/header') %>
     <main class="page dashboard">
+      <% const tokenFormatter = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 1 }); %>
+      <% const tokenFullFormatter = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); %>
+      <% const nextEventDate = subscriptionMeta?.nextEventAt ? new Date(subscriptionMeta.nextEventAt) : null; %>
+      <% const nextEventFormatter = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' }); %>
+      <% const createdAtDate = user.created_at ? new Date(user.created_at) : null; %>
+      <% const createdAtFormatter = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }); %>
+      <% const remainingPercent = typeof tokenInsights?.remainingPercent === 'number' ? tokenInsights.remainingPercent : 0; %>
+      <% const planBadge = subscriptionMeta?.isPaid ? 'Подписка активна' : (subscriptionMeta?.plan === 'free' ? 'Free доступ' : 'План настроен вручную'); %>
       <section class="dashboard-header">
         <div>
+          <p class="dashboard-eyebrow">Ghostdesk • AI workspace</p>
           <h1>Здравствуйте, <%= user.email %></h1>
-          <p>Ваш ассистент готов подключиться к следующей встрече.</p>
+          <p class="dashboard-subtitle">Контролируйте подписку, расход токенов и подготовку к встречам из одного окна.</p>
         </div>
         <form action="/logout" method="post">
           <button type="submit" class="ghost-button">Выйти</button>
@@ -16,28 +25,86 @@
       </section>
       <%- include('partials/flash') %>
       <section class="dashboard-grid">
-        <article class="stat-card">
-          <h3>Тариф</h3>
-          <p class="stat-value"><%= planLabel || (user.plan ? user.plan : '—') %></p>
-          <p class="stat-description">Обновите тариф, чтобы получить доступ к расширенной аналитике и API.</p>
-          <button class="primary-button" type="button" data-open-billing>Оплатить подписку</button>
+        <article class="stat-card plan-status-card">
+          <div class="card-eyebrow">Текущий тариф</div>
+          <div class="plan-status-card__value">
+            <h3><%= planLabel || (user.plan ? user.plan : 'План не выбран') %></h3>
+            <span class="plan-status-card__badge"><%= planBadge %></span>
+          </div>
+          <p class="plan-status-card__meta">
+            <% if (nextEventDate) { %>
+              <span><%= subscriptionMeta?.nextEventType === 'billing' ? 'Следующее списание' : 'Бесплатные токены восстановятся' %></span>
+              <strong><%= nextEventFormatter.format(nextEventDate) %></strong>
+            <% } else { %>
+              <span>Активируйте подписку, чтобы видеть график списаний и пополнений.</span>
+            <% } %>
+          </p>
+          <p class="stat-description">Plus и Pro дают приоритетные лимиты, потоковое распознавание и умные фоллоу-апы для всей команды.</p>
+          <div class="plan-status-card__actions">
+            <button class="primary-button" type="button" data-open-billing>Управлять подпиской</button>
+            <a class="ghost-button" href="#billing-modal" data-open-billing>Сравнить тарифы</a>
+          </div>
         </article>
-        <article class="stat-card">
-          <h3>Токен доступа</h3>
-          <p class="token-value"><%= user.token %></p>
-          <p class="stat-description">Используйте этот токен, чтобы авторизовать Ghost AI в приложении.</p>
-          <button class="primary-button copy-token" data-token="<%= user.token %>">Скопировать</button>
+        <article class="stat-card token-balance-card">
+          <div class="token-balance-card__header">
+            <div>
+              <p class="card-eyebrow">Баланс токенов</p>
+              <h3>Осталось <span><%= tokenFormatter.format(tokenInsights?.remaining ?? 0) %></span> токенов</h3>
+            </div>
+            <button class="token-info-button" type="button" data-token-info-toggle aria-expanded="false" aria-controls="token-info-panel">
+              <span aria-hidden="true">i</span>
+              <span class="sr-only">Как списываются токены</span>
+            </button>
+          </div>
+          <% if (tokenInsights?.hasLimit) { %>
+            <div class="token-progress" role="img" aria-label="Осталось <%= tokenFormatter.format(tokenInsights?.remaining ?? 0) %> из <%= tokenFullFormatter.format(tokenInsights?.capacity ?? 0) %> токенов">
+              <div class="token-progress__bar">
+                <span class="token-progress__value" style="width: <%= remainingPercent %>%"></span>
+              </div>
+              <div class="token-progress__labels">
+                <p>Использовано <strong><%= tokenFormatter.format(tokenInsights?.used ?? 0) %></strong></p>
+                <p>Всего <strong><%= tokenFullFormatter.format(tokenInsights?.capacity ?? 0) %></strong></p>
+              </div>
+            </div>
+          <% } else { %>
+            <p class="stat-description">Для этого тарифа лимит гибкий. Мы уведомим, если приближаетесь к fair-use границам.</p>
+          <% } %>
+          <div class="token-meta-grid">
+            <div>
+              <p class="token-meta-label">Текущий тариф</p>
+              <p class="token-meta-value"><%= planLabel || '—' %></p>
+            </div>
+            <div>
+              <p class="token-meta-label">Обновление лимита</p>
+              <% if (nextEventDate) { %>
+                <p class="token-meta-value"><%= nextEventFormatter.format(nextEventDate) %></p>
+              <% } else { %>
+                <p class="token-meta-value">После активации</p>
+              <% } %>
+            </div>
+          </div>
+          <div class="token-info-panel" id="token-info-panel" data-token-info-panel hidden>
+            <p class="token-info-panel__title">Как мы считаем токены</p>
+            <ul>
+              <li><strong>2 токена</strong> за каждую минуту транскрибации встречи.</li>
+              <li><strong>0.5 токена</strong> за лёгкую подсказку Ghostdesk в чате.</li>
+              <li><strong>1 токен</strong> за запрос с анализом скриншота или полноценным промптом.</li>
+            </ul>
+            <p class="token-info-panel__note">Лимит обновляется автоматически в зависимости от подписки. Ghostdesk предупредит до паузы обслуживания.</p>
+          </div>
         </article>
-        <article class="stat-card">
-          <h3>Реферальный код</h3>
-          <p class="stat-value"><%= user.referral ? user.referral : '—' %></p>
-          <p class="stat-description">Поделитесь кодом с коллегами и получите бонусные подключения.</p>
-          <a class="ghost-button" href="mailto:support@ghostai.ru?subject=Referral%20program">Узнать условия</a>
-        </article>
-        <article class="stat-card">
-          <h3>Дата регистрации</h3>
-          <p class="stat-value"><%= new Date(user.created_at || Date.now()).toLocaleDateString('ru-RU') %></p>
-          <p class="stat-description">Ghost AI уже отслеживает ваши ключевые встречи.</p>
+        <article class="stat-card account-history-card">
+          <div class="card-eyebrow">Аккаунт</div>
+          <h3>Ghostdesk с <span><%= createdAtDate ? createdAtFormatter.format(createdAtDate) : 'сегодня' %></span></h3>
+          <p class="stat-description">Возвращайтесь к расшифровкам, следите за метриками и подключайте команду к единому AI-процессу.</p>
+          <ul class="account-history-list">
+            <li>Храните записи и расшифровки в разделе «Мои записи».</li>
+            <li>Добавляйте коллег в Plus/Pro, чтобы делиться токенами.</li>
+            <li>Интегрируйте Ghostdesk в любимые таск-трекеры через API.</li>
+          </ul>
+          <div class="account-history-actions">
+            <a class="ghost-button" href="/recordings">Открыть записи</a>
+          </div>
         </article>
       </section>
     </main>
@@ -111,7 +178,7 @@
     </div>
     <%- include('partials/footer') %>
     <script src="/js/password-toggle.js" defer></script>
-    <script src="/js/token-copy.js" defer></script>
+    <script src="/js/token-insights.js" defer></script>
     <script src="/js/billing-modal.js" defer></script>
   </body>
 </html>
