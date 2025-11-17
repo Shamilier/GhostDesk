@@ -11,6 +11,9 @@ struct UserProfile: Codable, Equatable {
     let email: String
     let token: String
     let plan: String
+    let tokenBalance: Int
+    let planRenewsAt: Date?
+    let freeTokensRefreshAt: Date?
     let referral: String?
     let createdAt: Date
 
@@ -18,8 +21,55 @@ struct UserProfile: Codable, Equatable {
         case email
         case token
         case plan
+        case tokenBalance = "token_balance"
+        case planRenewsAt = "plan_renews_at"
+        case freeTokensRefreshAt = "free_tokens_refresh_at"
         case referral
         case createdAt = "created_at"
+    }
+
+    init(
+        email: String,
+        token: String,
+        plan: String,
+        tokenBalance: Int,
+        planRenewsAt: Date?,
+        freeTokensRefreshAt: Date?,
+        referral: String?,
+        createdAt: Date
+    ) {
+        self.email = email
+        self.token = token
+        self.plan = plan
+        self.tokenBalance = tokenBalance
+        self.planRenewsAt = planRenewsAt
+        self.freeTokensRefreshAt = freeTokensRefreshAt
+        self.referral = referral
+        self.createdAt = createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        email = try container.decode(String.self, forKey: .email)
+        token = try container.decode(String.self, forKey: .token)
+        plan = try container.decode(String.self, forKey: .plan)
+        tokenBalance = try container.decodeIfPresent(Int.self, forKey: .tokenBalance) ?? 0
+        planRenewsAt = try container.decodeIfPresent(Date.self, forKey: .planRenewsAt)
+        freeTokensRefreshAt = try container.decodeIfPresent(Date.self, forKey: .freeTokensRefreshAt)
+        referral = try container.decodeIfPresent(String.self, forKey: .referral)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(email, forKey: .email)
+        try container.encode(token, forKey: .token)
+        try container.encode(plan, forKey: .plan)
+        try container.encode(tokenBalance, forKey: .tokenBalance)
+        try container.encodeIfPresent(planRenewsAt, forKey: .planRenewsAt)
+        try container.encodeIfPresent(freeTokensRefreshAt, forKey: .freeTokensRefreshAt)
+        try container.encodeIfPresent(referral, forKey: .referral)
+        try container.encode(createdAt, forKey: .createdAt)
     }
 }
 
@@ -57,6 +107,9 @@ final class AuthState: ObservableObject {
     var email: String? { profile?.email }
     var profileToken: String? { profile?.token }
     var plan: String? { profile?.plan }
+    var tokenBalance: Int? { profile?.tokenBalance }
+    var planRenewsAt: Date? { profile?.planRenewsAt }
+    var freeTokensRefreshAt: Date? { profile?.freeTokensRefreshAt }
     var referral: String? { profile?.referral }
     var createdAt: Date? { profile?.createdAt }
 

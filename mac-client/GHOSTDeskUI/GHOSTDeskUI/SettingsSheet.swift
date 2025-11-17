@@ -53,8 +53,28 @@ struct SettingsSheet: View {
         return createdAt.formatted(date: .abbreviated, time: .shortened)
     }
     private var tokenString: String { (auth.profileToken ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var planString: String  { (auth.plan ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var normalizedPlan: String? {
+        guard let plan = auth.plan?.trimmingCharacters(in: .whitespacesAndNewlines), !plan.isEmpty else { return nil }
+        return plan
+    }
+    private var planString: String  {
+        guard let normalizedPlan else { return "" }
+        return SettingsSheet.displayName(forPlan: normalizedPlan)
+    }
     private var refString: String   { (auth.referral ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var planLineText: String { planString.isEmpty ? "Не определён" : planString }
+    private var tokenBalanceValue: Int { auth.tokenBalance ?? 0 }
+    private var approximateMinutes: Int { max(0, tokenBalanceValue / 2) }
+    private var planDateMessage: String? {
+        guard let planValue = normalizedPlan?.lowercased() else { return nil }
+        if planValue == "free", let refreshAt = auth.freeTokensRefreshAt {
+            return "Бесплатные токены обновятся: \(formatSubscriptionDate(refreshAt))"
+        }
+        if (planValue.hasPrefix("plus_") || planValue.hasPrefix("pro_")), let renewsAt = auth.planRenewsAt {
+            return "Подписка действует до: \(formatSubscriptionDate(renewsAt))"
+        }
+        return nil
+    }
 
     var body: some View {
         GlassCard {
@@ -96,8 +116,10 @@ struct SettingsSheet: View {
                                 if let email = auth.email {
                                     LabeledContent("Email") { Text(email).monospaced() }
                                 }
-                                if let plan = auth.plan {
-                                    LabeledContent("Тариф") { Text(plan) }
+                                LabeledContent("Тариф") {
+                                    Text(planLineText)
+                                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                                        .foregroundStyle(planString.isEmpty ? ST.textTri : ST.textPri)
                                 }
                                 if let created = auth.createdAt {
                                     LabeledContent("Аккаунт с") { Text(created.formatted(date: .abbreviated, time: .omitted)) }
@@ -129,6 +151,31 @@ struct SettingsSheet: View {
                                 // Сообщение об ошибке/проблеме
                                 if let issue = auth.authorizationIssue ?? auth.lastError {
                                     Text(issue).font(.caption).foregroundStyle(.red)
+                                }
+                            }
+                        }
+
+                        if auth.profile != nil {
+                            GlassSection("Тариф и токены") {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Тариф: \(planLineText)")
+                                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(ST.textPri)
+
+                                    Text("Баланс: \(tokenBalanceValue) токенов")
+                                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                                        .foregroundStyle(ST.textPri)
+
+                                    Text("Примерно \(approximateMinutes) минут записи")
+                                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                                        .foregroundStyle(ST.textSec)
+
+                                    if let planDateMessage {
+                                        Text(planDateMessage)
+                                            .font(.system(size: 13, weight: .regular, design: .rounded))
+                                            .foregroundStyle(ST.textSec)
+                                            .padding(.top, 2)
+                                    }
                                 }
                             }
                         }
@@ -274,6 +321,51 @@ struct SettingsSheet: View {
         let end   = s.suffix(keep)
         return "\(start)••••••••••\(end)"
     }
+
+    private func formatSubscriptionDate(_ date: Date) -> String {
+        SettingsSheet.subscriptionDateFormatter.string(from: date)
+    }
+
+    private static func displayName(forPlan plan: String) -> String {
+        let lower = plan.lowercased()
+        switch lower {
+        case "free":
+            return "Free"
+        case "plus_monthly":
+            return "Plus (месячная подписка)"
+        case "pro_monthly":
+            return "Pro (месячная подписка)"
+        default:
+            if let cycle = billingCycleDescription(for: lower, prefix: "plus_") {
+                return "Plus (\(cycle))"
+            }
+            if let cycle = billingCycleDescription(for: lower, prefix: "pro_") {
+                return "Pro (\(cycle))"
+            }
+            return plan
+        }
+    }
+
+    private static func billingCycleDescription(for plan: String, prefix: String) -> String? {
+        guard plan.hasPrefix(prefix) else { return nil }
+        let suffix = plan.dropFirst(prefix.count)
+        switch suffix {
+        case "monthly":
+            return "месячная подписка"
+        case "yearly", "annual":
+            return "годовая подписка"
+        default:
+            return nil
+        }
+    }
+
+    private static let subscriptionDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
 
     // MARK: Card content
     private var cardView: some View {
