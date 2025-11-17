@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <%- include('partials/head', { title }) %>
+  <body class="theme-dark auth-page">
+    <div class="background-gradient"></div>
+    <%- include('partials/header') %>
+    <main class="page narrow">
+      <section class="auth-card">
+        <h1>Запрос заблокирован</h1>
+        <p class="auth-subtitle">
+          Сессия истекла или запрос был отклонен по соображениям безопасности. Обновите страницу и попробуйте снова.
+        </p>
+        <a class="primary-button" href="/">Вернуться на главную</a>
+      </section>
+    </main>
+    <%- include('partials/footer') %>
+  </body>
+</html>

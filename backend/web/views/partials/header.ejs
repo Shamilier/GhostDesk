@@ -22,6 +22,9 @@
         <% if (currentUser) { %>
           <a class="landing-primary-action" href="/dashboard">Личный кабинет</a>
           <form action="/logout" method="post">
+            <% if (csrfToken) { %>
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <% } %>
             <button type="submit" class="landing-primary-action outline">Выйти</button>
           </form>
         <% } else { %>

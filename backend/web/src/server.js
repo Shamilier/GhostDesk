@@ -6,6 +6,7 @@ require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const helmet = require('helmet');
+const csrf = require('csurf');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const { customAlphabet } = require('nanoid');
@@ -560,7 +561,96 @@ app.use(
   })
 );
 
+const csrfProtection = csrf();
+const CSRF_PROTECTED_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const CSRF_SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'TRACE']);
+
+const isCsrfExemptPath = (path) => {
+  const normalizedPath = typeof path === 'string' ? path : '';
+
+  if (normalizedPath === '/oauth/token' || normalizedPath === '/oauth/revoke') {
+    return true;
+  }
+
+  if (normalizedPath.startsWith('/webhooks/')) {
+    return true;
+  }
+
+  if (normalizedPath.startsWith('/internal/')) {
+    return true;
+  }
+
+  return false;
+};
+
+const shouldSkipCsrf = (req) => {
+  const method = (req.method || 'GET').toUpperCase();
+  if (!CSRF_PROTECTED_METHODS.has(method)) {
+    return true;
+  }
+
+  const pathName = req.path || '';
+  if (isCsrfExemptPath(pathName)) {
+    return true;
+  }
+
+  return false;
+};
+
+const shouldAttachCsrfToken = (req) => {
+  const method = (req.method || 'GET').toUpperCase();
+  if (!CSRF_SAFE_METHODS.has(method)) {
+    return false;
+  }
+
+  const pathName = req.path || '';
+  if (isCsrfExemptPath(pathName)) {
+    return false;
+  }
+
+  const acceptsHeader = typeof req.headers.accept === 'string' ? req.headers.accept : '';
+  if (
+    acceptsHeader &&
+    !acceptsHeader.includes('text/html') &&
+    !acceptsHeader.includes('application/xhtml+xml')
+  ) {
+    return false;
+  }
+
+  return true;
+};
+
+app.use((req, res, next) => {
+  if (!shouldAttachCsrfToken(req)) {
+    return next();
+  }
+
+  return csrfProtection(req, res, next);
+});
+
+app.use((req, res, next) => {
+  if (shouldSkipCsrf(req)) {
+    return next();
+  }
+
+  return csrfProtection(req, res, next);
+});
+
 app.use(express.static(path.join(__dirname, '..', 'public')));
+
+app.use((req, res, next) => {
+  if (typeof req.csrfToken === 'function') {
+    try {
+      res.locals.csrfToken = req.csrfToken();
+    } catch (err) {
+      res.locals.csrfToken = null;
+    }
+  } else {
+    res.locals.csrfToken = null;
+  }
+
+  next();
+});
 
 app.use(async (req, res, next) => {
   if (!req.session?.user?.id) {
@@ -1340,7 +1430,7 @@ app.get('/register', (req, res) => {
     req.session.oauthReturnTo = null;
   }
 
-  res.render('register', { title: 'Регистрация', oauthRequest, oauthContinue });
+  res.render('register', { title: 'Регистрация', oauthRequest, oauthContinue, csrfToken: res.locals.csrfToken });
 });
 
 app.post('/register', async (req, res) => {
@@ -1479,7 +1569,7 @@ app.get('/login', (req, res) => {
     req.session.oauthReturnTo = null;
   }
 
-  res.render('login', { title: 'Вход', oauthRequest, oauthContinue });
+  res.render('login', { title: 'Вход', oauthRequest, oauthContinue, csrfToken: res.locals.csrfToken });
 });
 
 app.post('/login', (req, res) => {
@@ -2385,6 +2475,24 @@ app.post('/api/recordings/:id/ask/stream', async (req, res) => {
   } finally {
     clearTimeout(timeoutId);
   }
+});
+
+app.use((err, req, res, next) => {
+  if (err.code !== 'EBADCSRFTOKEN') {
+    return next(err);
+  }
+
+  const acceptsJson =
+    req.xhr ||
+    (req.headers.accept && req.headers.accept.includes('application/json')) ||
+    (req.path || '').startsWith('/api/');
+
+  if (acceptsJson) {
+    return res.status(403).json({ error: 'csrf_invalid' });
+  }
+
+  res.status(403);
+  return res.render('csrf-error', { title: 'Ошибка безопасности' });
 });
 
 app.use((req, res) => {

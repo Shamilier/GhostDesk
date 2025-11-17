@@ -1,5 +1,10 @@
 const modal = document.querySelector('#billing-modal');
 
+const getCsrfToken = () => {
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : null;
+};
+
 if (modal) {
   const openTrigger = document.querySelector('[data-open-billing]');
   const closeTriggers = modal.querySelectorAll('[data-close-billing]');
@@ -107,10 +112,12 @@ if (modal) {
       }
 
       try {
+        const csrfToken = getCsrfToken();
         const response = await fetch('/api/billing/checkout', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
           },
           body: JSON.stringify({ plan: planId, cycle: currentCycle }),
         });
