@@ -81,7 +81,10 @@ struct OverlayRootView: View {
             overlayIsland
 
             if showOnboarding {
+                let targetSize = onboardingPreferredSize()
+
                 OnboardingOverlayView(onSkip: completeOnboarding, onFinish: completeOnboarding)
+                    .frame(width: targetSize.width, height: targetSize.height)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .ignoresSafeArea()
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
