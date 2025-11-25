@@ -15,6 +15,8 @@ final class OverlayWindowManager {
     private var authState: AuthState?
     private var hidesFromScreenCapture = true
     private let snapDistance: CGFloat = 12
+    private var tutorialWindow: TutorialOverlayPanel?
+    private var tutorialHostingView: NSHostingView<AnyView>?
     // MARK: - Coalesced resize
     private var resizeWorkItem: DispatchWorkItem?
     private var finalResizeWorkItem: DispatchWorkItem?
@@ -187,6 +189,47 @@ final class OverlayWindowManager {
         }
     }
 
+    // MARK: - Tutorial Overlay
+
+    func showTutorialOverlay<Content: View>(_ view: Content) {
+        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+        let frame = screen.frame
+        let root = AnyView(view)
+
+        if let hosting = tutorialHostingView, let window = tutorialWindow {
+            hosting.rootView = root
+            hosting.frame = NSRect(origin: .zero, size: frame.size)
+            window.setFrame(frame, display: true)
+            window.orderFront(nil)
+            return
+        }
+
+        let panel = TutorialOverlayPanel(frame: frame)
+        let hosting = NSHostingView(rootView: root)
+        hosting.frame = NSRect(origin: .zero, size: frame.size)
+        panel.contentView = hosting
+        panel.setFrame(frame, display: true)
+        panel.orderFrontRegardless()
+
+        tutorialWindow = panel
+        tutorialHostingView = hosting
+    }
+
+    func updateTutorialOverlay<Content: View>(_ view: Content) {
+        guard tutorialWindow != nil else {
+            showTutorialOverlay(view)
+            return
+        }
+        let root = AnyView(view)
+        tutorialHostingView?.rootView = root
+    }
+
+    func hideTutorialOverlay() {
+        tutorialWindow?.orderOut(nil)
+        tutorialWindow = nil
+        tutorialHostingView = nil
+    }
+
     func nudge(dx: CGFloat, dy: CGFloat) {
         guard let w = window, let screen = w.screen ?? NSScreen.main else { return }
         var f = w.frame
@@ -348,7 +391,7 @@ final class OverlayPanel: NSPanel {
         becomesKeyOnlyIfNeeded = false
         worksWhenModal = true
 
-        level = .statusBar
+        level = .statusBar + 1
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .stationary]
         sharingType = .none
         acceptsMouseMovedEvents = true
@@ -401,6 +444,31 @@ final class OverlayPanel: NSPanel {
         default:
             return false
         }
+    }
+}
+
+/// Прозрачное окно для полноэкранного обучающего слоя.
+final class TutorialOverlayPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+
+    init(frame: NSRect) {
+        super.init(
+            contentRect: frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        isMovable = false
+        isMovableByWindowBackground = false
+        hidesOnDeactivate = false
+        becomesKeyOnlyIfNeeded = true
+        level = .floating
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .stationary]
     }
 }
 

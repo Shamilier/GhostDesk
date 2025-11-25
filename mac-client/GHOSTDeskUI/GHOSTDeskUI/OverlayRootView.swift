@@ -35,6 +35,8 @@ struct OverlayRootView: View {
     @State private var lastNonSettingsTab: CommandTab = .listen
     @State private var showOnboarding = false
     @State private var onboardingFrames: [OnboardingTarget: CGRect] = [:]
+    @State private var isTutorialActive = true
+    @State private var tutorialStepIndex = 0
     // MARK: - Tabs
 
 
@@ -97,16 +99,32 @@ struct OverlayRootView: View {
                     .zIndex(5)
             }
         }
-        .onAppear { refreshOnboardingState() }
-        .onChange(of: auth.isAuthorized) { _ in refreshOnboardingState() }
+        .onAppear {
+            refreshOnboardingState()
+            if auth.isAuthorized { refreshTutorialOverlay() }
+        }
+        .onChange(of: auth.isAuthorized) { authorized in
+            refreshOnboardingState()
+            if authorized {
+                refreshTutorialOverlay()
+            } else {
+                OverlayWindowManager.shared.hideTutorialOverlay()
+            }
+        }
         .onChange(of: showOnboarding) { active in
             if active {
                 OverlayWindowManager.shared.freezeAutoResize()
                 OverlayWindowManager.shared.updateSize(to: onboardingPreferredSize())
+                OverlayWindowManager.shared.hideTutorialOverlay()
             } else {
                 OverlayWindowManager.shared.resumeAutoResize()
+                refreshTutorialOverlay()
             }
         }
+        .onChange(of: onboardingFrames) { _ in refreshTutorialOverlay() }
+        .onChange(of: isTutorialActive) { _ in refreshTutorialOverlay() }
+        .onChange(of: tutorialStepIndex) { _ in refreshTutorialOverlay() }
+        .onDisappear { OverlayWindowManager.shared.hideTutorialOverlay() }
     }
 
     private func refreshOnboardingState() {
@@ -140,6 +158,62 @@ struct OverlayRootView: View {
         return CGSize(width: max(targetWidth, 760), height: max(targetHeight, 560))
     }
 
+    private var tutorialSteps: [TutorialStep] {
+        [
+            TutorialStep(
+                target: .toolbarShell,
+                title: "Плавающий тулбар",
+                message: "Он всегда остаётся поверх любых окон. Даже во время обучения можно взаимодействовать со всеми кнопками.",
+                placement: .bottom,
+                highlightPadding: 18
+            ),
+            TutorialStep(
+                target: .tabSwitcher,
+                title: "Переключение Listen / Ask",
+                message: "Выберите вкладку, чтобы открыть нужную панель. Подсветка всегда следует за активным шагом.",
+                placement: .bottom,
+                highlightPadding: 14
+            ),
+            TutorialStep(
+                target: .visibilityToggle,
+                title: "Свернуть окно",
+                message: "Кнопка с глазом разворачивает и скрывает панели. В обучении она остаётся кликабельной.",
+                placement: .top,
+                highlightPadding: 12
+            ),
+            TutorialStep(
+                target: .menu,
+                title: "Быстрые действия",
+                message: "Три точки открывают меню и настройки. Переходите по шагам, чтобы увидеть разные подсветки.",
+                placement: .top,
+                highlightPadding: 12
+            )
+        ]
+    }
+
+    private func refreshTutorialOverlay() {
+        guard isTutorialActive, !showOnboarding else {
+            OverlayWindowManager.shared.hideTutorialOverlay()
+            return
+        }
+
+        let tutorial = TutorialOverlayView(
+            steps: tutorialSteps,
+            targets: onboardingFrames,
+            currentStepIndex: $tutorialStepIndex,
+            onClose: endTutorial
+        )
+
+        OverlayWindowManager.shared.showTutorialOverlay(tutorial)
+    }
+
+    private func endTutorial() {
+        withAnimation(.easeInOut(duration: 0.25)) {
+            isTutorialActive = false
+        }
+        OverlayWindowManager.shared.hideTutorialOverlay()
+    }
+
     private var overlayIsland: some View {
         VStack(spacing: 14) {
             FloatingToolbar(
@@ -166,6 +240,7 @@ struct OverlayRootView: View {
                 }
             )
             .padding(.top, 8)
+            .zIndex(10)
 
             // ⬇️ ГЛАВНОЕ: если открыт Settings — показываем его вместо остальных панелей
             if isExpanded {
