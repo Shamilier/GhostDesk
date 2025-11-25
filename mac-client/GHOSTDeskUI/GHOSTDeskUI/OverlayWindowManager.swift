@@ -348,7 +348,7 @@ final class OverlayPanel: NSPanel {
         becomesKeyOnlyIfNeeded = false
         worksWhenModal = true
 
-        level = .statusBar
+        level = .statusBar + 1
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .stationary]
         sharingType = .none
         acceptsMouseMovedEvents = true
@@ -398,6 +398,16 @@ final class OverlayPanel: NSPanel {
         case kVK_ANSI_O: model.startStopRecording(); return true
         case kVK_ANSI_N: model.askHint(); return true
         case kVK_ANSI_M: model.askSolve(); return true
+        case kVK_ANSI_T:
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                if model.isTutorialVisible {
+                    model.isTutorialVisible = false
+                } else {
+                    model.activeTutorialStep = 0
+                    model.isTutorialVisible = true
+                }
+            }
+            return true
         default:
             return false
         }

@@ -103,6 +103,10 @@ final class OverlayModel: ObservableObject {
     // Нижняя панель (заглушки)
     @Published var isAutoHints: Bool = false
 
+    // Обучение
+    @Published var isTutorialVisible: Bool = false
+    @Published var activeTutorialStep: Int = 0
+
     // Настройки
     @Published var showSettings: Bool = false
     @Published var askSolveTrigger: Int = 0

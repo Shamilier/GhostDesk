@@ -35,6 +35,35 @@ struct OverlayRootView: View {
     @State private var lastNonSettingsTab: CommandTab = .listen
     @State private var showOnboarding = false
     @State private var onboardingFrames: [OnboardingTarget: CGRect] = [:]
+    @State private var tutorialSteps: [TutorialStep] = [
+        TutorialStep(
+            target: .toolbarShell,
+            title: "Плавающий тулбар",
+            message: "Быстрый доступ к командам Ghost. Он всегда остаётся кликабельным поверх остальных панелей.",
+            calloutPosition: .bottom,
+            padding: 18
+        ),
+        TutorialStep(
+            target: .tabSwitcher,
+            title: "Переключение режимов",
+            message: "Listen показывает транскрипт, Ask — задаёт вопросы. Меняйте вкладки без выхода из обучения.",
+            calloutPosition: .bottom
+        ),
+        TutorialStep(
+            target: .visibilityToggle,
+            title: "Сворачивание окна",
+            message: "Кнопка-глаз оставляет только островок. В обучении поведение идентично основному режиму.",
+            calloutPosition: .leading,
+            padding: 10
+        ),
+        TutorialStep(
+            target: .menu,
+            title: "Быстрые действия",
+            message: "Откройте меню из трёх точек, чтобы увидеть настройки и команды, не выходя из обучения.",
+            calloutPosition: .trailing,
+            padding: 10
+        )
+    ]
     // MARK: - Tabs
 
 
@@ -57,6 +86,13 @@ struct OverlayRootView: View {
 
     private var microphoneChannelState: OverlayModel.TranscriptionChannelState {
         overlay.transcriptionState(for: .microphone)
+    }
+
+    private var tutorialStepBinding: Binding<Int> {
+        Binding(
+            get: { min(max(overlay.activeTutorialStep, 0), max(tutorialSteps.count - 1, 0)) },
+            set: { newValue in overlay.activeTutorialStep = min(max(newValue, 0), max(tutorialSteps.count - 1, 0)) }
+        )
     }
 
     var body: some View {
@@ -89,6 +125,19 @@ struct OverlayRootView: View {
                     }
                 }
 
+            if overlay.isTutorialVisible {
+                TutorialOverlayView(
+                    steps: tutorialSteps,
+                    currentIndex: tutorialStepBinding,
+                    targets: onboardingFrames,
+                    onClose: endTutorial
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea()
+                .transition(.opacity.combined(with: .scale(scale: 0.995)))
+                .zIndex(20)
+            }
+
             if showOnboarding {
                 OnboardingOverlayView(onSkip: completeOnboarding, onFinish: completeOnboarding, targets: onboardingFrames)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -99,6 +148,9 @@ struct OverlayRootView: View {
         }
         .onAppear { refreshOnboardingState() }
         .onChange(of: auth.isAuthorized) { _ in refreshOnboardingState() }
+        .onChange(of: overlay.isTutorialVisible) { active in
+            if active { overlay.activeTutorialStep = 0 }
+        }
         .onChange(of: showOnboarding) { active in
             if active {
                 OverlayWindowManager.shared.freezeAutoResize()
@@ -121,6 +173,12 @@ struct OverlayRootView: View {
         auth.markOnboardingCompleted()
         withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
             showOnboarding = false
+        }
+    }
+
+    private func endTutorial() {
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
+            overlay.isTutorialVisible = false
         }
     }
 
@@ -166,6 +224,7 @@ struct OverlayRootView: View {
                 }
             )
             .padding(.top, 8)
+            .zIndex(1000)
 
             // ⬇️ ГЛАВНОЕ: если открыт Settings — показываем его вместо остальных панелей
             if isExpanded {
@@ -183,7 +242,7 @@ struct OverlayRootView: View {
             }
         }
         // окно подстраивается по высоте как и для других панелей
-        .overlayAutoResize(enabled: !showOnboarding)
+        .overlayAutoResize(enabled: !showOnboarding && !overlay.isTutorialVisible)
         .animation(.spring(response: 0.2, dampingFraction: 0.86), value: isExpanded)
         .animation(.spring(response: 0.2, dampingFraction: 0.86), value: selectedTab)
         .onChange(of: overlay.askSolveTrigger) { _ in
