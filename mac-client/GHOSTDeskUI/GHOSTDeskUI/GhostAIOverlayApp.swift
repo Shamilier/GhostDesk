@@ -47,8 +47,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
+        model.$isTutorialVisible
+            .receive(on: RunLoop.main)
+            .sink { visible in
+                if visible {
+                    TutorialOverlayManager.shared.presentOverlay(on: NSScreen.main)
+                } else {
+                    TutorialOverlayManager.shared.hideOverlay()
+                }
+            }
+            .store(in: &cancellables)
+
         // показать при старте
         OverlayWindowManager.shared.show(model: model, auth: authState)
+
+        // легковесный запуск обучения после первого показа тулбара
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self else { return }
+            self.model.prepareDefaultTutorialSteps()
+            self.model.showTutorial()
+        }
 
         HotKeyManager.shared.activate()
         NSApp.activate(ignoringOtherApps: true)
