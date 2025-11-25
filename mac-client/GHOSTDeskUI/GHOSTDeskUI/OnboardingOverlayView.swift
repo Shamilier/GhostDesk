@@ -1,5 +1,32 @@
 import SwiftUI
 
+// MARK: - Anchor helpers
+
+enum OnboardingTarget: Hashable {
+    case toolbar
+    case transcript
+    case askInput
+    case shortcuts
+
+    static var coordinateSpace: String { "onboarding-targets-space" }
+}
+
+struct OnboardingTargetPreferenceKey: PreferenceKey {
+    static var defaultValue: [OnboardingTarget: Anchor<CGRect>] { [:] }
+
+    static func reduce(value: inout [OnboardingTarget: Anchor<CGRect>], nextValue: () -> [OnboardingTarget: Anchor<CGRect>]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+extension View {
+    func onboardingTarget(_ target: OnboardingTarget) -> some View {
+        anchorPreference(key: OnboardingTargetPreferenceKey.self, value: .bounds) {
+            [target: $0]
+        }
+    }
+}
+
 struct OnboardingOverlayView: View {
     struct Step: Identifiable {
         let id = UUID()
@@ -7,8 +34,9 @@ struct OnboardingOverlayView: View {
         let subtitle: String
         let icon: String
         let accent: Color
-        let highlightSize: CGSize
-        let highlightAlignment: Alignment
+        let target: OnboardingTarget
+        let fallbackSize: CGSize
+        let fallbackAlignment: Alignment
         let highlightOffset: CGSize
         let tips: [String]
     }
@@ -16,8 +44,10 @@ struct OnboardingOverlayView: View {
     @State private var currentStepIndex: Int = 0
     @State private var pulse: Bool = false
 
+    var targetFrames: [OnboardingTarget: CGRect]
     var onSkip: () -> Void
     var onFinish: () -> Void
+    var onStepChange: (OnboardingTarget) -> Void = { _ in }
 
     private var steps: [Step] {
         [
@@ -26,8 +56,9 @@ struct OnboardingOverlayView: View {
                 subtitle: "Запускайте/останавливайте запись, открывайте настройки и переключайтесь между режимами на верхней панели островка.",
                 icon: "rectangle.3.offgrid",
                 accent: Color.cyan,
-                highlightSize: CGSize(width: 340, height: 84),
-                highlightAlignment: .top,
+                target: .toolbar,
+                fallbackSize: CGSize(width: 420, height: 76),
+                fallbackAlignment: .top,
                 highlightOffset: CGSize(width: 0, height: 40),
                 tips: [
                     "Нажмите кнопку глаза, чтобы спрятать или развернуть островок.",
@@ -40,8 +71,9 @@ struct OnboardingOverlayView: View {
                 subtitle: "Мы слушаем системный звук или микрофон и показываем живой транскрипт. Ghost может резюмировать и подсвечивать инсайты.",
                 icon: "waveform",
                 accent: Color.green,
-                highlightSize: CGSize(width: 420, height: 260),
-                highlightAlignment: .center,
+                target: .transcript,
+                fallbackSize: CGSize(width: 520, height: 320),
+                fallbackAlignment: .center,
                 highlightOffset: CGSize(width: 0, height: -12),
                 tips: [
                     "Переключайтесь между \"Транскрипт\" и \"Инсайты\" одной кнопкой.",
@@ -54,8 +86,9 @@ struct OnboardingOverlayView: View {
                 subtitle: "Во вкладке Вопрос можно отправить свой запрос или попросить Ghost продолжить мысль, опираясь на свежий контекст.",
                 icon: "bubble.left.and.bubble.right",
                 accent: Color.purple,
-                highlightSize: CGSize(width: 420, height: 210),
-                highlightAlignment: .center,
+                target: .askInput,
+                fallbackSize: CGSize(width: 520, height: 180),
+                fallbackAlignment: .center,
                 highlightOffset: CGSize(width: 0, height: 180),
                 tips: [
                     "Начните печатать — поле сразу получает фокус при открытии вкладки.",
@@ -68,9 +101,10 @@ struct OnboardingOverlayView: View {
                 subtitle: "Ghost работает в фоне. Горячие клавиши и иконка в меню помогут быстро открыть/скрыть оверлей.",
                 icon: "sparkles",
                 accent: Color.orange,
-                highlightSize: CGSize(width: 240, height: 60),
-                highlightAlignment: .bottomTrailing,
-                highlightOffset: CGSize(width: -20, height: -22),
+                target: .shortcuts,
+                fallbackSize: CGSize(width: 280, height: 72),
+                fallbackAlignment: .bottomTrailing,
+                highlightOffset: CGSize(width: -18, height: -26),
                 tips: [
                     "Нажмите комбинацию горячих клавиш, чтобы развернуть окно из любой точки.",
                     "Кнопка \"Готово\" закроет обучение и сохранит настройки.",
@@ -86,8 +120,12 @@ struct OnboardingOverlayView: View {
         GeometryReader { proxy in
             let isCompact = proxy.size.width < 1120
 
-            ZStack {
+            ZStack(alignment: .topLeading) {
                 backgroundLayer
+                    .allowsHitTesting(false)
+
+                highlightOverlay
+                    .allowsHitTesting(false)
 
                 VStack(alignment: .leading, spacing: 22) {
                     heroHeader
@@ -96,48 +134,42 @@ struct OnboardingOverlayView: View {
 
                     footerBar
                 }
-                .padding(.horizontal, isCompact ? 20 : 36)
-                .padding(.vertical, 28)
+                .frame(maxWidth: 440, alignment: .leading)
+                .padding(.horizontal, isCompact ? 20 : 32)
+                .padding(.vertical, 22)
             }
         }
         .onAppear {
             withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
                 pulse.toggle()
             }
+            onStepChange(step.target)
         }
     }
 
     private var backgroundLayer: some View {
         ZStack {
+            Color.black.opacity(0.42)
+                .ignoresSafeArea()
+
             LinearGradient(
-                colors: [Color(red: 0.07, green: 0.09, blue: 0.16), Color(red: 0.03, green: 0.05, blue: 0.08)],
+                colors: [Color(red: 0.18, green: 0.24, blue: 0.34).opacity(0.45), Color(red: 0.04, green: 0.06, blue: 0.1).opacity(0.38)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
+            .blendMode(.softLight)
             .ignoresSafeArea()
 
             RadialGradient(
                 colors: [step.accent.opacity(0.32), .clear],
                 center: .center,
-                startRadius: 90,
+                startRadius: 80,
                 endRadius: 680
             )
             .blendMode(.screen)
-            .blur(radius: 42)
+            .blur(radius: 36)
             .ignoresSafeArea()
             .animation(.easeInOut(duration: 0.35), value: step.accent)
-
-            Circle()
-                .fill(Color.white.opacity(0.02))
-                .blur(radius: 80)
-                .frame(width: 420, height: 420)
-                .offset(x: -260, y: -180)
-
-            Circle()
-                .fill(step.accent.opacity(0.14))
-                .blur(radius: 120)
-                .frame(width: 360, height: 360)
-                .offset(x: 220, y: 260)
         }
     }
 
@@ -195,28 +227,16 @@ struct OnboardingOverlayView: View {
     }
 
     private func glassContainer(isCompact: Bool) -> some View {
-        let layout = isCompact ? AnyLayout(VStackLayout(spacing: 18)) : AnyLayout(HStackLayout(spacing: 18))
-
-        return layout {
-            onboardingSteps
-            Divider()
-                .overlay(Color.white.opacity(0.08))
-                .frame(maxHeight: isCompact ? 1 : .infinity)
-                .frame(maxWidth: isCompact ? .infinity : 1)
-                .padding(isCompact ? .horizontal : .vertical, 4)
-            GhostPanelPreview(step: step, pulse: $pulse) {
-                spotlight(in: $0)
-            }
-        }
-        .padding(isCompact ? 18 : 22)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(glassBackground)
-        .overlay(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(step.accent.opacity(0.22), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .shadow(color: .black.opacity(0.45), radius: 32, x: 0, y: 18)
+        onboardingSteps
+            .padding(isCompact ? 18 : 20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(glassBackground)
+            .overlay(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(step.accent.opacity(0.22), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .shadow(color: .black.opacity(0.45), radius: 32, x: 0, y: 18)
     }
 
     private var glassBackground: some ShapeStyle {
@@ -293,6 +313,67 @@ struct OnboardingOverlayView: View {
         }
     }
 
+    private var highlightOverlay: some View {
+        GeometryReader { proxy in
+            let frame = resolvedFrame(using: proxy)
+
+            ZStack {
+                if let frame {
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .stroke(step.accent.opacity(0.9), lineWidth: 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [step.accent.opacity(0.14), step.accent.opacity(0.02)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .blur(radius: pulse ? 18 : 26)
+                                .opacity(0.9)
+                                .animation(.easeInOut(duration: 1.2), value: pulse)
+                        )
+                        .frame(width: frame.width, height: frame.height)
+                        .position(x: frame.midX, y: frame.midY)
+                        .shadow(color: step.accent.opacity(0.5), radius: 18, x: 0, y: 12)
+                        .overlay(alignment: .topTrailing) {
+                            if currentStepIndex == 0 {
+                                Label("Кликни, чтобы развернуть", systemImage: "hand.tap")
+                                    .font(.caption2.weight(.semibold))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(RoundedRectangle(cornerRadius: 12).fill(.ultraThinMaterial.opacity(0.9)))
+                                    .foregroundStyle(.primary)
+                                    .offset(x: 6, y: -10)
+                                    .transition(.move(edge: .top).combined(with: .opacity))
+                            }
+                        }
+                } else {
+                    ProgressView()
+                        .tint(step.accent)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+        }
+    }
+
+    private func resolvedFrame(using proxy: GeometryProxy) -> CGRect? {
+        guard let anchor = targetFrames[step.target] else {
+            let anchor = anchorPoint(for: step.fallbackAlignment, in: proxy.size)
+            return CGRect(
+                x: anchor.x - (step.fallbackSize.width / 2) + step.highlightOffset.width,
+                y: anchor.y - (step.fallbackSize.height / 2) + step.highlightOffset.height,
+                width: step.fallbackSize.width,
+                height: step.fallbackSize.height
+            )
+        }
+
+        let frame = proxy[anchor]
+
+        return frame.offsetBy(dx: step.highlightOffset.width, dy: step.highlightOffset.height)
+    }
+
     private func anchorPoint(for alignment: Alignment, in size: CGSize) -> CGPoint {
         switch alignment {
         case .top:
@@ -303,49 +384,6 @@ struct OnboardingOverlayView: View {
             return CGPoint(x: size.width * 0.80, y: size.height * 0.80)
         default:
             return CGPoint(x: size.width / 2, y: size.height / 2)
-        }
-    }
-
-    private func spotlight(in size: CGSize) -> some View {
-        let anchor = anchorPoint(for: step.highlightAlignment, in: size)
-        let frame = CGRect(
-            x: anchor.x - (step.highlightSize.width / 2) + step.highlightOffset.width,
-            y: anchor.y - (step.highlightSize.height / 2) + step.highlightOffset.height,
-            width: step.highlightSize.width,
-            height: step.highlightSize.height
-        )
-
-        return ZStack {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(step.accent.opacity(0.9), lineWidth: 2)
-                .background(
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [step.accent.opacity(0.14), step.accent.opacity(0.02)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .blur(radius: pulse ? 20 : 34)
-                        .opacity(0.9)
-                        .animation(.easeInOut(duration: 1.2), value: pulse)
-                )
-                .frame(width: frame.width, height: frame.height)
-                .position(x: frame.midX, y: frame.midY)
-                .shadow(color: step.accent.opacity(0.45), radius: 18, x: 0, y: 10)
-                .overlay(alignment: .topTrailing) {
-                    if currentStepIndex == 0 {
-                        Label("Кликни, чтобы развернуть", systemImage: "hand.tap")
-                            .font(.caption2.weight(.semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(.ultraThinMaterial.opacity(0.9)))
-                            .foregroundStyle(.primary)
-                            .offset(x: 6, y: -10)
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                    }
-                }
         }
     }
 
@@ -407,6 +445,7 @@ struct OnboardingOverlayView: View {
         withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
             currentStepIndex = index
         }
+        onStepChange(steps[index].target)
     }
 
     private func goBack() {
@@ -414,6 +453,7 @@ struct OnboardingOverlayView: View {
         withAnimation(.spring(response: 0.5, dampingFraction: 0.88)) {
             currentStepIndex -= 1
         }
+        onStepChange(step.target)
     }
 
     private var footerBar: some View {
@@ -431,202 +471,12 @@ struct OnboardingOverlayView: View {
         .padding(.horizontal, 12)
     }
 
-    private struct GhostPanelPreview<Spotlight: View>: View {
-        let step: Step
-        @Binding var pulse: Bool
-        var spotlight: (CGSize) -> Spotlight
-
-        var body: some View {
-            VStack(alignment: .leading, spacing: 14) {
-                previewHeader
-                ZStack(alignment: .top) {
-                    GeometryReader { proxy in
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(panelBackground)
-                            .overlay(panelContent)
-                            .overlay(alignment: .top) {
-                                spotlight(proxy.size)
-                            }
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
-                            )
-                    }
-                    .frame(height: 320)
-                }
-                .background(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(Color.white.opacity(0.02))
-                        .shadow(color: .black.opacity(0.4), radius: 24, x: 0, y: 16)
-                )
-            }
-        }
-
-        private var previewHeader: some View {
-            HStack(spacing: 10) {
-                Text("Превью панели Ghost AI")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.white)
-                Spacer()
-                Capsule()
-                    .fill(step.accent.opacity(0.18))
-                    .frame(width: 12, height: 12)
-                    .overlay(Capsule().stroke(step.accent.opacity(0.45), lineWidth: 1))
-                Text("Live")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(step.accent)
-            }
-        }
-
-        private var panelBackground: some ShapeStyle {
-            LinearGradient(
-                colors: [Color(red: 0.08, green: 0.1, blue: 0.14), Color(red: 0.06, green: 0.08, blue: 0.12)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        }
-
-        private var panelContent: some View {
-            VStack(spacing: 0) {
-                headerBar
-                Divider().overlay(Color.white.opacity(0.05))
-                mainContent
-                Divider().overlay(Color.white.opacity(0.05))
-                footerBar
-            }
-        }
-
-        private var headerBar: some View {
-            HStack(spacing: 10) {
-                Label("Ghost AI", systemImage: "sparkles")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                Spacer()
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.white.opacity(0.05))
-                    .frame(width: 110, height: 26)
-                    .overlay(
-                        HStack(spacing: 6) {
-                            Circle().fill(step.accent).frame(width: 8, height: 8)
-                            Text("Live transcript")
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.white.opacity(0.9))
-                        }
-                            .padding(.horizontal, 8)
-                    )
-            }
-            .padding(12)
-        }
-
-        private var mainContent: some View {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 8) {
-                    ghostCard(title: "Транскрипт", subtitle: "Live", gradient: gradientAccent)
-                    ghostCard(title: "Инсайты", subtitle: "AI Highlights", gradient: gradientAccent)
-                    Spacer()
-                }
-                .frame(width: 160)
-
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color.white.opacity(0.02))
-                    .overlay(
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(0..<4) { row in
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(Color.white.opacity(0.05))
-                                    .frame(height: 46)
-                                    .overlay(
-                                        HStack(spacing: 12) {
-                                            Circle()
-                                                .fill(step.accent.opacity(0.8))
-                                                .frame(width: 10, height: 10)
-                                                .shadow(color: step.accent.opacity(0.5), radius: 6, x: 0, y: 4)
-                                            VStack(alignment: .leading, spacing: 4) {
-                                                RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.22)).frame(height: 6)
-                                                RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.12)).frame(width: 120, height: 5)
-                                            }
-                                            Spacer()
-                                            Image(systemName: row % 2 == 0 ? "sparkles" : "ellipsis")
-                                                .foregroundStyle(Color.white.opacity(0.55))
-                                        }
-                                        .padding(.horizontal, 12)
-                                    )
-                            }
-                        }
-                        .padding(12)
-                    )
-            }
-            .padding(12)
-        }
-
-        private var footerBar: some View {
-            HStack(spacing: 8) {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.white.opacity(0.05))
-                    .frame(width: 46, height: 36)
-                    .overlay(Image(systemName: "keyboard").foregroundStyle(.white.opacity(0.75)))
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(step.accent.opacity(0.16))
-                    .frame(height: 36)
-                    .overlay(
-                        HStack(spacing: 8) {
-                            Image(systemName: "mic.fill").foregroundStyle(step.accent)
-                            Text("Слушаем Mac")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.white)
-                        }
-                            .padding(.horizontal, 12)
-                    )
-                Spacer()
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.white.opacity(0.05))
-                    .frame(width: 120, height: 36)
-                    .overlay(
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.up.message")
-                                .foregroundStyle(.white.opacity(0.7))
-                            Text("Спросить Ghost")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.white)
-                        }
-                    )
-            }
-            .padding(12)
-        }
-
-        private var gradientAccent: LinearGradient {
-            LinearGradient(
-                colors: [step.accent.opacity(0.9), step.accent.opacity(0.45)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        }
-
-        private func ghostCard(title: String, subtitle: String, gradient: LinearGradient) -> some View {
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white.opacity(0.03))
-                .overlay(
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(title)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white)
-                        Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Capsule()
-                            .fill(gradient)
-                            .frame(height: 6)
-                    }
-                    .padding(10)
-                )
-        }
-    }
-
     private func advance() {
         if currentStepIndex < steps.count - 1 {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.88)) {
                 currentStepIndex += 1
             }
+            onStepChange(step.target)
         } else {
             onFinish()
         }
@@ -634,7 +484,7 @@ struct OnboardingOverlayView: View {
 }
 
 #Preview {
-    OnboardingOverlayView(onSkip: {}, onFinish: {})
+    OnboardingOverlayView(targetFrames: [:], onSkip: {}, onFinish: {})
         .background(.black)
         .preferredColorScheme(.dark)
 }

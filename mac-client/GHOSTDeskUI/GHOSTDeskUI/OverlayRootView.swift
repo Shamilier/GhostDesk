@@ -34,6 +34,7 @@ struct OverlayRootView: View {
     @State private var showResponse: Bool = false
     @State private var lastNonSettingsTab: CommandTab = .listen
     @State private var showOnboarding = false
+    @State private var onboardingAnchors: [OnboardingTarget: Anchor<CGRect>] = [:]
     // MARK: - Tabs
 
 
@@ -77,15 +78,26 @@ struct OverlayRootView: View {
     }
 
     private var authorizedOverlay: some View {
-        ZStack {
+        ZStack(alignment: .topLeading) {
             overlayIsland
+                .coordinateSpace(name: OnboardingTarget.coordinateSpace)
+                .onPreferenceChange(OnboardingTargetPreferenceKey.self) { anchors in
+                    onboardingAnchors = anchors
+                }
 
             if showOnboarding {
-                OnboardingOverlayView(onSkip: completeOnboarding, onFinish: completeOnboarding)
+                GeometryReader { proxy in
+                    OnboardingOverlayView(
+                        targetFrames: resolvedOnboardingFrames(using: proxy),
+                        onSkip: completeOnboarding,
+                        onFinish: completeOnboarding,
+                        onStepChange: handleOnboardingStepChange
+                    )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .ignoresSafeArea()
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                    .zIndex(5)
+                }
+                .zIndex(5)
             }
         }
         .onAppear { refreshOnboardingState() }
@@ -94,6 +106,7 @@ struct OverlayRootView: View {
             if active {
                 OverlayWindowManager.shared.freezeAutoResize()
                 OverlayWindowManager.shared.updateSize(to: onboardingPreferredSize())
+                handleOnboardingStepChange(.toolbar)
             } else {
                 OverlayWindowManager.shared.resumeAutoResize()
             }
@@ -123,6 +136,30 @@ struct OverlayRootView: View {
         return CGSize(width: max(targetWidth, 760), height: max(targetHeight, 560))
     }
 
+    private func resolvedOnboardingFrames(using proxy: GeometryProxy) -> [OnboardingTarget: CGRect] {
+        onboardingAnchors.mapValues { anchor in proxy[anchor] }
+    }
+
+    private func handleOnboardingStepChange(_ target: OnboardingTarget) {
+        guard showOnboarding else { return }
+
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+            isExpanded = true
+        }
+
+        switch target {
+        case .askInput:
+            selectedTab = .ask
+            askFocused = true
+        default:
+            if selectedTab == .settings { selectedTab = lastNonSettingsTab }
+            if selectedTab != .listen { selectedTab = .listen }
+            showTranscript = true
+        }
+
+        requestOverlayResize(finalAfter: 0.24)
+    }
+
     private var overlayIsland: some View {
         VStack(spacing: 14) {
             FloatingToolbar(
@@ -148,6 +185,8 @@ struct OverlayRootView: View {
                     }
                 }
             )
+            .onboardingTarget(.toolbar)
+            .onboardingTarget(.shortcuts)
             .padding(.top, 8)
 
             // ⬇️ ГЛАВНОЕ: если открыт Settings — показываем его вместо остальных панелей
@@ -276,6 +315,7 @@ struct OverlayRootView: View {
                         microphoneState: microphoneChannelState,
                         autoScroll: $autoScroll
                     )
+                    .onboardingTarget(.transcript)
                     .transition(.opacity.combined(with: .move(edge: .top)))
                     .edgeFade(height: 320)     // фикс высоты + плавное затухание краёв
 
@@ -640,6 +680,7 @@ struct OverlayRootView: View {
                 isSubmitting: askVM.isSubmitting,
                 onSubmit: submitQuestion
             )
+            .onboardingTarget(.askInput)
             .frame(maxWidth: 600)
 
             if showResponse {
