@@ -298,6 +298,22 @@ struct SettingsSheet: View {
                             }
                         }
 
+                        GlassSection("Сброс состояния") {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Удаляет информацию о прохождении онбординга и авторизационные данные. При следующем запуске потребуется снова войти и пройти обучение.")
+                                    .font(.system(size: 13, weight: .regular, design: .rounded))
+                                    .foregroundStyle(ST.textSec)
+
+                                Button {
+                                    auth.resetAuthorizationAndOnboarding()
+                                } label: {
+                                    Label("Сбросить онбординг и авторизацию", systemImage: "arrow.counterclockwise")
+                                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                }
+                                .buttonStyle(GlassPill(tint: .red))
+                            }
+                        }
+
 
                         // === Низ (кнопки действия) ===
                     }
