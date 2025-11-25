@@ -30,6 +30,7 @@ struct OverlayRootView: View {
     @State private var smartMode: Bool = false
     @FocusState private var askFocused: Bool
     @ObservedObject private var hint = HintAgent.shared
+    @ObservedObject private var tutorial = TutorialFlow.shared
     @State private var showTranscript = true
     @State private var showResponse: Bool = false
     @State private var lastNonSettingsTab: CommandTab = .listen
@@ -107,6 +108,22 @@ struct OverlayRootView: View {
                 OverlayWindowManager.shared.resumeAutoResize()
             }
         }
+        .onChange(of: tutorial.isActive) { active in
+            if active {
+                TutorialOverlayWindowManager.shared.present(flow: tutorial)
+            } else {
+                TutorialOverlayWindowManager.shared.hide()
+            }
+        }
+        .onChange(of: onboardingFrames) { _ in
+            updateTutorialTargets()
+        }
+        .onAppear {
+            if tutorial.isActive {
+                TutorialOverlayWindowManager.shared.present(flow: tutorial)
+            }
+            updateTutorialTargets()
+        }
     }
 
     private func refreshOnboardingState() {
@@ -129,6 +146,17 @@ struct OverlayRootView: View {
             onboardingFrames = anchors.mapValues { anchor in
                 proxy[anchor, in: .named("onboarding-space")]
             }
+            updateTutorialTargets()
+        }
+    }
+
+    private func updateTutorialTargets() {
+        let converted: [OnboardingTarget: CGRect] = onboardingFrames.compactMapValues { frame in
+            OverlayWindowManager.shared.screenAlignedFrame(for: frame)
+        }
+        tutorial.updateTargets(converted)
+        if tutorial.isActive {
+            TutorialOverlayWindowManager.shared.present(flow: tutorial)
         }
     }
 
@@ -166,6 +194,7 @@ struct OverlayRootView: View {
                 }
             )
             .padding(.top, 8)
+            .zIndex(1000)
 
             // ⬇️ ГЛАВНОЕ: если открыт Settings — показываем его вместо остальных панелей
             if isExpanded {

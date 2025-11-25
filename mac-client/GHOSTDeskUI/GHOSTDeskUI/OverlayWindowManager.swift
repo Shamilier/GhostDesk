@@ -196,6 +196,16 @@ final class OverlayWindowManager {
         w.setFrame(f, display: true, animate: false)
     }
 
+    func screenAlignedFrame(for viewRect: CGRect) -> CGRect? {
+        guard let hostingView, let window else { return nil }
+        let nsRect = NSRect(origin: viewRect.origin, size: viewRect.size)
+        let windowRect = hostingView.convert(nsRect, to: nil)
+        let screenRect = window.convertToScreen(windowRect)
+        let screenHeight = window.screen?.frame.height ?? NSScreen.main?.frame.height ?? 0
+        let flippedY = screenHeight - screenRect.origin.y - screenRect.size.height
+        return CGRect(x: screenRect.origin.x, y: flippedY, width: screenRect.size.width, height: screenRect.size.height)
+    }
+
     func center(on screen: NSScreen) {
         guard let w = window else { return }
         let rect = screen.visibleFrame
@@ -348,7 +358,7 @@ final class OverlayPanel: NSPanel {
         becomesKeyOnlyIfNeeded = false
         worksWhenModal = true
 
-        level = .statusBar
+        level = .screenSaver
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .stationary]
         sharingType = .none
         acceptsMouseMovedEvents = true
