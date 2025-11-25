@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <%- include('../partials/head', { title }) %>
+  <body class="theme-dark">
+    <div class="background-gradient"></div>
+    <%- include('../partials/header', { activeNav: 'recordings' }) %>
+    <main class="page recordings-page" data-recordings-list>
+      <header class="recordings-page__header">
+        <div>
+          <h1>Мои записи</h1>
+          <p>Актуальные встречи и звонки Ghost AI: слушайте, читайте транскрипт и задавайте вопросы ИИ.</p>
+        </div>
+      </header>
+
+      <section class="recordings-container" aria-live="polite" aria-busy="false">
+        <div class="recordings-loader" data-recordings-loader hidden aria-hidden="true">
+          <div class="recordings-loader__spinner" role="presentation"></div>
+          <p>Загружаем ваши записи…</p>
+        </div>
+
+        <ul class="recordings-list" data-recordings-items></ul>
+
+        <section class="recordings-state recordings-state--empty" data-recordings-empty hidden aria-hidden="true">
+          <h2>У вас пока нет записей</h2>
+          <p>Подключите Ghost AI к следующей встрече — запись появится здесь автоматически.</p>
+          <p class="recordings-state__hint">Совет: добавьте расширение в календарь и включите автоматический старт.</p>
+        </section>
+
+        <section class="recordings-state recordings-state--error" data-recordings-error hidden aria-hidden="true">
+          <div class="alert alert-error" role="alert">
+            <div>
+              <strong>Не удалось загрузить записи.</strong>
+              <span>Проверьте подключение к сети и попробуйте ещё раз.</span>
+            </div>
+            <button type="button" class="ghost-button" data-recordings-retry>Повторить</button>
+          </div>
+        </section>
+      </section>
+
+      <div class="recordings-actions">
+        <button type="button" class="ghost-button" data-recordings-load-more hidden>
+          Показать ещё
+        </button>
+      </div>
+    </main>
+    <%- include('../partials/footer') %>
+    <script src="/js/recordings.js" defer></script>
+  </body>
+</html>

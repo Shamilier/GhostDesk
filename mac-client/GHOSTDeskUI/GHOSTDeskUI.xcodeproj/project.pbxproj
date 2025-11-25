@@ -9,28 +9,16 @@
 /* Begin PBXBuildFile section */
 		276FB30C2E8D1AE000F148B3 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 276FB30B2E8D1AE000F148B3 /* WhisperKit */; };
 		276FB30E2E8D1AE000F148B3 /* whisperkit-cli in Frameworks */ = {isa = PBXBuildFile; productRef = 276FB30D2E8D1AE000F148B3 /* whisperkit-cli */; };
+		27973F362EB1280B000D1177 /* Starscream in Frameworks */ = {isa = PBXBuildFile; productRef = 27973F352EB1280B000D1177 /* Starscream */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		27E6B37D2E8AC61A00C77686 /* GHOSTDeskUI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GHOSTDeskUI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		276FB3132E8D2B4800F148B3 /* Exceptions for "GHOSTDeskUI" folder in "GHOSTDeskUI" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = 557EDE0E2E7ED168002ABA48 /* GHOSTDeskUI */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		557EDE112E7ED168002ABA48 /* GHOSTDeskUI */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				276FB3132E8D2B4800F148B3 /* Exceptions for "GHOSTDeskUI" folder in "GHOSTDeskUI" target */,
-			);
 			path = GHOSTDeskUI;
 			sourceTree = "<group>";
 		};
@@ -43,6 +31,7 @@
 			files = (
 				276FB30C2E8D1AE000F148B3 /* WhisperKit in Frameworks */,
 				276FB30E2E8D1AE000F148B3 /* whisperkit-cli in Frameworks */,
+				27973F362EB1280B000D1177 /* Starscream in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -79,6 +68,7 @@
 			packageProductDependencies = (
 				276FB30B2E8D1AE000F148B3 /* WhisperKit */,
 				276FB30D2E8D1AE000F148B3 /* whisperkit-cli */,
+				27973F352EB1280B000D1177 /* Starscream */,
 			);
 			productName = GHOSTDeskUI;
 			productReference = 27E6B37D2E8AC61A00C77686 /* GHOSTDeskUI.app */;
@@ -110,6 +100,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				276FB30A2E8D1AE000F148B3 /* XCRemoteSwiftPackageReference "WhisperKit" */,
+				27973F342EB1280B000D1177 /* XCRemoteSwiftPackageReference "Starscream" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 557EDE062E7ED168002ABA48;
@@ -263,16 +254,16 @@
 		557EDE1F2E7ED16A002ABA48 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = logov2;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = GHOSTDeskUI/GHOSTDeskUI.entitlements;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"GHOSTDeskUI/Preview Content\"";
-				DEVELOPMENT_TEAM = 2P7KKNP2CG;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
@@ -294,7 +285,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				MACOSX_DEPLOYMENT_TARGET = 15.3.1;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yourname.GHOSTDeskUI;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -306,16 +297,16 @@
 		557EDE202E7ED16A002ABA48 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = logov2;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = GHOSTDeskUI/GHOSTDeskUI.entitlements;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"GHOSTDeskUI/Preview Content\"";
-				DEVELOPMENT_TEAM = 2P7KKNP2CG;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
@@ -337,7 +328,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				MACOSX_DEPLOYMENT_TARGET = 15.3.1;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yourname.GHOSTDeskUI;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -378,6 +369,14 @@
 				kind = branch;
 			};
 		};
+		27973F342EB1280B000D1177 /* XCRemoteSwiftPackageReference "Starscream" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/daltoniam/Starscream.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 4.0.8;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -390,6 +389,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 276FB30A2E8D1AE000F148B3 /* XCRemoteSwiftPackageReference "WhisperKit" */;
 			productName = "whisperkit-cli";
+		};
+		27973F352EB1280B000D1177 /* Starscream */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 27973F342EB1280B000D1177 /* XCRemoteSwiftPackageReference "Starscream" */;
+			productName = Starscream;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <%- include('partials/head', { title }) %>
+  <body class="theme-dark auth-page">
+    <div class="background-gradient"></div>
+    <%- include('partials/header') %>
+    <main class="page narrow">
+      <section class="auth-card">
+        <h1>Создать аккаунт Ghost AI</h1>
+        <p class="auth-subtitle">Получите персональный токен и подключите ассистента за пару минут.</p>
+        <%- include('partials/flash') %>
+        <form action="/register" method="post" class="auth-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" placeholder="name@company.com" required />
+
+          <label for="password">Пароль</label>
+          <div class="password-field">
+            <input type="password" id="password" name="password" placeholder="Минимум 8 символов" minlength="8" required />
+            <button type="button" class="toggle-password" data-target="password" aria-label="Показать пароль"></button>
+          </div>
+
+          <label for="confirmPassword">Подтверждение пароля</label>
+          <div class="password-field">
+            <input
+              type="password"
+              id="confirmPassword"
+              name="confirmPassword"
+              placeholder="Повторите пароль"
+              minlength="8"
+              required
+            />
+            <button type="button" class="toggle-password" data-target="confirmPassword" aria-label="Показать пароль"></button>
+          </div>
+
+          <label for="referral">Реферальный код (необязательно)</label>
+          <input type="text" id="referral" name="referral" placeholder="Например, TEAM2024" />
+
+          <% if (typeof oauthContinue !== 'undefined' && oauthContinue) { %>
+          <input type="hidden" name="continue" value="<%= oauthContinue %>" />
+          <% } %>
+
+          <% if (typeof oauthRequest !== 'undefined' && oauthRequest) { %>
+          <input type="hidden" name="client_id" value="<%= oauthRequest.clientId %>" />
+          <input type="hidden" name="redirect_uri" value="<%= oauthRequest.redirectUri %>" />
+          <input type="hidden" name="state" value="<%= oauthRequest.state || '' %>" />
+          <input type="hidden" name="code_challenge" value="<%= oauthRequest.codeChallenge %>" />
+          <input type="hidden" name="code_challenge_method" value="<%= oauthRequest.codeChallengeMethod %>" />
+          <% } %>
+
+          <button type="submit" class="primary-button full-width">Зарегистрироваться</button>
+        </form>
+        <p class="auth-switch">
+          Уже есть аккаунт? <a href="/login">Войти</a>
+        </p>
+      </section>
+    </main>
+    <%- include('partials/footer') %>
+    <script src="/js/password-toggle.js" defer></script>
+  </body>
+</html>

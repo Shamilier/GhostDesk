@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <%- include('partials/head', { title }) %>
+  <body class="theme-dark">
+    <div class="background-gradient"></div>
+    <%- include('partials/header') %>
+    <main class="page dashboard">
+      <% const tokenFormatter = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 1 }); %>
+      <% const tokenFullFormatter = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); %>
+      <% const nextEventDate = subscriptionMeta?.nextEventAt ? new Date(subscriptionMeta.nextEventAt) : null; %>
+      <% const nextEventFormatter = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' }); %>
+      <% const createdAtDate = user.created_at ? new Date(user.created_at) : null; %>
+      <% const createdAtFormatter = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }); %>
+      <% const remainingPercent = typeof tokenInsights?.remainingPercent === 'number' ? tokenInsights.remainingPercent : 0; %>
+      <% const planBadge = subscriptionMeta?.isPaid ? 'Подписка активна' : (subscriptionMeta?.plan === 'free' ? 'Free доступ' : 'План настроен вручную'); %>
+      <section class="dashboard-header">
+        <div>
+          <p class="dashboard-eyebrow">Ghostdesk • AI workspace</p>
+          <h1>Здравствуйте, <%= user.email %></h1>
+          <p class="dashboard-subtitle">Контролируйте подписку, расход токенов и подготовку к встречам из одного окна.</p>
+        </div>
+        <form action="/logout" method="post">
+          <% if (csrfToken) { %>
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <% } %>
+          <button type="submit" class="ghost-button">Выйти</button>
+        </form>
+      </section>
+      <%- include('partials/flash') %>
+      <section class="dashboard-grid">
+        <article class="stat-card plan-status-card">
+          <div class="card-eyebrow">Текущий тариф</div>
+          <div class="plan-status-card__value">
+            <h3><%= planLabel || (user.plan ? user.plan : 'План не выбран') %></h3>
+            <span class="plan-status-card__badge"><%= planBadge %></span>
+          </div>
+          <p class="plan-status-card__meta">
+            <% if (nextEventDate) { %>
+              <span><%= subscriptionMeta?.nextEventType === 'billing' ? 'Следующее списание' : 'Бесплатные токены восстановятся' %></span>
+              <strong><%= nextEventFormatter.format(nextEventDate) %></strong>
+            <% } else { %>
+              <span>Активируйте подписку, чтобы видеть график списаний и пополнений.</span>
+            <% } %>
+          </p>
+          <p class="stat-description">Plus и Pro дают приоритетные лимиты, потоковое распознавание и умные фоллоу-апы для всей команды.</p>
+          <div class="plan-status-card__actions">
+            <button class="primary-button" type="button" data-open-billing>Управлять подпиской</button>
+            <a class="ghost-button" href="#billing-modal" data-open-billing>Сравнить тарифы</a>
+          </div>
+        </article>
+        <article class="stat-card token-balance-card">
+          <div class="token-balance-card__header">
+            <div>
+              <p class="card-eyebrow">Баланс токенов</p>
+              <h3>Осталось <span><%= tokenFormatter.format(tokenInsights?.remaining ?? 0) %></span> токенов</h3>
+            </div>
+            <button class="token-info-button" type="button" data-token-info-toggle aria-expanded="false" aria-controls="token-info-panel">
+              <span aria-hidden="true">i</span>
+              <span class="sr-only">Как списываются токены</span>
+            </button>
+          </div>
+          <% if (tokenInsights?.hasLimit) { %>
+            <div class="token-progress" role="img" aria-label="Осталось <%= tokenFormatter.format(tokenInsights?.remaining ?? 0) %> из <%= tokenFullFormatter.format(tokenInsights?.capacity ?? 0) %> токенов">
+              <div class="token-progress__bar">
+                <span class="token-progress__value" style="width: <%= remainingPercent %>%"></span>
+              </div>
+              <div class="token-progress__labels">
+                <p>Использовано <strong><%= tokenFormatter.format(tokenInsights?.used ?? 0) %></strong></p>
+                <p>Всего <strong><%= tokenFullFormatter.format(tokenInsights?.capacity ?? 0) %></strong></p>
+              </div>
+            </div>
+          <% } else { %>
+            <p class="stat-description">Для этого тарифа лимит гибкий. Мы уведомим, если приближаетесь к fair-use границам.</p>
+          <% } %>
+          <div class="token-meta-grid">
+            <div>
+              <p class="token-meta-label">Текущий тариф</p>
+              <p class="token-meta-value"><%= planLabel || '—' %></p>
+            </div>
+            <div>
+              <p class="token-meta-label">Обновление лимита</p>
+              <% if (nextEventDate) { %>
+                <p class="token-meta-value"><%= nextEventFormatter.format(nextEventDate) %></p>
+              <% } else { %>
+                <p class="token-meta-value">После активации</p>
+              <% } %>
+            </div>
+          </div>
+          <div class="token-info-panel" id="token-info-panel" data-token-info-panel hidden>
+            <p class="token-info-panel__title">Как мы считаем токены</p>
+            <ul>
+              <li><strong>2 токена</strong> за каждую минуту транскрибации встречи.</li>
+              <li><strong>0.5 токена</strong> за лёгкую подсказку Ghostdesk в чате.</li>
+              <li><strong>1 токен</strong> за запрос с анализом скриншота или полноценным промптом.</li>
+            </ul>
+            <p class="token-info-panel__note">Лимит обновляется автоматически в зависимости от подписки. Ghostdesk предупредит до паузы обслуживания.</p>
+          </div>
+        </article>
+        <article class="stat-card account-history-card">
+          <div class="card-eyebrow">Аккаунт</div>
+          <h3>Ghostdesk с <span><%= createdAtDate ? createdAtFormatter.format(createdAtDate) : 'сегодня' %></span></h3>
+          <p class="stat-description">Возвращайтесь к расшифровкам, следите за метриками и подключайте команду к единому AI-процессу.</p>
+          <ul class="account-history-list">
+            <li>Храните записи и расшифровки в разделе «Мои записи».</li>
+            <li>Добавляйте коллег в Plus/Pro, чтобы делиться токенами.</li>
+            <li>Интегрируйте Ghostdesk в любимые таск-трекеры через API.</li>
+          </ul>
+          <div class="account-history-actions">
+            <a class="ghost-button" href="/recordings">Открыть записи</a>
+          </div>
+        </article>
+      </section>
+    </main>
+    <div class="billing-modal" id="billing-modal" hidden>
+      <div class="billing-modal__backdrop" data-close-billing></div>
+      <div class="billing-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="billing-modal-title" tabindex="-1">
+        <button class="billing-modal__close" type="button" data-close-billing aria-label="Закрыть окно">
+          <span aria-hidden="true">×</span>
+        </button>
+        <header class="billing-modal__header">
+          <p class="billing-modal__eyebrow">Выберите тариф</p>
+          <h2 class="billing-modal__title" id="billing-modal-title">Инвестируйте в продуктивность команды</h2>
+          <div class="billing-modal__cycle">
+            <span>Период</span>
+            <div class="billing-cycle-toggle" role="group" aria-label="Период оплаты">
+              <button class="billing-cycle-toggle__option is-active" type="button" data-cycle="monthly">Monthly</button>
+              <button class="billing-cycle-toggle__option" type="button" data-cycle="annual">Annually</button>
+            </div>
+            <span class="billing-modal__cycle-note" data-annual-note>2 месяца бесплатно при годовой оплате</span>
+          </div>
+        </header>
+        <p class="billing-modal__feedback" data-billing-feedback hidden></p>
+        <div class="billing-modal__plans">
+          <article class="plan-card" data-plan-card data-plan="free" data-monthly-price="Free" data-annual-price="Free">
+            <div class="plan-card__header">
+              <p class="plan-card__eyebrow">Starter / Free</p>
+              <h3 class="plan-card__title">Free</h3>
+              <p class="plan-card__price" data-plan-price>Free</p>
+              <p class="plan-card__description">Все базовые функции для старта. Без пост-обработки.</p>
+            </div>
+            <ul class="plan-card__features">
+              <li>Режим невидимости включен</li>
+              <li>Лимит: 25 токенов в неделю (≈100/мес)</li>
+              <li>Транскрибация и RT-подсказки в пределах лимита</li>
+              <li>Пост-анализ недоступен</li>
+            </ul>
+            <p class="plan-card__footnote">Лимит обновляется еженедельно, токены не накапливаются.</p>
+          </article>
+          <article class="plan-card plan-card--highlight" data-plan-card data-plan="plus" data-monthly-price="1 199 ₽ / месяц" data-annual-price="11 990 ₽ / год (2 мес. бесплатно)">
+            <div class="plan-card__badge">Most popular</div>
+            <div class="plan-card__header">
+              <p class="plan-card__eyebrow">Plus</p>
+              <h3 class="plan-card__title">Plus</h3>
+              <p class="plan-card__price" data-plan-price>1 199 ₽ / месяц</p>
+              <p class="plan-card__description">Оптимальный план для регулярных звонков и подсказок.</p>
+            </div>
+            <ul class="plan-card__features">
+              <li>1 000 токенов в месяц (обновляется ежемесячно)</li>
+              <li>Реальные-временные подсказки (RT)</li>
+              <li>Интеллект-заметки, сводки и фоллоу-апы</li>
+            </ul>
+            <p class="plan-card__footnote">Токены не переносятся. PAYG-докупка доступна всегда.</p>
+            <button class="primary-button plan-card__cta" type="button" data-plan-action="plus">Оформить Plus</button>
+          </article>
+          <article class="plan-card plan-card--lux" data-plan-card data-plan="pro" data-monthly-price="4 999 ₽ / месяц" data-annual-price="49 990 ₽ / год (2 мес. бесплатно)">
+            <div class="plan-card__badge plan-card__badge--outline">Pro — Unlimited</div>
+            <div class="plan-card__header">
+              <p class="plan-card__eyebrow">Pro — Unlimited</p>
+              <h3 class="plan-card__title">Pro</h3>
+              <p class="plan-card__price" data-plan-price>4 999 ₽ / месяц</p>
+              <p class="plan-card__description">Для команд и power-users с расширенными лимитами и пост-анализом.</p>
+            </div>
+            <ul class="plan-card__features">
+              <li>Fair-use лимит: 10 000 токенов в месяц</li>
+              <li>Всё из Plus: транскрибация, пост-анализ, RT-подсказки</li>
+            </ul>
+            <button class="ghost-button plan-card__cta" type="button" data-plan-action="pro">Оформить Pro</button>
+          </article>
+        </div>
+      </div>
+    </div>
+    <%- include('partials/footer') %>
+    <script src="/js/password-toggle.js" defer></script>
+    <script src="/js/token-insights.js" defer></script>
+    <script src="/js/billing-modal.js" defer></script>
+  </body>
+</html>

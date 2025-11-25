@@ -3,6 +3,7 @@ import Combine
 import AVFoundation
 import CoreML
 import WhisperKit
+import AppKit
 
 import ScreenCaptureKit
 import CoreMedia
@@ -10,11 +11,18 @@ import Accelerate
 import CoreGraphics
 
 
+// MARK: - Tabs
+//enum CommandTab: Hashable {
+//    case listen
+//    case ask
+//    case settings
+//}
 
 struct OverlayRootView: View {
-    
+
+    @ObservedObject private var overlay = OverlayModel.shared
+    @EnvironmentObject private var auth: AuthState
     @State private var autoScroll = true
-    @State private var showCopiedToast = false
     @State private var isExpanded = false
     @State private var selectedTab: CommandTab = .listen
     @Namespace private var islandNS
@@ -22,72 +30,195 @@ struct OverlayRootView: View {
     @State private var smartMode: Bool = false
     @FocusState private var askFocused: Bool
     @ObservedObject private var hint = HintAgent.shared
-    @State private var showTranscript = false
+    @State private var showTranscript = true
     @State private var showResponse: Bool = false
-
-    
-
+    @State private var lastNonSettingsTab: CommandTab = .listen
+    @State private var showOnboarding = false
+    @State private var onboardingFrames: [OnboardingTarget: CGRect] = [:]
+    // MARK: - Tabs
 
 
     // наш безопасный ленивый транскрайбер
-    @StateObject private var transcriber = SpeechTranscriber()
+    @StateObject private var transcriptionCoordinator: TranscriptionCoordinator
 
     // NEW: вью-модель для снапшота/отправки
-    @StateObject private var askVM = AskVM()
+    @StateObject private var askVM: AskVM
+    @ObservedObject private var oauthCoordinator = OAuthCoordinator.shared
+
+    init(auth: AuthState) {
+        _transcriptionCoordinator = StateObject(wrappedValue: TranscriptionCoordinator(authState: auth))
+        _askVM = StateObject(wrappedValue: AskVM(auth: auth))
+        OAuthCoordinator.shared.configure(authState: auth)
+    }
+
+    private var systemChannelState: OverlayModel.TranscriptionChannelState {
+        overlay.transcriptionState(for: .system)
+    }
+
+    private var microphoneChannelState: OverlayModel.TranscriptionChannelState {
+        overlay.transcriptionState(for: .microphone)
+    }
 
     var body: some View {
-        ZStack {
-            VStack(spacing: 14) {
-                FloatingToolbar(
-                    isRecording: transcriber.isTranscribing,
-                    selected: $selectedTab,
-                    onPrimaryTap: { isExpanded = true },
-                    onEyeTap: { isExpanded.toggle() },
-                    onMenuTap: {}
-                )
-                .padding(.top, 8)
-
-                if isExpanded {
-                    Group {
-                        if selectedTab == .listen {
-                            listenPanel
-                        } else {
-                            askPanel
-                        }
-                    }
-                    .padding(.horizontal, 8)
-                    .matchedGeometryEffect(id: "island", in: islandNS)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(1)
-                }
-
-                Spacer(minLength: 0)
-            
-                    .onChange(of: isExpanded) { v in
-                        if v && selectedTab == .ask { askFocused = true }
-                    }
-                    .onChange(of: selectedTab) { tab in
-                        if isExpanded && tab == .ask { askFocused = true }
-                    }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .animation(.spring(response: 0.35, dampingFraction: 0.86), value: isExpanded)
-
-            if showCopiedToast {
-                CopiedToast()
-                    .matchedGeometryEffect(id: "toast", in: islandNS)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .padding(.top, 60)
-                    .allowsHitTesting(false)
-                    .allowsHitTesting(false)
-                    .zIndex(2)
+        Group {
+            if auth.isAuthorized {
+                authorizedOverlay
+            } else {
+                ApiKeyGateView()
+                    .environmentObject(oauthCoordinator)
             }
         }
-        .background(Color.clear)
+    }
+    
+    private var settingsPanel: some View {
+        SettingsSheet(isShown: settingsShownBinding)
+            .environmentObject(auth)
+            .padding(.horizontal, 8)
+            .environmentObject(overlay)
+    }
+
+    private var authorizedOverlay: some View {
+        ZStack {
+            overlayIsland
+                .coordinateSpace(name: "onboarding-space")
+                .overlayPreferenceValue(OnboardingTargetPreferenceKey.self) { anchors in
+                    GeometryReader { proxy in
+                        Color.clear
+                            .onAppear { resolveAnchors(anchors, proxy: proxy) }
+                            .onChange(of: anchors) { new in resolveAnchors(new, proxy: proxy) }
+                    }
+                }
+
+            if showOnboarding {
+                OnboardingOverlayView(onSkip: completeOnboarding, onFinish: completeOnboarding, targets: onboardingFrames)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea()
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    .zIndex(5)
+            }
+        }
+        .onAppear { refreshOnboardingState() }
+        .onChange(of: auth.isAuthorized) { _ in refreshOnboardingState() }
+        .onChange(of: showOnboarding) { active in
+            if active {
+                OverlayWindowManager.shared.freezeAutoResize()
+                OverlayWindowManager.shared.updateSize(to: onboardingPreferredSize())
+            } else {
+                OverlayWindowManager.shared.resumeAutoResize()
+            }
+        }
+    }
+
+    private func refreshOnboardingState() {
+        guard auth.isAuthorized else {
+            showOnboarding = false
+            return
+        }
+        showOnboarding = !auth.isOnboardingCompleted()
+    }
+
+    private func completeOnboarding() {
+        auth.markOnboardingCompleted()
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
+            showOnboarding = false
+        }
+    }
+
+    private func resolveAnchors(_ anchors: [OnboardingTarget: Anchor<CGRect>], proxy: GeometryProxy) {
+        DispatchQueue.main.async {
+            onboardingFrames = anchors.mapValues { anchor in
+                proxy[anchor]  // <- тут просто сабскрипт
+            }
+        }
+    }
 
 
-        // Если когда-нибудь захочешь дать AskVM доступ к активному SCStream,
-        // просто присвой сюда askVM.stream = <твой stream> после старта.
+    private func onboardingPreferredSize() -> CGSize {
+        let screen = NSScreen.main?.visibleFrame.size ?? CGSize(width: 1280, height: 800)
+        let targetWidth = min(screen.width - 80, 1180)
+        let targetHeight = min(screen.height - 120, 760)
+
+        return CGSize(width: max(targetWidth, 760), height: max(targetHeight, 560))
+    }
+
+    private var overlayIsland: some View {
+        VStack(spacing: 14) {
+            FloatingToolbar(
+                isRecording: overlay.anyChannelIsTranscribing,
+                selected: $selectedTab,
+                onPrimaryTap: { isExpanded = true },
+                onEyeTap: {
+                    OverlayWindowManager.shared.withResizeSuspended(0.86, finalAnimate: true)
+                    withAnimation(.spring(response: 0.2, dampingFraction: 0.86)) {
+                        isExpanded.toggle()
+                    }
+                },
+                onMenuTap: {
+                    OverlayWindowManager.shared.withResizeSuspended(0.2, finalAnimate: true)
+                    withAnimation(.spring(response: 0.2, dampingFraction: 0.86)) {
+                        if selectedTab == .settings {
+                            selectedTab = lastNonSettingsTab
+                        } else {
+                            lastNonSettingsTab = selectedTab
+                            selectedTab = .settings
+                            isExpanded = true
+                        }
+                    }
+                }
+            )
+            .padding(.top, 8)
+
+            // ⬇️ ГЛАВНОЕ: если открыт Settings — показываем его вместо остальных панелей
+            if isExpanded {
+                Group {
+                    switch selectedTab {
+                    case .listen:    listenPanel
+                    case .ask:       askPanel
+                    case .settings:  settingsPanel
+                    }
+                }
+                .padding(.horizontal, 8)
+                .matchedGeometryEffect(id: "island", in: islandNS)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(1)
+            }
+        }
+        // окно подстраивается по высоте как и для других панелей
+        .overlayAutoResize(enabled: !showOnboarding)
+        .animation(.spring(response: 0.2, dampingFraction: 0.86), value: isExpanded)
+        .animation(.spring(response: 0.2, dampingFraction: 0.86), value: selectedTab)
+        .onChange(of: overlay.askSolveTrigger) { _ in
+            isExpanded = true
+            selectedTab = .ask
+            question = ""
+            askFocused = true
+
+            let transcriptTail = makeTranscriptTail(seconds: 40, maxChars: 900)
+            Task { await askVM.submitWithoutQuery(transcript: transcriptTail) }
+
+            requestOverlayResize()
+        }
+        .onChange(of: isExpanded) { _ in
+            if isExpanded && selectedTab == .ask { askFocused = true }
+            requestOverlayResize()
+        }
+        .onChange(of: selectedTab) { tab in
+            if isExpanded && tab == .ask { askFocused = true }
+            requestOverlayResize()
+        }
+
+        .onChange(of: showTranscript) { _ in
+            requestOverlayResize()
+        }
+        .onAppear {
+            requestOverlayResize()
+        }
+    }
+
+    private func requestOverlayResize(finalAfter: TimeInterval? = 0.2) {
+        guard !showOnboarding else { return }
+        OverlayWindowManager.shared.scheduleResize(animate: false)
+        if let finalAfter { OverlayWindowManager.shared.kickFinalResize(after: finalAfter) }
     }
 
     // MARK: - Listen Panel
@@ -96,157 +227,427 @@ struct OverlayRootView: View {
         GlassCard {
             VStack(alignment: .leading, spacing: 10) {
 
-                // HEADER
+                // HEADER (компактный)
                 HStack(spacing: 12) {
-                    LogoOrb()
+                    LogoOrb().frame(width: 18, height: 18)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(showTranscript ? "Транскрипт" : "Инсайты в реальном времени")
                             .font(.headline.weight(.semibold))
-                        HStack(spacing: 8) {
-                            LiveDot(active: transcriber.isTranscribing)
-                            Text(transcriber.isTranscribing ? "Идёт запись…" : "Готов к запуску")
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(transcriber.isTranscribing ? .green.opacity(0.9) : .secondary)
+                        HStack(spacing: 6) {
+                            LiveDot(active: overlay.anyChannelIsTranscribing)
+                            let isOn = overlay.anyChannelIsTranscribing
+
+                            Text(isOn ? "Идёт запись…" : "Готов к запуску")
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(isOn ? .green : .secondary)
+                                .glow(active: isOn, color: .green) // мягкое свечение только когда запись идёт
+                                .animation(.easeInOut(duration: 0.25), value: isOn)
                         }
                     }
 
-                    Spacer()
+                    Spacer(minLength: 8)
 
-                    Button(showTranscript ? "Показать инсайты" : "Показать транскрипт") {
+                    Button(showTranscript ? "Инсайты" : "Транскрипт") {
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
                             showTranscript.toggle()
                         }
+                        requestOverlayResize(finalAfter: 0.30)
                     }
                     .buttonStyle(GlassPill())
 
-                    Button(action: {
-                        #if os(macOS)
-                        let lines = transcriber.transcriptLog
-                        let tail  = transcriber.partialText.isEmpty ? [] : [transcriber.partialText]
-                        let text  = (lines + tail).joined(separator: "\n")
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(text, forType: .string)
-                        #endif
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showCopiedToast = true }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
-                            withAnimation(.easeOut(duration: 0.25)) { showCopiedToast = false }
+                    let phase = transcriptionCoordinator.overallPhase
+                    let running  = phase == .running
+                    let starting = phase == .starting
+                    let stopping = phase == .stopping
+
+                    Button {
+                        switch phase {
+                        case .idle: transcriptionCoordinator.startRecording()
+                        case .starting, .running, .stopping: transcriptionCoordinator.stopAll()
                         }
-                    }) {
-                        Label("Копия", systemImage: "doc.on.doc")
+                    } label: {
+                        HStack(spacing: 6) {
+                            if starting || stopping { ProgressView().controlSize(.small) }
+                            Image(systemName: (running || stopping) ? "stop.fill" : "play.fill")
+                            Text(starting ? "Запуск…" : (stopping ? "Остановка…" : (running ? "Стоп" : "Старт")))
+                        }
                     }
-                    .buttonStyle(GlassPill())
-                    .disabled(transcriber.transcriptLog.isEmpty && transcriber.partialText.isEmpty)
+                    .buttonStyle(GlassPill(tint: (running || stopping) ? .red : .accentColor))
+                    .disabled(starting)
 
-                    Button(action: {
-                        if transcriber.phase == .running { transcriber.stop() }
-                        else if transcriber.phase == .idle { transcriber.start() }
-                    }) {
-                        let running  = transcriber.phase == .running
-                        let starting = transcriber.phase == .starting
-                        Label(starting ? "Запуск…" : (running ? "Стоп" : "Старт"),
-                              systemImage: running ? "stop.fill" : "play.fill")
+                    Button {
+                        transcriptionCoordinator.setMicrophoneArmed(!transcriptionCoordinator.isMicrophoneArmed)
+                    } label: {
+                        Label("Микрофон", systemImage: transcriptionCoordinator.isMicrophoneArmed ? "mic.fill" : "mic")
                     }
-                    .buttonStyle(GlassPill(tint: (transcriber.phase == .running) ? .red : .accentColor))
-                    .disabled(transcriber.phase == .starting)
+                    .buttonStyle(GlassPill(tint: transcriptionCoordinator.isMicrophoneArmed ? .pink : .secondary))
                 }
+                .padding(.vertical, 2)
 
+                // --------- ВАЖНО: дальше — тело панели ---------
                 Divider().overlay(Color.white.opacity(0.10))
 
-                // BODY — вертикальная колонка
-                Group {
-                    if showTranscript {
-                        TranscriptView(
-                            logLines: transcriber.transcriptLog,
-                            partial: transcriber.partialText,
-                            autoScroll: $autoScroll
-                        )
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                    } else {
-                        InsightsPanel(
-                            onNext: { /* TODO */ },
-                            onTopic: { /* TODO */ },
-                            onQuestion: { /* TODO */ }
-                        )
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                    }
+                if showTranscript {
+                    TranscriptChatView(
+                        systemState: systemChannelState,
+                        microphoneState: microphoneChannelState,
+                        autoScroll: $autoScroll
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .edgeFade(height: 320)     // фикс высоты + плавное затухание краёв
+
+                    HintStrip()
+                        .padding(.top, 6)
+                } else {
+                    InsightsPanel(
+                        hint: hint,
+                        onRequest: { intent in requestInsight(intent) },
+                        onClose: {
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                                showTranscript = true
+                            }
+                        }
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .frame(height: 420)        // чтобы окно не «скакало», держим такую же высоту
                 }
-                .frame(minHeight: 320, maxHeight: 520) // ↑ вертикальная ориентация
-                HintStrip()
             }
         }
-        .frame(maxWidth: 600)   // ↓ уже, чем раньше
+        .frame(maxWidth: 600)
         .padding(.horizontal, 8)
     }
+    
+    
+    
+    private var settingsShownBinding: Binding<Bool> {
+        Binding(
+            get: { selectedTab == .settings },
+            set: { show in
+                if show {
+                    if selectedTab != .settings { lastNonSettingsTab = selectedTab }
+                    selectedTab = .settings
+                } else {
+                    selectedTab = lastNonSettingsTab
+                }
+            }
+        )
+    }
 
-    private struct InsightsPanel: View {
-        var onNext: () -> Void = {}
-        var onTopic: () -> Void = {}
-        var onQuestion: () -> Void = {}
+    private struct TranscriptChatView: View {
+        let systemState: OverlayModel.TranscriptionChannelState
+        let microphoneState: OverlayModel.TranscriptionChannelState
+        @Binding var autoScroll: Bool
+
+        @State private var hasAppeared = false
+
+        // Автоскроллим только если экран уже появился и авто-скролл включён
+        private var shouldAutoScroll: Bool { hasAppeared && autoScroll }
+
+        // Объединённая лента
+        private var mergedMessages: [OverlayModel.TranscriptMessage] {
+            (systemState.transcriptLog + microphoneState.transcriptLog)
+                .sorted { lhs, rhs in
+                    if lhs.timestamp == rhs.timestamp {
+                        return lhs.id.uuidString < rhs.id.uuidString
+                    }
+                    return lhs.timestamp < rhs.timestamp
+                }
+        }
+
+        // Группировка подряд идущих сообщений по source (system / microphone)
+        private struct MessageGroup: Identifiable {
+            let source: OverlayModel.AudioSourceKind
+            var items: [OverlayModel.TranscriptMessage]
+            var id: UUID { items.first?.id ?? UUID() } // стабильный id по первой реплике
+        }
+
+        private func grouped(_ messages: [OverlayModel.TranscriptMessage]) -> [MessageGroup] {
+            var result: [MessageGroup] = []
+            for m in messages {
+                if let i = result.indices.last, result[i].source == m.source {
+                    result[i].items.append(m)
+                } else {
+                    result.append(MessageGroup(source: m.source, items: [m]))
+                }
+            }
+            return result
+        }
+
+        private func partialText(for kind: OverlayModel.AudioSourceKind) -> String? {
+            let text: String = (kind == .system) ? systemState.partialText : microphoneState.partialText
+            return text.isEmpty ? nil : text
+        }
+
+        private func partialIdentifier(_ kind: OverlayModel.AudioSourceKind) -> String {
+            "partial_\(kind.rawValue)"
+        }
+
+        private var lastAnchorID: AnyHashable? {
+            if let micPartial = partialText(for: .microphone) {
+                return AnyHashable(partialIdentifier(.microphone) + micPartial)
+            }
+            if let sysPartial = partialText(for: .system) {
+                return AnyHashable(partialIdentifier(.system) + sysPartial)
+            }
+            return mergedMessages.last?.id
+        }
 
         var body: some View {
-            ZStack {
-                let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
-                shape
-                    .fill(Color.white.opacity(0.03))
-                    .overlay(shape.stroke(.white.opacity(0.08), lineWidth: 1))
+            VStack(alignment: .leading, spacing: 12) {
+                ScrollViewReader { proxy in
+                    ZStack {
+                        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
 
-                // КНОПКИ ВНУТРИ ПОЛЯ (по центру)
-                VStack(spacing: 12) {
-                    LazyVGrid(
-                        columns: [GridItem(.flexible())],
-                        alignment: .center,
-                        spacing: 8
-                    ) {
-                        Button("Что сказать дальше?", action: onNext)
-                            .buttonStyle(GlassPill())
-                        Button("О чём речь?", action: onTopic)
-                            .buttonStyle(GlassPill())
-                        Button("Какой вопрос задать?", action: onQuestion)
-                            .buttonStyle(GlassPill())
+                        shape
+                            .fill(Color.white.opacity(0.03))
+                            .overlay(shape.stroke(Color.white.opacity(0), lineWidth: 0))
+
+                        ScrollView {
+                            LazyVStack(spacing: 8) {
+                                ForEach(grouped(mergedMessages)) { group in
+                                    let style = TranscriptSourceStyle.for(kind: group.source)
+
+                                    // первая в группе — с «шапкой»
+                                    if let first = group.items.first {
+                                        TranscriptMessageBubble(
+                                            message: first,
+                                            style: style,
+                                            showHeader: true
+                                        )
+                                        .id(first.id)
+                                    }
+
+                                    // остальные — без «шапки»
+                                    ForEach(group.items.dropFirst()) { msg in
+                                        TranscriptMessageBubble(
+                                            message: msg,
+                                            style: style,
+                                            showHeader: false
+                                        )
+                                        .id(msg.id)
+                                    }
+                                }
+
+                                if let text = partialText(for: .system) {
+                                    PartialTranscriptBubble(text: text, style: .for(kind: .system))
+                                        .id(partialIdentifier(.system) + text)
+                                }
+
+                                if let text = partialText(for: .microphone) {
+                                    PartialTranscriptBubble(text: text, style: .for(kind: .microphone))
+                                        .id(partialIdentifier(.microphone) + text)
+                                }
+                            }
+                            .padding(.vertical, 12)
+                            .padding(.horizontal, 12)
+                        }
+                        .clipShape(shape)
+                    }
+                    // ВАЖНО: без minHeight — высоту контролирует родитель через .edgeFade(height:)
+                    .onAppear {
+                        hasAppeared = true
+                        DispatchQueue.main.async { scrollToBottom(proxy, animated: false) }
+                    }
+                    .onChange(of: systemState.transcriptLog.last?.id) { _ in
+                        if shouldAutoScroll { scrollToBottom(proxy) }
+                    }
+                    .onChange(of: microphoneState.transcriptLog.last?.id) { _ in
+                        if shouldAutoScroll { scrollToBottom(proxy) }
+                    }
+                    .onChange(of: systemState.partialText) { _ in
+                        if shouldAutoScroll { scrollToBottom(proxy) }
+                    }
+                    .onChange(of: microphoneState.partialText) { _ in
+                        if shouldAutoScroll { scrollToBottom(proxy) }
+                    }
+                    .onChange(of: autoScroll) { enabled in
+                        if enabled && hasAppeared { scrollToBottom(proxy, animated: false) }
+                    }
+                    // Любой drag по ленте — ставим паузу автоскролла
+                    .gesture(DragGesture().onChanged { _ in
+                        if autoScroll { autoScroll = false }
+                    })
+                    // Кнопка «В конец», если автоскролл выключен
+                    .overlay(alignment: .bottomTrailing) {
+                        if !autoScroll {
+                            Button {
+                                autoScroll = true
+                                scrollToBottom(proxy)
+                            } label: {
+                                Label("В конец", systemImage: "arrow.down.circle.fill")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .buttonStyle(GlassPill(tint: .secondary))
+                            .padding(8)
+                        }
                     }
                 }
-                .padding(16)
-                .frame(maxWidth: 420) // чтобы сетка держала красивую ширину
             }
-            .frame(maxWidth: .infinity, minHeight: 240, alignment: .center)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+
+        private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool = true) {
+            guard let anchor = lastAnchorID else { return }
+            let action = { proxy.scrollTo(anchor, anchor: .bottom) }
+            if animated {
+                withAnimation(.easeOut(duration: 0.22)) { action() }
+            } else {
+                action()
+            }
         }
     }
 
-
-
-    
-    private struct GlassCard<Content: View>: View {
-        @ViewBuilder var content: () -> Content
+    private struct TranscriptMessageBubble: View {
+        let message: OverlayModel.TranscriptMessage
+        let style: TranscriptSourceStyle
+        var showHeader: Bool = true   // ← новое
 
         var body: some View {
-            ZStack {
-                let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+            VStack(alignment: .leading, spacing: showHeader ? 6 : 4) {
+                if showHeader {
+                    HStack(spacing: 6) {
+                        Image(systemName: style.icon)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(style.color.opacity(0.85))
+                        Text(style.title)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(style.color.opacity(0.85))
+                        Spacer(minLength: 0)
+                    }
+                }
 
-                shape
-                    .fill(.thinMaterial) // без дымки и лишних теней
-                    .overlay(
-                        shape.stroke(
-                            LinearGradient(
-                                colors: [.white.opacity(0.45), .white.opacity(0.12)],
-                                startPoint: .topLeading, endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                    )
+                Text(message.text)
+                    .font(.system(size: 13)) // чуть компактнее
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                // ВАЖНО: контент ВНУТРИ, а не в overlay
-                VStack(spacing: 0) { content() }
-                    .padding(12)
+                // Таймстамп можно показывать только у первой в группе (чтоб не шумел)
+                if showHeader {
+                    Text(message.timestamp, style: .time)
+                        .font(.caption2)
+                        .foregroundStyle(style.color.opacity(0.8))
+                }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding(.vertical, showHeader ? 10 : 6)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: 320, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(style.color.opacity(0.14))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(style.color.opacity(0.18), lineWidth: 1)
+                    )
+            )
+            .frame(maxWidth: .infinity, alignment: style.bubbleAlignment)
+            .transition(.move(edge: .trailing).combined(with: .opacity))
         }
     }
 
+    private struct PartialTranscriptBubble: View {
+        let text: String
+        let style: TranscriptSourceStyle
 
+        var body: some View {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "ellipsis")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(style.color.opacity(0.8))
+                Text(text)
+                    .italic()
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 9)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: 240, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(style.color.opacity(0.10))
+            )
+            .frame(maxWidth: .infinity, alignment: style.bubbleAlignment)
+        }
+    }
 
+    private struct TranscriptStatusBadge: View {
+        let kind: OverlayModel.AudioSourceKind
+        let state: OverlayModel.TranscriptionChannelState
 
+        private var style: TranscriptSourceStyle { .for(kind: kind) }
+
+        var body: some View {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(style.color.opacity(0.18))
+                        .frame(width: 30, height: 30)
+                    Image(systemName: style.icon)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(style.color)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(style.title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(style.caption)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 4)
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    LiveDot(active: state.isTranscribing)
+                    Text(state.isTranscribing ? "Активно" : "Ожидание")
+                        .font(.caption2)
+                        .foregroundStyle(state.isTranscribing ? style.color : .secondary)
+                }
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.white.opacity(0.04))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+            )
+            .frame(maxWidth: .infinity, alignment: style.bubbleAlignment)
+        }
+    }
+
+    private struct TranscriptSourceStyle {
+        let icon: String
+        let color: Color
+        let caption: String
+        let title: String
+        let bubbleAlignment: Alignment
+
+        static func `for`(kind: OverlayModel.AudioSourceKind) -> TranscriptSourceStyle {
+            switch kind {
+            case .system:
+                return TranscriptSourceStyle(
+                    icon: "waveform.circle.fill",
+                    color: .cyan,
+                    caption: "Системный поток",
+                    title: kind.title,
+                    bubbleAlignment: .leading
+                )
+            case .microphone:
+                return TranscriptSourceStyle(
+                    icon: "mic.circle.fill",
+                    color: .pink,
+                    caption: "Микрофон",
+                    title: kind.title,
+                    bubbleAlignment: .trailing
+                )
+            }
+        }
+    }
 
     // MARK: - Ask Panel
 
@@ -257,47 +658,62 @@ struct OverlayRootView: View {
                 isSubmitting: askVM.isSubmitting,
                 onSubmit: submitQuestion
             )
-            .frame(maxWidth: 720)
+            .frame(maxWidth: 600)
 
             if showResponse {
-                AIResponseCard(
-                    title: "AI Response",
-                    query: question,
-                    markdown: askVM.answerDraft.isEmpty ? "Генерация ответа…" : askVM.answerDraft,
-                    isStreaming: askVM.isSubmitting,
-                    canStop: askVM.canStop,
-                    onCopy: {
-                        #if os(macOS)
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(askVM.answerDraft, forType: .string)
-                        #endif
-                    },
-                    onClose: {
-                        askVM.cancelStream()
-                        askVM.answerDraft = ""
-                        askVM.answerError = nil
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) { showResponse = false }
-                    },
-                    onStop: { askVM.cancelStream() }
-                )
-
-                .frame(maxWidth: 860, minHeight: 220)
-                .transition(.move(edge: .top).combined(with: .opacity))
+                if let error = askVM.answerError {
+                    AskErrorCard(
+                        message: error,
+                        onClose: {
+                            askVM.cancelStream()
+                            askVM.answerDraft = ""
+                            askVM.answerError = nil
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) { showResponse = false }
+                        }
+                    )
+                    .frame(maxWidth: 600)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                } else {
+                    AIResponseCard(
+                        title: "AI Response",
+                        query: question,
+                        markdown: askVM.answerDraft.isEmpty ? "Генерация ответа…" : askVM.answerDraft,
+                        isStreaming: askVM.isSubmitting,
+                        canStop: askVM.canStop,
+                        onCopy: {
+                            #if os(macOS)
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(askVM.answerDraft, forType: .string)
+                            #endif
+                        },
+                        onClose: {
+                            askVM.cancelStream()
+                            askVM.answerDraft = ""
+                            askVM.answerError = nil
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) { showResponse = false }
+                        },
+                        onStop: { askVM.cancelStream() }
+                    )
+                    .frame(maxWidth: 600, minHeight: 220)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
         }
         .onChange(of: askVM.isSubmitting) { v in
             if v { withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) { showResponse = true } }
         }
         .onChange(of: askVM.answerDraft) { v in
-            if !v.isEmpty { showResponse = true }          // на случай мгновенного ответа
+            if !v.isEmpty { showResponse = true }
         }
+        .onChange(of: askVM.answerError) { err in
+            if err != nil { withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) { showResponse = true } }
+        }
+        .frame(maxWidth: 600)  // Фиксируем максимальную ширину всей панели
+
         .padding(.horizontal, 8)
     }
 
-
-
-
-    // MARK: - Header
+    // MARK: - Header (не используется в текущем лэйауте, оставлен как заготовка)
 
     private var header: some View {
         HStack(spacing: 12) {
@@ -308,50 +724,53 @@ struct OverlayRootView: View {
                     .font(.headline)
 
                 HStack(spacing: 8) {
-                    LiveDot(active: transcriber.isTranscribing)
-                    Text(transcriber.isTranscribing ? "Идёт запись…" : "Готов к запуску")
+                    LiveDot(active: overlay.anyChannelIsTranscribing)
+                    Text(overlay.anyChannelIsTranscribing ? "Идёт запись…" : "Готов к запуску")
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(transcriber.isTranscribing ? .green.opacity(0.9) : .secondary)
+                        .foregroundStyle(overlay.anyChannelIsTranscribing ? .green.opacity(0.9) : .secondary)
                 }
             }
 
             Spacer()
 
             HStack(spacing: 10) {
-                // Start/Stop управляет ТРАНСКРАЙБЕРОМ
-                Button {
-                    if transcriber.phase == .running {
-                        transcriber.stop()
-                    } else if transcriber.phase == .idle {
-                        transcriber.start()
-                    }
-                } label: {
-                    let running = transcriber.phase == .running
-                    let starting = transcriber.phase == .starting
-                    Label(starting ? "Запуск…" : (running ? "Стоп" : "Старт"),
-                          systemImage: running ? "stop.fill" : "play.fill")
-                }
-                .buttonStyle(GlassPill(tint: (transcriber.phase == .running) ? .red : .accentColor))
-                .disabled(transcriber.phase == .starting)
+                let microphonePhase = microphoneChannelState.phase
+                let microphoneBusy = microphonePhase == .starting || microphonePhase == .stopping
 
-                // Copy
                 Button {
-                    let lines = transcriber.transcriptLog
-                    let tail = transcriber.partialText.isEmpty ? [] : [transcriber.partialText]
-                    let text = (lines + tail).joined(separator: "\n")
-                    #if os(macOS)
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(text, forType: .string)
-                    #endif
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showCopiedToast = true }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
-                        withAnimation(.easeOut(duration: 0.25)) { showCopiedToast = false }
+                    transcriptionCoordinator.setMicrophoneArmed(!transcriptionCoordinator.isMicrophoneArmed)
+                } label: {
+                    Label("Микрофон", systemImage: transcriptionCoordinator.isMicrophoneArmed ? "mic.fill" : "mic")
+                }
+                .buttonStyle(GlassPill(tint: transcriptionCoordinator.isMicrophoneArmed ? .pink : .secondary))
+                .disabled(microphoneBusy)
+
+                Button {
+                    switch transcriptionCoordinator.overallPhase {
+                    case .idle:
+                        transcriptionCoordinator.startRecording()
+                    case .starting, .running, .stopping:
+                        transcriptionCoordinator.stopAll()
                     }
                 } label: {
-                    Label("Копия", systemImage: "doc.on.doc")
+                    let phase = transcriptionCoordinator.overallPhase
+                    let running  = phase == .running
+                    let starting = phase == .starting
+                    let stopping = phase == .stopping
+                    Label(
+                        starting ? "Запуск…" : (stopping ? "Остановка…" : (running ? "Стоп" : "Старт")),
+                        systemImage: (running || stopping) ? "stop.fill" : "play.fill"
+                    )
                 }
-                .buttonStyle(GlassPill())
-                .disabled(transcriber.transcriptLog.isEmpty && transcriber.partialText.isEmpty)
+                .buttonStyle(
+                    GlassPill(
+                        tint: {
+                            let phase = transcriptionCoordinator.overallPhase
+                            return (phase == .running || phase == .stopping) ? .red : .accentColor
+                        }()
+                    )
+                )
+                .disabled(transcriptionCoordinator.overallPhase == .starting)
             }
         }
     }
@@ -367,22 +786,21 @@ struct OverlayRootView: View {
             Spacer()
 
             Button {
-                transcriber.clearLog()
+                transcriptionCoordinator.clearLogs(for: .system)
             } label: {
                 Label("Очистить", systemImage: "trash")
             }
             .buttonStyle(GlassPill(tint: .secondary))
-            .disabled(transcriber.transcriptLog.isEmpty)
+            .disabled(systemChannelState.transcriptLog.isEmpty && systemChannelState.partialText.isEmpty)
         }
         .padding(.top, 2)
     }
 
     // MARK: - Actions
 
-
     // NEW: Submit ВСЕГДА шлёт ВОПРОС + ХВОСТ ТРАНСКРИПТА + СКРИНШОТ
     private func submitQuestion() async {
-        let tr = makeTranscriptTail(seconds: 40, maxChars: 900) // хвост речи как контекст
+        let tr = makeTranscriptTail(seconds: 40, maxChars: 900)
 
         await askVM.submit(
             question: question,
@@ -393,58 +811,108 @@ struct OverlayRootView: View {
         ServerClient.shared.log("question submitted: \(question), smart=\(smartMode), speechTail=\(tr.count) chars")
     }
 
-    // Хвост транскрибации из текущего транскрайбера (если не подключён TranscriptBuffer)
-    private func makeTranscriptTail(seconds: Int = 40, maxChars: Int = 900) -> String {
-        var s = transcriber.transcriptLog.suffix(14).joined(separator: " ")
-        if !transcriber.partialText.isEmpty { s += " " + transcriber.partialText }
-        if s.count > maxChars { s = String(s.suffix(maxChars)) }
-        return s.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-}
-
-
-// Универсальная стеклянная карточка без теней
-private struct GlassCard<Content: View>: View {
-    @ViewBuilder var content: () -> Content
-
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
-
-        ZStack {
-            // материал кладём через background(_:in:), чтобы не ловить ошибки ShapeStyle
-            Color.clear
-                .background(.ultraThinMaterial, in: shape)
-                .overlay(
-                    shape.stroke(
-                        LinearGradient(
-                            colors: [.white.opacity(0.45), .white.opacity(0.12)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-                )
-
-            VStack(spacing: 0) { content() }
-                .padding(12)
+    private func requestInsight(_ intent: HintAgent.Intent) {
+        Task {
+            await hint.requestHint(for: intent)
         }
-        .clipShape(shape)
-        .contentShape(shape)
+    }
+
+    // Хвост транскрибации
+    private func makeTranscriptTail(seconds: Int = 40, maxChars: Int = 900) -> String {
+        let bufferTail = TranscriptBuffer.shared.tail(lastSeconds: seconds, maxChars: maxChars)
+        if !bufferTail.isEmpty {
+            return bufferTail
+        }
+        return transcriptionCoordinator.transcriptTail(for: .system, maxChars: maxChars)
     }
 }
 
+// MARK: - Универсальная стеклянная карточка
+//
+//private struct GlassCard<Content: View>: View {
+//    @ViewBuilder var content: () -> Content
+//
+//    var body: some View {
+//        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+//
+//        ZStack {
+//            Color.clear
+//                .background(.ultraThinMaterial, in: shape)
+//                .overlay(
+//                    shape.stroke(
+//                        LinearGradient(
+//                            colors: [.white.opacity(0.45), .white.opacity(0.12)],
+//                            startPoint: .topLeading, endPoint: .bottomTrailing
+//                        ),
+//                        lineWidth: 1
+//                    )
+//                )
+//
+//            VStack(spacing: 0) { content() }
+//                .padding(12)
+//        }
+//        .clipShape(shape)
+//        .contentShape(shape)
+//        .fixedSize(horizontal: false, vertical: true) // ← самосжатие по высоте
+//    }
+//}
+
+// MARK: - HintStrip (без изменений)
 
 private struct HintStrip: View {
     @ObservedObject var hint: HintAgent = .shared
+    @ObservedObject private var overlay = OverlayModel.shared
+
+    private var iconName: String {
+        (hint.activeIntent ?? hint.lastCompletedIntent)?.symbolName ?? "sparkles"
+    }
+
+    private var title: String {
+        (hint.activeIntent ?? hint.lastCompletedIntent)?.stripTitle ?? "Подсказка"
+    }
+
+    private var placeholder: String? {
+        if let active = hint.activeIntent { return active.placeholder }
+        if let last = hint.lastCompletedIntent { return last.placeholder }
+        return nil
+    }
 
     var body: some View {
         if hint.isRunning || !hint.draft.isEmpty || hint.error != nil {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Подсказка")
-                        .font(.headline)
+                    HStack(spacing: 6) {
+                        Image(systemName: iconName)
+                            .font(.callout.weight(.semibold))
+                        Text(title)
+                            .font(.headline)
+                    }
+                    .foregroundStyle(.primary)
+
                     if hint.isRunning { ProgressView().controlSize(.small) }
                     Spacer()
+                    if hint.isRunning {
+                        if let started = hint.startedAt {
+                            HStack(spacing: 4) {
+                                Text("Старт")
+                                Text(started, style: .time)
+                            }
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        } else {
+                            Text("Генерация…")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else if let finished = hint.lastFinishedAt {
+                        HStack(spacing: 4) {
+                            Text("Обновлено")
+                            Text(finished, style: .time)
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
+
                     if hint.canStop {
                         Button("Стоп") { hint.cancel() }
                             .buttonStyle(GlassPill(tint: .red))
@@ -453,9 +921,7 @@ private struct HintStrip: View {
 
                 if let err = hint.error {
                     Text(err).foregroundStyle(.red).font(.subheadline)
-                }
-
-                if !hint.draft.isEmpty {
+                } else if !hint.draft.isEmpty {
                     Text(hint.draft)
                         .textSelection(.enabled)
                         .font(.body)
@@ -473,17 +939,75 @@ private struct HintStrip: View {
                         Button("Очистить") { hint.draft = "" }
                             .buttonStyle(GlassPill(tint: .secondary))
                     }
+                } else if hint.isRunning {
+                    Text("Ghost AI готовит подсказку…")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .italic()
+                } else if let placeholder {
+                    Text(placeholder)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
             }
             .padding(12)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-                    .overlay(
+                Group {
+                    if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(.white.opacity(0.12), lineWidth: 1)
-                    )
+                            .fill(Color.clear)
+                            .glassEffect(.clear, in: .rect(cornerRadius: 12))
+                    } else {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(.white.opacity(0.12), lineWidth: 1)
+                            )
+                    }
+                }
             )
+        }
+    }
+}
+
+private struct AskErrorCard: View {
+    var message: String
+    var onClose: () -> Void
+
+    var body: some View {
+        GlassCard {
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    Label("Ошибка", systemImage: "exclamationmark.triangle.fill")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.red)
+
+                    Spacer()
+
+                    Button(action: onClose) { Image(systemName: "xmark") }
+                        .buttonStyle(MiniIconButton())
+                }
+                .padding(.bottom, 8)
+
+                Divider().overlay(Color.white.opacity(0.10))
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(message)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.red.opacity(0.9))
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let url = URL(string: "https://ghostai.ru") {
+                        Link("Перейти на ghostai.ru", destination: url)
+                            .font(.subheadline.weight(.semibold))
+                            .tint(.accentColor)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+            }
+            .padding(12)
         }
     }
 }
@@ -497,6 +1021,7 @@ private struct AIResponseCard: View {
     var onCopy: () -> Void
     var onClose: () -> Void
     var onStop: () -> Void
+    @ObservedObject private var overlay = OverlayModel.shared
 
     var body: some View {
         GlassCard {
@@ -515,8 +1040,16 @@ private struct AIResponseCard: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
                             .background(
-                                Capsule().fill(Color.white.opacity(0.06))
-                                    .overlay(Capsule().stroke(.white.opacity(0.12), lineWidth: 1))
+                                Group {
+                                    if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
+                                        Capsule()
+                                            .fill(Color.clear)
+                                            .glassEffect(.clear, in: .capsule)
+                                    } else {
+                                        Capsule().fill(Color.white.opacity(0.06))
+                                            .overlay(Capsule().stroke(.white.opacity(0.12), lineWidth: 1))
+                                    }
+                                }
                             )
                     }
 
@@ -550,11 +1083,32 @@ private struct AIResponseCard: View {
     }
 }
 
+import SwiftUI
 
+private struct LegibilityScrim<S: Shape>: View {
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
+    let shape: S
+    var intensity: Double = 0.35   // было 0.9 — из-за этого «белило»
 
+    var body: some View {
+        let base = (scheme == .dark ? Color.white : Color.black)
+        let o1 = (reduceTransparency ? 0.12 : 0.08) * intensity
+        let o2 = (reduceTransparency ? 0.08 : 0.05) * intensity
 
-// MARK: - AskField
+        return shape
+            .fill(
+                LinearGradient(
+                    colors: [base.opacity(o1), base.opacity(o2)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                )
+            )
+            .blendMode(.softLight)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
 
 private struct AskBar: View {
     @Binding var text: String
@@ -562,9 +1116,11 @@ private struct AskBar: View {
     var onSubmit: () async -> Void
 
     @FocusState private var focused: Bool
+    @ObservedObject private var overlay = OverlayModel.shared
 
     var body: some View {
         HStack(spacing: 12) {
+            // блок с иконкой + TextField
             HStack(spacing: 10) {
                 Image(systemName: "text.magnifyingglass")
                     .font(.system(size: 14, weight: .semibold))
@@ -577,27 +1133,81 @@ private struct AskBar: View {
                     .onSubmit { Task { await onSubmit() } }
             }
             .padding(.horizontal, 14)
-            .frame(height: 42) // ← внутренняя капсула
+            .frame(height: 42)
+            .background(
+                Group {
+                    if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
+                        Capsule()
+                            .glassEffect(.clear, in: .capsule) // ← вернули стекло
+                            .overlay(LegibilityScrim(shape: Capsule(), intensity: 0.35))
+                    } else {
+                        Capsule().fill(.ultraThinMaterial)
+                    }
+                }
+            )
 
             Button(isSubmitting ? "Submitting…" : "Submit") {
                 Task { await onSubmit() }
             }
             .keyboardShortcut(.return, modifiers: [])
-            .buttonStyle(GlassPill(tint: .accentColor))
+            .buttonStyle(GlassPill())
             .disabled(isSubmitting)
         }
         .padding(8)
-        .frame(height: 58) // ← ВСЯ панель фиксирована по высоте
+        .frame(height: 58)
+
+        // Фон всего бара: ВСЕГДА RoundedRectangle(16) + те же эффекты, но под прямоугольник
         .background(
-            Color.clear.background(
-                .ultraThinMaterial,
-                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-            )
+            Group {
+                if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
+                    let rr = RoundedRectangle(cornerRadius: 16, style: .continuous)
+
+                    rr.fill(Color.clear)
+                        .glassEffect(.clear, in: .rect(cornerRadius: 16))
+                        .overlay(
+                            rr.stroke(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.35), Color.white.opacity(0.10)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                            .blendMode(.screen)
+                            .allowsHitTesting(false)
+                        )
+                        .overlay(
+                            rr.inset(by: 1.5)
+                                .stroke(Color.white.opacity(0.40), lineWidth: 0.6)
+                                .blur(radius: 1.0)
+                                .opacity(0.7)
+                                .blendMode(.screen)
+                                .allowsHitTesting(false)
+                        )
+                        .glassEffectTransition(.matchedGeometry)
+                        .shadow(color: Color.black.opacity(0.12), radius: 12, y: 6)
+                        .overlay(
+                            rr.fill(
+                                LinearGradient(
+                                    colors: [Color.indigo.opacity(0.25), Color.purple.opacity(0.18)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                )
+                            )
+                            .blendMode(.softLight)
+                            .opacity(0.02)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                        )
+                } else {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                        )
+                }
+            }
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(.white.opacity(0.18), lineWidth: 1)
-        )
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 
@@ -609,10 +1219,10 @@ private struct AskInputBar: View {
     var isSubmitting: Bool
     var focus: FocusState<Bool>.Binding
     var onSubmit: () -> Void
+    @ObservedObject private var overlay = OverlayModel.shared
 
     var body: some View {
         HStack(spacing: 10) {
-            // маленький чип Smart
             Button {
                 smart.toggle()
             } label: {
@@ -623,28 +1233,38 @@ private struct AskInputBar: View {
                 .font(.system(size: 12, weight: .semibold))
                 .padding(.horizontal, 10).padding(.vertical, 6)
                 .background(
-                    .ultraThinMaterial,
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    Group {
+                        if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(Color.clear)
+                                .glassEffect(.clear, in: .rect(cornerRadius: 16))
+                        } else {
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(.ultraThinMaterial)
+                        }
+                    }
                 )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(.white.opacity(0.18), lineWidth: 1)
-                )
-
             }
             .buttonStyle(.plain)
 
-            // поле ввода — одна строка, как у Glass
             TextField("Ask about your screen or audio", text: $text)
                 .focused(focus)
                 .textFieldStyle(.plain)
                 .font(.system(size: 16, weight: .medium))
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .background(
-                    Capsule().fill(Color.white.opacity(0.06))
-                        .overlay(Capsule().stroke(.white.opacity(0.10), lineWidth: 1))
+                    Group {
+                        if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
+                            Capsule()
+                                .fill(Color.clear)
+                                .glassEffect(.clear, in: .capsule)
+                        } else {
+                            Capsule().fill(Color.white.opacity(0.06))
+                                .overlay(Capsule().stroke(.white.opacity(0.10), lineWidth: 1))
+                        }
+                    }
                 )
-                .onSubmit { onSubmit() }                    // Enter отправляет
+                .onSubmit { onSubmit() }
                 .disableAutocorrection(true)
 
             Button(isSubmitting ? "Submitting…" : "Submit") {
@@ -653,16 +1273,23 @@ private struct AskInputBar: View {
             .font(.system(size: 14, weight: .semibold))
             .padding(.horizontal, 14).padding(.vertical, 9)
             .background(
-                Capsule().fill(Color.accentColor)
-                    .overlay(Capsule().stroke(.white.opacity(0.20), lineWidth: 0.5))
+                Group {
+                    if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
+                        Capsule()
+                            .fill(Color.clear)
+                            .glassEffect(.regular.tint(.accentColor).interactive(), in: .capsule)
+                    } else {
+                        Capsule().fill(Color.accentColor)
+                            .overlay(Capsule().stroke(.white.opacity(0.20), lineWidth: 0.5))
+                    }
+                }
             )
             .foregroundStyle(.white)
             .disabled(isSubmitting)
-            .keyboardShortcut(.return, modifiers: [.command]) // ⌘↩ тоже шлёт
+            .keyboardShortcut(.return, modifiers: [.command])
         }
     }
 }
-
 
 private struct ResponseCard: View {
     var questionTitle: String
@@ -675,7 +1302,6 @@ private struct ResponseCard: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            // header
             HStack(spacing: 10) {
                 HStack(spacing: 8) {
                     Circle().fill(Color.white.opacity(0.15)).frame(width: 10, height: 10)
@@ -705,7 +1331,6 @@ private struct ResponseCard: View {
 
             Divider().overlay(Color.white.opacity(0.08))
 
-            // body
             ScrollView {
                 Text(bodyText)
                     .textSelection(.enabled)
@@ -719,21 +1344,19 @@ private struct ResponseCard: View {
     }
 }
 
-
-private struct MiniIconButton: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 12.5, weight: .semibold))
-            .frame(width: 28, height: 28)
-            .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(.thinMaterial)
-                    .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white.opacity(0.18), lineWidth: 0.75))
-            )
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
-    }
-}
-
+//private struct MiniIconButton: ButtonStyle {
+//    func makeBody(configuration: Configuration) -> some View {
+//        configuration.label
+//            .font(.system(size: 12.5, weight: .semibold))
+//            .frame(width: 28, height: 28)
+//            .background(
+//                RoundedRectangle(cornerRadius: 7, style: .continuous)
+//                    .fill(.thinMaterial)
+//                    .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white.opacity(0.18), lineWidth: 0.75))
+//            )
+//            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+//    }
+//}
 
 // AskField
 struct AskField: View {
@@ -741,28 +1364,20 @@ struct AskField: View {
     @Binding var smartEnabled: Bool
     var isSubmitting: Bool = false
     var onSubmit: () async -> Void
-    var focused: FocusState<Bool>.Binding    // ← новый параметр
-
-
-    
+    var focused: FocusState<Bool>.Binding
 
     var body: some View {
         HStack(spacing: 10) {
-            // Заменить TextField на TextEditor, если нужна многострочность
             TextEditor(text: $text)
-                .focused(focused)                         // ← фокус сюда
+                .focused(focused)
                 .font(.title3.weight(.medium))
-                .frame(minHeight: 80)                     // чуть больше, чтобы точно хватало
+                .frame(maxWidth: 600, minHeight: 80)  // Фиксируем ширину для TextEditor
                 .padding(.vertical, 10)
                 .padding(.leading, 12)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color(NSColor.textBackgroundColor))
                 )
-
-
-
-
 
             HStack(spacing: 8) {
                 Toggle(isOn: $smartEnabled) {
@@ -774,68 +1389,99 @@ struct AskField: View {
                 .tint(.accentColor.opacity(0.7))
 
                 Button(isSubmitting ? "Submitting…" : "Submit") {
-                    print("Submit tapped")
                     Task { await onSubmit() }
                 }
                 .buttonStyle(GlassPill(tint: .accentColor))
-                .disabled(isSubmitting) // ← только этот флаг
+                .disabled(isSubmitting)
             }
             .padding(.trailing, 8)
         }
+        .frame(maxWidth: 600)  // Фиксируем максимальную ширину для всего поля ввода
         .padding(.horizontal, 6)
         .contentShape(Rectangle())
         .allowsHitTesting(true)
     }
 }
 
-
-
-
 // MARK: - GlassPill
 
 struct GlassPill: ButtonStyle {
     var tint: Color? = nil
+    @ObservedObject private var overlay = OverlayModel.shared
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(.thinMaterial)
-                    .overlay(Capsule().stroke(.white.opacity(0.2), lineWidth: 1))
-                    .shadow(
-                        color: (tint ?? .accentColor).opacity(configuration.isPressed ? 0.25 : 0.4),
-                        radius: configuration.isPressed ? 6 : 12,
-                        x: 0, y: 0
+        Group {
+            if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
+                let resolvedTint = tint ?? .accentColor
+                configuration.label
+                    .font(.system(size: 13, weight: .semibold))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .glassEffect(
+                        tint == nil ? .clear : .regular.tint(resolvedTint).interactive(),
+                        in: .capsule
                     )
-            )
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.spring(response: 0.28, dampingFraction: 0.9), value: configuration.isPressed)
+                    .tint(resolvedTint)
+                    .scaleEffect(configuration.isPressed ? 0.98 : 1)
+                    .animation(.spring(response: 0.28, dampingFraction: 0.9), value: configuration.isPressed)
+            } else {
+                configuration.label
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(.thinMaterial)
+                            .overlay(Capsule().stroke(.white.opacity(0.2), lineWidth: 1))
+                            .shadow(
+                                color: (tint ?? .accentColor).opacity(configuration.isPressed ? 0.25 : 0.4),
+                                radius: configuration.isPressed ? 6 : 12,
+                                x: 0, y: 0
+                            )
+                    )
+                    .scaleEffect(configuration.isPressed ? 0.98 : 1)
+                    .animation(.spring(response: 0.28, dampingFraction: 0.9), value: configuration.isPressed)
+            }
+        }
     }
 }
 
+// ====== ВСПОМОГАТЕЛЬНЫЕ ШТУКИ (как были) ======
 
 @MainActor
 final class AskVM: ObservableObject {
-    @Published var isSubmitting: Bool = false
-    @Published var answerDraft: String = ""          // сюда льётся стрим
-    @Published var answerError: String? = nil
-    @Published var canStop: Bool = false             // показать кнопку «Стоп»
+    private struct TokenBalanceError: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
 
-    private var streamTask: Task<Void, Never>?       // чтобы уметь отменять
-    private let baseURL = URL(string: "https://api.disciplaner.online")!
-    private let sessionId = UUID().uuidString        // одна сессия на жизненный цикл VM
+    @Published var isSubmitting: Bool = false
+    @Published var answerDraft: String = ""
+    @Published var answerError: String? = nil
+    @Published var canStop: Bool = false
+
+    private static let insufficientTokensFallbackMessage = "У вас недостаточно токенов. Пополните баланс на сайте ghostai.ru."
+
+    private var streamTask: Task<Void, Never>?
+    private var streamRunID = UUID()
+    private let baseURL = URL(string: "https://api.ghostai.ru")!
+    private let sessionId = UUID().uuidString
+    private let auth: AuthState
+    private let serverClient: ServerClient
+
+    init(auth: AuthState, serverClient: ServerClient = .shared) {
+        self.auth = auth
+        self.serverClient = serverClient
+    }
 
     func cancelStream() {
         streamTask?.cancel()
+        streamRunID = UUID()
         streamTask = nil
         canStop = false
         isSubmitting = false
     }
 
-    // Submit ВСЕГДА отправляет вопрос + хвост транскрибации + скриншот
     func submit(
         question: String,
         smart: Bool,
@@ -847,53 +1493,96 @@ final class AskVM: ObservableObject {
             return
         }
 
-        // сброс состояния ответа
+        await performSubmission(
+            endpoint: "/ask",
+            question: q,
+            smart: smart,
+            transcript: transcript
+        )
+    }
+
+    func submitWithoutQuery(
+        transcript: String,
+        smart: Bool = true
+    ) async {
+        let trimmedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackQuestion = trimmedTranscript.isEmpty ? Self.fallbackAutoAskPrompt : nil
+
+        if fallbackQuestion != nil {
+            NSLog("AskVM: no transcript tail, using fallback auto-ask prompt")
+        }
+
+        await performSubmission(
+            endpoint: "/ask_without_query",
+            question: fallbackQuestion,
+            smart: smart,
+            transcript: trimmedTranscript
+        )
+    }
+
+    private func performSubmission(
+        endpoint: String,
+        question: String?,
+        smart: Bool,
+        transcript: String
+    ) async {
+        guard let token = auth.currentKey, !token.isEmpty else {
+            answerError = "Добавьте API-ключ, чтобы отправить вопрос."
+            return
+        }
+
+        streamTask?.cancel()
+        let runID = UUID()
+        streamRunID = runID
+
         answerDraft = ""
         answerError = nil
         isSubmitting = true
         canStop = true
         NSLog("AskVM isSubmitting = true")
-        defer { NSLog("AskVM isSubmitting = false") }
+        defer {
+            NSLog("AskVM isSubmitting = false")
+            isSubmitting = false
+            canStop = false
+        }
 
         do {
-            // 1) делаем PNG снимок
             let png = try await Snapshot.captureAllDisplaysPNG(maxSide: 1280)
 
-            // 2) шлём на сервер и читаем SSE стрим
             try await sendToGPT(
-                question: q,
+                endpoint: endpoint,
+                question: question,
                 screenshotPNG: png,
                 smart: smart,
-                transcript: transcript
+                transcript: transcript,
+                token: token
             )
         } catch {
             answerError = error.localizedDescription
             NSLog("AskVM submit failed: \(error.localizedDescription)")
         }
-
-        isSubmitting = false
-        canStop = false
     }
 
-    // MARK: - сетевой вызов со streaming SSE
     private func sendToGPT(
-        question: String,
+        endpoint: String,
+        question: String?,
         screenshotPNG: Data,
         smart: Bool,
-        transcript: String
+        transcript: String,
+        token: String
     ) async throws {
-        var req = URLRequest(url: baseURL.appendingPathComponent("/ask"))
+        var req = URLRequest(url: baseURL.appendingPathComponent(endpoint))
         req.httpMethod = "POST"
-        req.setValue("text/event-stream", forHTTPHeaderField: "Accept") // ожидаем SSE
+        req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        serverClient.authorize(&req, token: token)
 
-        // multipart/form-data
-        let boundary = "----ghostdesk-\(UUID().uuidString)"
+        let boundary = "----ghostai-\(UUID().uuidString)"
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
         var body = Data()
         func appendField(_ name: String, _ value: String) {
             body.append("--\(boundary)\r\n".data(using: .utf8)!)
-            body.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"\(name)\";\r\n\r\n".data(using: .utf8)!)
             body.append("\(value)\r\n".data(using: .utf8)!)
         }
         func appendFile(_ name: String, filename: String, mime: String, data: Data) {
@@ -904,91 +1593,122 @@ final class AskVM: ObservableObject {
             body.append("\r\n".data(using: .utf8)!)
         }
 
-        // обязательные поля
-        appendField("question", question)
+        if let question {
+            appendField("question", question)
+        }
         appendField("smart", smart ? "true" : "false")
         appendField("sessionId", sessionId)
 
-        // контекст речи — ВСЕГДА (пусть даже пустая строка)
-        appendField("transcript", transcript)
+        let transcriptPayload = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        appendField("transcript", transcriptPayload)
 
-        // скрин — ВСЕГДА для Submit
         appendFile("image", filename: "screen.png", mime: "image/png", data: screenshotPNG)
 
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
         req.httpBody = body
 
-        // 3) читаем SSE построчно. Важно: используем Task, чтобы уметь отменять
-        streamTask?.cancel()
-        streamTask = Task { [weak self] in
-            guard let self else { return }
+        let (bytes, response) = try await URLSession.shared.bytes(for: req)
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+
+        if serverClient.handleUnauthorizedStatus(http.statusCode, auth: auth) {
+            throw NSError(domain: "auth", code: http.statusCode,
+                          userInfo: [NSLocalizedDescriptionKey: serverClient.unauthorizedMessage])
+        }
+
+        if !(200..<300).contains(http.statusCode) {
+            var data = Data()
             do {
-                let (bytes, response) = try await URLSession.shared.bytes(for: req)
-                guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+                for try await b in bytes { data.append(b) }
+            } catch {}
 
-                if !(200..<300).contains(http.statusCode) {
-                    var errText = "HTTP \(http.statusCode) \(HTTPURLResponse.localizedString(forStatusCode: http.statusCode))"
-                    var data = Data()
-                    do {
-                        for try await b in bytes { data.append(b) } // вычитаем тело ошибки
-                        if let s = String(data: data, encoding: .utf8), !s.isEmpty { errText += "\n\(s)" }
-                    } catch {}
-                    throw NSError(domain: "net", code: http.statusCode,
-                                  userInfo: [NSLocalizedDescriptionKey: errText])
+            if http.statusCode == 402,
+               let message = Self.parseInsufficientTokensMessage(from: data) {
+                throw TokenBalanceError(message: message)
+            }
+
+            var errText = "HTTP \(http.statusCode) \(HTTPURLResponse.localizedString(forStatusCode: http.statusCode))"
+            if let s = String(data: data, encoding: .utf8), !s.isEmpty { errText += "\n\(s)" }
+            throw NSError(domain: "net", code: http.statusCode,
+                          userInfo: [NSLocalizedDescriptionKey: errText])
+        }
+
+        var buffer = ""
+        var lastFlush = Date()
+
+        for try await line in bytes.lines {
+            try Task.checkCancellation()
+            guard line.hasPrefix("data: ") else { continue }
+
+            let jsonStr = String(line.dropFirst(6))
+            guard
+                let data = jsonStr.data(using: .utf8),
+                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let type = obj["type"] as? String
+            else { continue }
+
+            if type == "delta", let text = obj["text"] as? String {
+                buffer += text
+                let shouldFlushByLen = buffer.count >= 64
+                let shouldFlushByPunct = buffer.last.map { ".,!?;:\n ".contains($0) } ?? false
+                let shouldFlushByTime = Date().timeIntervalSince(lastFlush) > 0.06
+                if shouldFlushByLen || shouldFlushByPunct || shouldFlushByTime {
+                    answerDraft += buffer
+                    buffer.removeAll(keepingCapacity: true)
+                    lastFlush = Date()
                 }
-
-                // читаем строки SSE
-                var buffer = "" // микро-батчинг на клиенте, чтобы не дёргать UI по 1 символу
-                var lastFlush = Date()
-
-                for try await line in bytes.lines {
-                    if Task.isCancelled { break }
-                    guard line.hasPrefix("data: ") else { continue }
-
-                    let jsonStr = String(line.dropFirst(6))
-                    guard
-                        let data = jsonStr.data(using: .utf8),
-                        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                        let type = obj["type"] as? String
-                    else { continue }
-
-                    if type == "delta", let text = obj["text"] as? String {
-                        buffer += text
-                        // флашим если буфер вырос или пришёл знак конца фразы, или прошло 60 мс
-                        let shouldFlushByLen = buffer.count >= 64
-                        let shouldFlushByPunct = buffer.last.map { ".,!?;:\n ".contains($0) } ?? false
-                        let shouldFlushByTime = Date().timeIntervalSince(lastFlush) > 0.06
-                        if shouldFlushByLen || shouldFlushByPunct || shouldFlushByTime {
-                            self.answerDraft += buffer
-                            buffer.removeAll(keepingCapacity: true)
-                            lastFlush = Date()
-                        }
-                    } else if type == "done" {
-                        // добросим хвост
-                        if !buffer.isEmpty {
-                            self.answerDraft += buffer
-                            buffer.removeAll()
-                        }
-                        break
-                    } else if type == "error" {
-                        let msg = (obj["message"] as? String) ?? "Unknown error"
-                        throw NSError(domain: "sse", code: -1,
-                                      userInfo: [NSLocalizedDescriptionKey: msg])
-                    }
+            } else if type == "done" {
+                if !buffer.isEmpty {
+                    answerDraft += buffer
+                    buffer.removeAll()
                 }
-            } catch {
-                if !Task.isCancelled {
-                    self.answerError = error.localizedDescription
-                }
+                break
+            } else if type == "error" {
+                let msg = (obj["message"] as? String) ?? "Unknown error"
+                throw NSError(domain: "sse", code: -1,
+                              userInfo: [NSLocalizedDescriptionKey: msg])
             }
         }
 
-        // ждём завершения Task (или отмены)
-        await streamTask?.value
-        streamTask = nil
+        if !buffer.isEmpty { answerDraft += buffer }
     }
 }
 
+private extension AskVM {
+    static func parseInsufficientTokensMessage(from data: Data) -> String? {
+        struct Payload: Decodable {
+            let error: String?
+            let message: String?
+        }
+
+        if let payload = try? JSONDecoder().decode(Payload.self, from: data),
+           payload.error == "insufficient_tokens" {
+            let trimmed = payload.message?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let trimmed, !trimmed.isEmpty {
+                return trimmed
+            }
+            return insufficientTokensFallbackMessage
+        }
+
+        if data.isEmpty {
+            return insufficientTokensFallbackMessage
+        }
+
+        if let raw = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !raw.isEmpty {
+            if raw.localizedCaseInsensitiveContains("недостаточно") ||
+                raw.localizedCaseInsensitiveContains("insufficient") ||
+                raw.localizedCaseInsensitiveContains("token") {
+                return raw
+            }
+        }
+
+        return nil
+    }
+
+    static let fallbackAutoAskPrompt = """
+    Ты — Ghost AI-помощник. Пользователь нажал горячую клавишу без голосового контекста. Проанализируй приложенный скриншот, опиши, что на нём происходит, какие проблемы заметны и какие шаги стоит предпринять, чтобы их решить. Отвечай кратко и по делу.
+    """
+}
 
 // MARK: - Внутренняя однофайловая реализация снимка экрана
 
@@ -1000,14 +1720,12 @@ private enum Snapshot {
         case internalFailure(String)
     }
 
-    /// Публичная точка: PNG сжат до `maxSide` по большей стороне
     static func captureAllDisplaysPNG(maxSide: CGFloat = 1280) async throws -> Data {
         let cg = try await captureAllDisplaysCGImage(width: 1280, height: 720, showsCursor: false, timeout: 2.0)
         let resized = resizeCGImage(cg, maxSide: maxSide)
         return pngData(from: resized)
     }
 
-    /// Одноразовый CGImage через временный SCStream
     static func captureAllDisplaysCGImage(
         width: Int = 1280,
         height: Int = 720,
@@ -1016,30 +1734,19 @@ private enum Snapshot {
     ) async throws -> CGImage {
 
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-
         guard let main = content.displays.first else { throw Error.noDisplays }
 
-
-        // let filter = SCContentFilter(display: main, excludingWindows: [], exceptingWindows: [])
-
-        // Самый совместимый вариант для разных SDK/macOS
         let filter = SCContentFilter(display: main, excludingWindows: [])
 
-        // Конфигурация стрима
         let cfg = SCStreamConfiguration()
-        cfg.width  = (width  / 8) * 8        // чуть выравниваем для стабильности
+        cfg.width  = (width  / 8) * 8
         cfg.height = (height / 8) * 8
         cfg.showsCursor = showsCursor
         cfg.pixelFormat = kCVPixelFormatType_32BGRA
-        // Можно задать минимальный интервал кадров, но для "одного кадра" не критично:
-        // cfg.minimumFrameInterval = CMTime(value: 1, timescale: 30)
 
-        // Захват одного кадра
         let grabber = SingleFrameGrabber(queueLabel: "sc.single.grab.queue")
         return try await grabber.grab(filter: filter, configuration: cfg, timeout: timeout)
     }
-
-    // MARK: - Helpers (PNG и ресайз)
 
     private static func pngData(from cg: CGImage) -> Data {
         let data = NSMutableData()
@@ -1071,8 +1778,6 @@ private enum Snapshot {
         return ctx.makeImage()!
     }
 
-    // MARK: - Одноразовый граббер кадра
-
     private final class SingleFrameGrabber: NSObject, SCStreamOutput, SCStreamDelegate {
         private var stream: SCStream?
         private var cont: CheckedContinuation<CGImage, Swift.Error>?
@@ -1092,14 +1797,12 @@ private enum Snapshot {
             let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
             self.stream = stream
 
-            // Обрабатываем кадры НЕ на main
             try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
             try await stream.startCapture()
 
             return try await withTaskCancellationHandler(operation: {
                 try await withCheckedThrowingContinuation { (c: CheckedContinuation<CGImage, Swift.Error>) in
                     self.cont = c
-                    // Таймаут
                     self.queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
                         guard let self, !self.finished else { return }
                         self.finish(error: Snapshot.Error.timeout)
@@ -1115,8 +1818,6 @@ private enum Snapshot {
             stream = nil
         }
 
-        // MARK: - SCStreamOutput
-
         func stream(_ stream: SCStream, didOutputSampleBuffer sb: CMSampleBuffer, of type: SCStreamOutputType) {
             guard type == .screen, let pb = sb.imageBuffer else { return }
             let ciImage = CIImage(cvPixelBuffer: pb)
@@ -1125,13 +1826,9 @@ private enum Snapshot {
             }
         }
 
-        // MARK: - SCStreamDelegate
-
         func stream(_ stream: SCStream, didStopWithError error: Swift.Error) {
             finish(error: error)
         }
-
-        // MARK: - Finish helpers
 
         private func finish(image: CGImage) {
             queue.async {
@@ -1153,8 +1850,8 @@ private enum Snapshot {
             }
         }
     }
-}
 
+}
 
 #if os(macOS)
 import AppKit
@@ -1164,14 +1861,14 @@ public struct WindowChromeTweaks: NSViewRepresentable {
     public init() {}
 
     public func makeNSView(context: Context) -> NSView {
-        let v = NSView()                       // ← обычный NSView без хит-тест трюков
+        let v = NSView()
         v.wantsLayer = true
         v.layer?.backgroundColor = NSColor.clear.cgColor
         DispatchQueue.main.async {
             if let w = v.window {
                 w.titleVisibility = .hidden
                 w.titlebarAppearsTransparent = true
-                w.isMovableByWindowBackground = false   // ← ВАЖНО: выключено
+                w.isMovableByWindowBackground = false
                 w.backgroundColor = .clear
             }
         }
@@ -1187,14 +1884,9 @@ public struct WindowChromeTweaks: View {
 }
 #endif
 
-
-
-
-
 import Foundation
 
-/// Потокобезопасный буфер последних реплик с таймстемпами.
-/// Хранит подтверждённые куски и актуальный partial-хвост.
+/// Потокобезопасный буфер последних реплик
 final class TranscriptBuffer {
     static let shared = TranscriptBuffer()
     private init() {}
@@ -1204,19 +1896,45 @@ final class TranscriptBuffer {
     private var items: [Item] = []
     private var partial: Item? = nil
 
-    /// Добавить подтверждённый (final) текст
+    private static let noSpaceCharacters: Set<Character> = [".", "?", "!", ",", ";", ":", "…"]
+
     func appendFinal(_ text: String, at time: Date = .init()) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
         q.async {
             self.items.append(.init(t: time, text: clean))
-            // ограничим рост буфера (по числу элементов)
             if self.items.count > 500 { self.items.removeFirst(self.items.count - 500) }
-            self.partial = nil // сбрасываем текущий хвост
+            self.partial = nil
         }
     }
 
-    /// Обновить текущий partial (неподтверждённый) текст
+    func mergeIntoLastFinal(_ text: String) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        q.async {
+            guard let last = self.items.popLast() else { return }
+            let merged = TranscriptBuffer.mergeSegments(base: last.text, addition: clean)
+            self.items.append(.init(t: Date(), text: merged))
+            self.partial = nil
+        }
+    }
+
+    func replaceLastFinal(with text: String, at time: Date = .init()) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        q.async {
+            let item = Item(t: time, text: clean)
+            if self.items.isEmpty {
+                self.items.append(item)
+            } else {
+                _ = self.items.popLast()
+                self.items.append(item)
+            }
+            if self.items.count > 500 { self.items.removeFirst(self.items.count - 500) }
+            self.partial = nil
+        }
+    }
+
     func setPartial(_ text: String, at time: Date = .init()) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         q.async {
@@ -1224,7 +1942,27 @@ final class TranscriptBuffer {
         }
     }
 
-    /// Хвост за N секунд, с жёстной усечкой по символам.
+    static func mergeSegments(base: String, addition: String) -> String {
+        let trimmedAddition = addition.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedAddition.isEmpty else { return base }
+
+        var result = base
+        if result.isEmpty {
+            return trimmedAddition
+        }
+
+        if let first = trimmedAddition.first, noSpaceCharacters.contains(first) {
+            while let last = result.last, last.isWhitespace {
+                result.removeLast()
+            }
+        } else if let last = result.last, !last.isWhitespace {
+            result.append(" ")
+        }
+
+        result.append(trimmedAddition)
+        return result
+    }
+
     func tail(lastSeconds: Int = 40, maxChars: Int = 900) -> String {
         let now = Date()
         return q.sync {
@@ -1232,9 +1970,7 @@ final class TranscriptBuffer {
             var chunks = items.filter { $0.t >= cut }.map { $0.text }
             if let p = partial, p.t >= cut { chunks.append(p.text) }
             var s = chunks.joined(separator: " ")
-            if s.count > maxChars {
-                s = String(s.suffix(maxChars))
-            }
+            if s.count > maxChars { s = String(s.suffix(maxChars)) }
             return s.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
@@ -1247,5 +1983,105 @@ final class TranscriptBuffer {
     }
 }
 
+// === АВТО-РЕСАЙЗ МОДИФИКАТОР ===
+
+private enum OverlaySizeKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
+}
+
+private struct OverlayAutoResize: ViewModifier {
+    @State private var last: CGSize = .zero
+    func body(content: Content) -> some View {
+        content
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: OverlaySizeKey.self, value: proxy.size)
+                }
+            )
+         .onPreferenceChange(OverlaySizeKey.self) { new in
+             if abs(new.width - last.width) > 0.5 || abs(new.height - last.height) > 0.5 {
+                 last = new
+                 // Если подавление включено — пропускаем тик
+                 if !OverlayWindowManager.shared.isAutoResizeSuppressed {
+                     OverlayWindowManager.shared.scheduleResize(animate: false, coalesce: 0.02)
+                 }
+             }
+         }
+    }
+}
+
+extension View {
+    func overlayAutoResize() -> some View { modifier(OverlayAutoResize()) }
+
+    @ViewBuilder
+    func overlayAutoResize(enabled: Bool) -> some View {
+        if enabled {
+            overlayAutoResize()
+        } else {
+            self
+        }
+    }
+}
 
 
+private struct EdgeFade: ViewModifier {
+    var height: CGFloat = 420
+    func body(content: Content) -> some View {
+        content
+            .frame(height: height)
+            .mask(
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: .black,  location: 0.06),
+                        .init(color: .black,  location: 0.94),
+                        .init(color: .clear, location: 1.0)
+                    ],
+                    startPoint: .top, endPoint: .bottom
+                )
+            )
+            .clipped()
+    }
+}
+private extension View {
+    func edgeFade(height: CGFloat = 420) -> some View {
+        modifier(EdgeFade(height: height))
+    }
+}
+private struct Glow: ViewModifier {
+    var active: Bool
+    var color: Color
+    func body(content: Content) -> some View {
+        content
+            .shadow(color: active ? color.opacity(0.45) : .clear, radius: 4)
+            .shadow(color: active ? color.opacity(0.25) : .clear, radius: 8)
+    }
+}
+
+private extension View {
+    func glow(active: Bool, color: Color) -> some View {
+        modifier(Glow(active: active, color: color))
+    }
+}
+private struct TranscriptGroup: Identifiable {
+    let id = UUID()
+    let source: OverlayModel.AudioSourceKind
+    let items: [OverlayModel.TranscriptMessage]
+}
+
+private func grouped(_ messages: [OverlayModel.TranscriptMessage]) -> [TranscriptGroup] {
+    guard !messages.isEmpty else { return [] }
+    var result: [TranscriptGroup] = []
+    var buf: [OverlayModel.TranscriptMessage] = [messages[0]]
+    for m in messages.dropFirst() {
+        if m.source == buf.last?.source {
+            buf.append(m)
+        } else {
+            result.append(.init(source: buf[0].source, items: buf))
+            buf = [m]
+        }
+    }
+    result.append(.init(source: buf[0].source, items: buf))
+    return result
+}

@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <%- include('partials/head', { title }) %>
+  <body class="theme-dark">
+    <div class="background-gradient"></div>
+    <%- include('partials/header') %>
+    <main class="page narrow">
+      <section class="empty-state">
+        <h1>Что-то пошло не так</h1>
+        <p>Команда Ghost AI уже разбирается с ошибкой. Попробуйте обновить страницу чуть позже.</p>
+        <a href="/" class="ghost-button">Обновить</a>
+      </section>
+    </main>
+    <%- include('partials/footer') %>
+    <script src="/js/password-toggle.js" defer></script>
+  </body>
+</html>

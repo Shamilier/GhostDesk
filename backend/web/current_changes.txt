@@ -1,0 +1,13 @@
+1. Added token_balance support in SQLite initialization (backend/web/src/db.js), including schema update for new deployments and in-place migration via PRAGMA inspection plus ALTER TABLE.
+2. Implemented user token helpers and InsufficientTokensError in backend/web/src/server.js to expose getUserTokenBalance and transactional debitUserTokens with balance validation.
+3. Introduced INTERNAL_API_SECRET configuration and protected POST /internal/users/:id/tokens/debit endpoint that consumes tokens using the new helper and returns structured errors.
+4. Added plan-based token configuration and automatic token_balance assignment during registration and plan changes.
+5. Extended GET /oauth/profile to include token_balance for both web-user-* tokens and regular OAuth access tokens.
+6. Converted token_balance handling to use REAL precision in SQLite with fractional-safe helpers and migration.
+7. Added plan_renews_at and free_tokens_refresh_at columns to the users table with automatic migrations to support subscription lifecycle tracking.
+8. Implemented ensureUserSubscriptionFresh to lazily downgrade expired paid plans, refresh free tokens every 7 days, and wired it into session refresh, dashboard rendering, and /oauth/profile responses.
+9. Updated plan change logic (registration, billing, persistUserPlan) to set base token balances and renewal/refresh dates so paid plans expire after one month and free plans always receive their weekly token top-up schedule.
+10. Added csurf middleware with selective enforcement and CSRF error handling so register/login/logout, billing checkout and QA API routes are protected while OAuth, webhooks and internal endpoints stay exempt.
+11. HTML auth forms and logout buttons now include hidden _csrf fields plus layout meta tags expose the token for client scripts.
+12. Billing modal and recordings QA fetch calls attach the CSRF token via X-CSRF-Token headers when posting JSON bodies.
+13. Introduced a dedicated csrf-error.ejs template rendered on CSRF failures with guidance for users.

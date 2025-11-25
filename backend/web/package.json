@@ -1,0 +1,38 @@
+{
+  "name": "ghostai_web",
+  "version": "1.0.0",
+  "description": "Authentication portal for Ghost AI with registration, login, and dashboard",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
+  },
+  "keywords": [
+    "ghostai",
+    "auth",
+    "express",
+    "sqlite"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "connect-session-knex": "^5.0.0",
+    "dotenv": "^17.2.3",
+    "ejs": "^3.1.10",
+    "express": "^5.1.0",
+    "express-session": "^1.18.2",
+    "csurf": "^1.11.0",
+    "helmet": "^8.1.0",
+    "knex": "^3.1.0",
+    "nanoid": "^5.1.6",
+    "pg": "^8.16.3",
+    "sqlite3": "^5.1.7",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}

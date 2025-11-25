@@ -1,0 +1,37 @@
+<header class="landing-header">
+  <nav class="landing-nav">
+    <a href="/#hero" class="landing-logo" aria-label="Ghost AI">
+      <span class="landing-logo-dot" aria-hidden="true"></span>
+      Ghost AI
+    </a>
+    <button class="landing-nav-toggle" type="button" aria-expanded="false" aria-controls="primary-navigation">
+      <span class="landing-nav-toggle-line"></span>
+      <span class="landing-nav-toggle-line"></span>
+    </button>
+    <div class="landing-nav-content" id="primary-navigation">
+      <div class="landing-nav-links">
+        <a href="/#features">Возможности</a>
+        <a href="/#how">Как работает</a>
+        <a href="/#use-cases">Сценарии</a>
+        <a href="/#pricing">Тарифы</a>
+        <a href="/#faq">FAQ</a>
+        <a href="/recordings" class="<%= typeof activeNav !== 'undefined' && activeNav === 'recordings' ? 'is-active' : '' %>">Мои записи</a>
+      </div>
+      <div class="landing-nav-actions">
+        <a href="/#pricing" class="landing-secondary-action">Смотреть демо</a>
+        <% if (currentUser) { %>
+          <a class="landing-primary-action" href="/dashboard">Личный кабинет</a>
+          <form action="/logout" method="post">
+            <% if (csrfToken) { %>
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <% } %>
+            <button type="submit" class="landing-primary-action outline">Выйти</button>
+          </form>
+        <% } else { %>
+          <a class="landing-secondary-action" href="/login">Войти</a>
+          <a class="landing-primary-action" href="/register">Регистрация</a>
+        <% } %>
+      </div>
+    </div>
+  </nav>
+</header>

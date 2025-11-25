@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <%- include('partials/head', { title }) %>
+  <body
+    class="theme-dark landing-body"
+    data-landing="<%- encodeURIComponent(JSON.stringify(landing)) %>"
+  >
+    <div class="background-gradient"></div>
+    <%- include('partials/header') %>
+    <main class="landing-main">
+      <section id="hero" class="landing-section landing-hero">
+        <div class="landing-hero-inner">
+          <div class="landing-hero-copy">
+            <span class="landing-eyebrow">Невидимый слой для разговоров</span>
+            <h1>Говорите свободно. <span>Остальное — сделает AI</span></h1>
+            <p>
+              Ghost AI в реальном времени слышит звук и вас, понимает контекст, подсказывает формулировки и сохраняет встречу в умный архив. Мы перенесли структуру из app.ghostai.ru, чтобы портал выглядел так же чисто.
+            </p>
+            <div class="landing-hero-actions">
+              <a class="landing-primary-action" href="/register">Попробовать бесплатно</a>
+              <a class="landing-secondary-action" href="/#how">Смотреть демо</a>
+            </div>
+            <div class="landing-hero-benefits">
+              <% landing.heroBenefits.forEach(function(benefit) { %>
+                <span><%= benefit %></span>
+              <% }) %>
+            </div>
+          </div>
+          <div class="landing-hero-card">
+            <div class="landing-hero-card-header">
+              <span class="landing-status-dot"></span>
+              Live Transcript
+            </div>
+            <div class="landing-hero-card-body">
+              <p>«Ghost AI заметил повторяющиеся вопросы клиента. Предложить сценарий upsell?»</p>
+              <div class="landing-hero-card-footer">
+                <span>AI Assist</span>
+                <span class="landing-chip">Boost +42%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="landing-hero-badge">14 дней бесплатно + -18% при годовой подписке</div>
+      </section>
+
+      <section id="social-proof" class="landing-section landing-metrics">
+        <div class="landing-section-heading">
+          <span class="landing-eyebrow">Доказано командами</span>
+          <h2>Ghost AI снимает нагрузку до разговора, во время и после</h2>
+        </div>
+        <div class="landing-metrics-grid">
+          <% landing.socialProof.forEach(function(item) { %>
+            <article class="landing-metric-card">
+              <p class="landing-metric-value"><%= item.value %></p>
+              <p class="landing-metric-desc"><%= item.description %></p>
+              <p class="landing-metric-note"><%= item.note %></p>
+            </article>
+          <% }) %>
+        </div>
+      </section>
+
+      <section id="features" class="landing-section landing-features">
+        <div class="landing-section-heading">
+          <span class="landing-eyebrow">Возможности</span>
+          <h2>Все, что нужно для ясных разговоров</h2>
+          <p>
+            Ghost AI объединяет звук, экран и AI-подсказки в один невидимый слой. Каждый блок — отдельный инструмент, который не перегружает ваш экран.
+          </p>
+        </div>
+        <div class="landing-features-grid">
+          <% landing.features.forEach(function(feature) { %>
+            <article class="landing-glass-card">
+              <h3><%= feature.title %></h3>
+              <p>
+                <strong><%= feature.highlight %></strong> <%= feature.description %>
+              </p>
+            </article>
+          <% }) %>
+        </div>
+      </section>
+
+      <section id="how" class="landing-section landing-how">
+        <div class="landing-how-layout">
+          <div class="landing-how-copy">
+            <div class="landing-section-heading align-left">
+              <span class="landing-eyebrow">Как это работает</span>
+              <h2>Включите Ghost AI один раз — и ведите диалог вместе с AI</h2>
+              <p>
+                От подключения до архивирования Ghost AI остаётся невидимым, но помогает на каждом шаге. Каждый этап оформлен отдельным блоком, поэтому вы всегда понимаете, что происходит.
+              </p>
+            </div>
+            <div class="landing-how-highlights">
+              <% landing.workflowHighlights.forEach(function(item) { %>
+                <article>
+                  <h3><%= item.title %></h3>
+                  <p class="landing-muted"><%= item.copy %></p>
+                  <p><%= item.accent %></p>
+                </article>
+              <% }) %>
+            </div>
+          </div>
+          <div class="landing-how-steps">
+            <% landing.workflowSteps.forEach(function(step, index) { %>
+              <article class="landing-glass-card">
+                <p class="landing-step-index">Шаг <%= index + 1 %></p>
+                <h3><%= step.title %></h3>
+                <p class="landing-muted"><%= step.description %></p>
+              </article>
+            <% }) %>
+          </div>
+        </div>
+      </section>
+
+      <section id="use-cases" class="landing-section landing-usecases">
+        <div class="landing-section-heading">
+          <span class="landing-eyebrow">Сценарии</span>
+          <h2>Ghost AI усиливает каждую встречу</h2>
+          <p>
+            Выберите сценарий и посмотрите, как Ghost AI структурирует разговор. Карточки синхронизируются с блоком описания справа.
+          </p>
+        </div>
+        <div class="landing-usecases-layout">
+          <div class="landing-usecases-list" role="tablist">
+            <% landing.useCases.forEach(function(useCase, index) { %>
+              <button
+                type="button"
+                class="landing-usecase-button <%= index === 0 ? 'is-active' : '' %>"
+                data-usecase-index="<%= index %>"
+                role="tab"
+                aria-selected="<%= index === 0 ? 'true' : 'false' %>"
+              >
+                <span class="landing-usecase-title"><%= useCase.title %></span>
+                <span class="landing-muted"><%= useCase.description %></span>
+              </button>
+            <% }) %>
+          </div>
+          <article class="landing-usecase-details landing-glass-card" role="tabpanel">
+            <div class="landing-usecase-details-inner" data-usecase-active>
+              <span class="landing-eyebrow">Выбранный сценарий</span>
+              <h3></h3>
+              <p class="landing-muted"></p>
+              <ul></ul>
+              <a class="landing-secondary-action" href="#cta"></a>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="testimonials" class="landing-section landing-testimonials">
+        <div class="landing-section-heading">
+          <span class="landing-eyebrow">Отзывы</span>
+          <h2>Команды уже говорят вместе с Ghost AI</h2>
+        </div>
+        <div class="landing-testimonials-grid">
+          <% landing.testimonials.forEach(function(testimonial) { %>
+            <blockquote class="landing-glass-card">
+              <p>«<%= testimonial.quote %>»</p>
+              <footer>
+                <div><%= testimonial.name %></div>
+                <div class="landing-muted"><%= testimonial.role %></div>
+                <span class="landing-chip"><%= testimonial.metric %></span>
+              </footer>
+            </blockquote>
+          <% }) %>
+        </div>
+      </section>
+
+      <section id="pricing" class="landing-section landing-pricing">
+        <div class="landing-section-heading">
+          <span class="landing-eyebrow">Тарифы</span>
+          <h2>Подберите ритм, который подходит вам</h2>
+          <p>
+            Переключайтесь между помесячной и годовой оплатой в один клик. Все планы включают поддержку конфиденциальности, архив и доступ к новым функциям без доплат.
+          </p>
+        </div>
+        <div class="landing-billing-toggle" role="radiogroup">
+          <button type="button" class="is-active" data-billing="monthly" role="radio" aria-checked="true">Помесячно</button>
+          <button type="button" data-billing="yearly" role="radio" aria-checked="false">За год</button>
+          <span class="landing-billing-note">Экономия до 18% при оплате за год</span>
+        </div>
+        <div class="landing-pricing-grid">
+          <% landing.plans.forEach(function(plan) { %>
+            <article class="landing-plan landing-glass-card <%= plan.highlighted ? 'is-highlighted' : '' %>" data-plan>
+              <div class="landing-plan-header">
+                <h3><%= plan.name %></h3>
+                <% if (plan.highlighted) { %>
+                  <span class="landing-chip">Популярный</span>
+                <% } %>
+              </div>
+              <p class="landing-muted"><%= plan.description %></p>
+              <div class="landing-plan-price" data-plan-price>
+                <span
+                  data-monthly-price="<%= plan.monthly.price %>"
+                  data-monthly-suffix="<%= plan.monthly.suffix %>"
+                  data-yearly-price="<%= plan.yearly.price %>"
+                  data-yearly-suffix="<%= plan.yearly.suffix %>"
+                >
+                  <span class="landing-plan-amount"><%= plan.monthly.price %></span>
+                  <span class="landing-plan-unit"><%= plan.monthly.suffix %></span>
+                </span>
+              </div>
+              <ul class="landing-plan-benefits">
+                <% plan.benefits.forEach(function(benefit) { %>
+                  <li><span></span><%= benefit %></li>
+                <% }) %>
+              </ul>
+              <a class="landing-primary-action" href="#cta">Выбрать план</a>
+            </article>
+          <% }) %>
+        </div>
+      </section>
+
+      <section id="faq" class="landing-section landing-faq">
+        <div class="landing-section-heading">
+          <span class="landing-eyebrow">FAQ</span>
+          <h2>Остались вопросы? Ответим заранее</h2>
+        </div>
+        <div class="landing-faq-list">
+          <% landing.faq.forEach(function(item) { %>
+            <details>
+              <summary><%= item.question %></summary>
+              <p><%= item.answer %></p>
+            </details>
+          <% }) %>
+        </div>
+      </section>
+
+      <section id="cta" class="landing-section landing-cta">
+        <div class="landing-cta-card">
+          <div class="landing-cta-copy">
+            <span class="landing-eyebrow">Попробуйте сейчас</span>
+            <h2>Готовы говорить уверенно?</h2>
+            <p>
+              Запустите Ghost AI бесплатно, подключите любимые сервисы и почувствуйте, как AI держит весь контекст разговора. В любой момент пригласите коллег и расширьте план.
+            </p>
+            <ul>
+              <% landing.ctaPoints.forEach(function(point) { %>
+                <li><span></span><%= point %></li>
+              <% }) %>
+            </ul>
+          </div>
+          <div class="landing-cta-actions">
+            <a class="landing-primary-action" href="/register">Попробовать бесплатно</a>
+            <a class="landing-secondary-action" href="/#how">Смотреть демо</a>
+          </div>
+        </div>
+      </section>
+    </main>
+    <%- include('partials/footer') %>
+    <script src="/js/password-toggle.js" defer></script>
+  </body>
+</html>

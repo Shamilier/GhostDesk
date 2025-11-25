@@ -1,10 +1,11 @@
 import SwiftUI
 
 // MARK: - Tabs (переименовано, чтобы не конфликтовало)
-public enum CommandTab: String, CaseIterable {
-    case listen = "Listen"
-    case ask    = "Ask"
-}
+//public enum CommandTab: String, CaseIterable {
+//    case listen = "Listen"
+//    case ask    = "Ask"
+//    case settings = ""
+//}
 
 // MARK: - Публичная оболочка с прежним API
 public struct FloatingToolbar: View {
@@ -13,6 +14,7 @@ public struct FloatingToolbar: View {
     public var onPrimaryTap: () -> Void
     public var onEyeTap: () -> Void
     public var onMenuTap: () -> Void
+    @Namespace private var toolbarGlassNamespace
 
     public init(
         isRecording: Bool,
@@ -32,6 +34,7 @@ public struct FloatingToolbar: View {
         CommandBar(
             isRecording: isRecording,
             selected: $selected,
+            glassNamespace: toolbarGlassNamespace,
             onPrimaryTap: onPrimaryTap,
             onEyeTap: onEyeTap,
             onMenuTap: onMenuTap
@@ -40,86 +43,129 @@ public struct FloatingToolbar: View {
     }
 }
 
-// MARK: - Glass визуальные токены
-private enum Glass {
-    static var accent: Color { .accentColor }
-    static var accentGradient: LinearGradient {
-        LinearGradient(colors: [accent.opacity(0.95), accent.opacity(0.6)],
-                       startPoint: .topLeading, endPoint: .bottomTrailing)
-    }
-    static var background: some View {
-        Capsule(style: .continuous)
-            .fill(.ultraThinMaterial)
-            .background(
-                Capsule().fill(Color.black.opacity(0.06))
-            )
-    }
-    static var ring: some View {
-        Capsule()
-            .strokeBorder(
-                LinearGradient(colors: [
-                    .white.opacity(0.65),
-                    .white.opacity(0.18)
-                ], startPoint: .topLeading, endPoint: .bottomTrailing),
-                lineWidth: 1
-            )
-            .blendMode(.overlay)
-    }
-    static var hairline: Color { .white.opacity(0.22) }
-    static var hairlineOverlay: some View {
-        Capsule().inset(by: 1.5)
-            .strokeBorder(.white.opacity(0.5), lineWidth: 0.5)
-    }
-    static var accentShadow: Color { .accentColor.opacity(0.16) }
-}
-
 private struct CommandBar: View {
     var isRecording: Bool
     @Binding var selected: CommandTab
+    var glassNamespace: Namespace.ID
     var onPrimaryTap: () -> Void    // оставим сигнатуру, но не используем
     var onEyeTap: () -> Void
     var onMenuTap: () -> Void
+    @ObservedObject private var overlay = OverlayModel.shared
 
     var body: some View {
-        HStack(spacing: 10) {
+        let toolbarContent = HStack(spacing: 10) {
             // logo
-            ZStack {
-                Circle().fill(.ultraThinMaterial)
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-            }
-            .frame(width: 28, height: 28)
-            .overlay(Circle().stroke(.white.opacity(0.22), lineWidth: 0.75))
+            ToolbarLogo(glassNamespace: glassNamespace)
 
             TabSwitcher(
                 selected: $selected,
                 isRecording: isRecording,
-                onTabTap: { onPrimaryTap() }    // ← добавили
+                onTabTap: { onPrimaryTap() },
+                glassNamespace: glassNamespace
             )
+            .onboardingTarget(.tabSwitcher)
 
 
-            KeyedIconButton(system: "eye",      key: "⌘E", action: onEyeTap)
+            KeyedIconButton(system: "eye", key: "⌘E", glassNamespace: glassNamespace, action: onEyeTap)
+                .onboardingTarget(.visibilityToggle)
             Button(action: onMenuTap) {
                 Image(systemName: "ellipsis")
                     .rotationEffect(.degrees(90))
             }
             .buttonStyle(MiniIconButton())
+            .onboardingTarget(.menu)
 
         }
-        .frame(height: 44)
-        .padding(.horizontal, 12)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(
-            Capsule().strokeBorder(
-                LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.18)],
-                               startPoint: .topLeading, endPoint: .bottomTrailing),
-                lineWidth: 1
-            )
-        )
-        // УБРАЛИ дымку: либо совсем без тени, либо очень аккуратно:
-        // .shadow(color: .black.opacity(0.10), radius: 4, y: 1)
+        Group {
+            if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
+                GlassEffectContainer(spacing: 10) {
+                    toolbarContent
+                        .frame(height: 48)
+                        .padding(.horizontal, 14)
+                        .onboardingTarget(.toolbarShell)
+                        .glassEffect(.clear, in: .capsule)
+                        .overlay(
+                          Capsule().stroke(
+                            LinearGradient(
+                              colors: [Color.white.opacity(0.35), Color.white.opacity(0.10)],
+                              startPoint: .topLeading, endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                          )
+                          .blendMode(.screen)
+                        )
+                        .overlay(
+                          Capsule().inset(by: 1.5)
+                            .stroke(Color.white.opacity(0.40), lineWidth: 0.6)
+                            .blur(radius: 1.0)
+                            .opacity(0.7)
+                            .blendMode(.screen)
+                        )
+
+
+                        .glassEffectUnion(id: "toolbar.shell", namespace: glassNamespace)
+                        .glassEffectID("toolbar.shell", in: glassNamespace)
+                        .glassEffectTransition(.matchedGeometry)
+                        .shadow(color: Color.black.opacity(0.12), radius: 12, y: 6)
+                        .overlay(
+                          Capsule()
+                            .fill(LinearGradient(
+                              colors: [Color.indigo.opacity(0.25), Color.purple.opacity(0.18)],
+                              startPoint: .topLeading, endPoint: .bottomTrailing
+                            ))
+                            .blendMode(.softLight)
+                            .opacity(0.02)              // ← общая прозрачность слоя ≈ невидимо
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                        )
+
+
+                }
+            } else {
+                toolbarContent
+                    .frame(height: 44)
+                    .padding(.horizontal, 12)
+                    .onboardingTarget(.toolbarShell)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(
+                        Capsule().strokeBorder(
+                            LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.18)],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing),
+                            lineWidth: 1
+                        )
+                    )
+            }
+        }
         .frame(maxWidth: 560)
+    }
+}
+
+private struct ToolbarLogo: View {
+    var glassNamespace: Namespace.ID
+    @ObservedObject private var overlay = OverlayModel.shared
+
+    var body: some View {
+        Group {
+            if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 28, height: 28)
+                    .glassEffect(.clear, in: .circle)
+                    .glassEffectUnion(id: "toolbar.shell", namespace: glassNamespace)
+                    .glassEffectID("toolbar.logo", in: glassNamespace)
+                    .glassEffectTransition(.matchedGeometry)
+                    .foregroundStyle(Color.accentColor)
+            } else {
+                ZStack {
+                    Circle().fill(.ultraThinMaterial)
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
+                .frame(width: 28, height: 28)
+                .overlay(Circle().stroke(.white.opacity(0.22), lineWidth: 0.75))
+            }
+        }
     }
 }
 
@@ -131,6 +177,7 @@ private struct TabSwitcher: View {
     @Binding var selected: CommandTab
     var isRecording: Bool
     var onTabTap: () -> Void
+    var glassNamespace: Namespace.ID
 
     private let tabWidth:  CGFloat = 82
     private let tabHeight: CGFloat = 28
@@ -140,14 +187,18 @@ private struct TabSwitcher: View {
     var body: some View {
         HStack(spacing: 8) {
             TabChip(title: "Listen", icon: "waveform",
-                    isActive: selected == .listen, ns: ns) {
+                    isActive: selected == .listen,
+                    ns: ns,
+                    glassNamespace: glassNamespace) {
                 selected = .listen
                 onTabTap()
             }
             .frame(width: tabWidth, height: tabHeight)
 
             TabChip(title: "Ask", icon: "bubble.right",
-                    isActive: selected == .ask, ns: ns) {
+                    isActive: selected == .ask,
+                    ns: ns,
+                    glassNamespace: glassNamespace) {
                 selected = .ask
                 onTabTap()
             }
@@ -165,26 +216,48 @@ private struct TabChip: View {
     var icon: String
     var isActive: Bool
     var ns: Namespace.ID
+    var glassNamespace: Namespace.ID
     var onTap: () -> Void
+    @ObservedObject private var overlay = OverlayModel.shared
 
     var body: some View {
         Button(action: onTap) {
-            ZStack {
-                if isActive {
-                    Capsule()
-                        .fill(Color.white.opacity(0.12))
-                        .matchedGeometryEffect(id: "tabHilite", in: ns)
-                        .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 0.5))
-                }
-                HStack(spacing: 6) {
-                    Image(systemName: icon)
+            Group {
+                if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
+                    HStack(spacing: 6) {
+                        Image(systemName: icon)
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(title)
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .glassEffect(
+                        isActive ? .regular.tint(.accentColor).interactive() : .clear,
+                        in: .capsule
+                    )
+                    .glassEffectUnion(id: "toolbar.shell", namespace: glassNamespace)
+                    .glassEffectID("toolbar.tab.\(title)", in: glassNamespace)
+                    .glassEffectTransition(.matchedGeometry)
+                } else {
+                    ZStack {
+                        if isActive {
+                            Capsule()
+                                .fill(Color.white.opacity(0.12))
+                                .matchedGeometryEffect(id: "tabHilite", in: ns)
+                                .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 0.5))
+                        }
+                        HStack(spacing: 6) {
+                            Image(systemName: icon)
+                                .font(.system(size: 12, weight: .semibold))
+                            Text(title)
+                        }
                         .font(.system(size: 12, weight: .semibold))
-                    Text(title)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .foregroundStyle(.primary)
+                    }
                 }
-                .font(.system(size: 12, weight: .semibold))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .foregroundStyle(.primary)
             }
         }
         .buttonStyle(.plain)
@@ -199,31 +272,52 @@ private struct TabChip: View {
 private struct KeyedIconButton: View {
     var system: String
     var key: String
+    var glassNamespace: Namespace.ID
     var action: () -> Void
+    @ObservedObject private var overlay = OverlayModel.shared
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: system)
-                    .font(.system(size: 13, weight: .semibold))
-                if !key.isEmpty {
-                    Text(key)
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(.thinMaterial)
-                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(.white.opacity(0.25), lineWidth: 0.5))
-                        )
+            Group {
+                if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
+                    HStack(spacing: 6) {
+                        Image(systemName: system)
+                            .font(.system(size: 13, weight: .semibold))
+                        if !key.isEmpty {
+                            KeyPill(text: key)
+                        }
+                    }
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .glassEffect(.clear, in: .rect(cornerRadius: 8))
+                    .glassEffectUnion(id: "toolbar.shell", namespace: glassNamespace)
+                    .glassEffectID("toolbar.button.\(system)", in: glassNamespace)
+                    .glassEffectTransition(.matchedGeometry)
+                } else {
+                    HStack(spacing: 6) {
+                        Image(systemName: system)
+                            .font(.system(size: 13, weight: .semibold))
+                        if !key.isEmpty {
+                            Text(key)
+                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .fill(.thinMaterial)
+                                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(.white.opacity(0.25), lineWidth: 0.5))
+                                )
+                        }
+                    }
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 8).padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.white.opacity(0.04))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(0.12), lineWidth: 0.5))
+                    )
                 }
             }
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 8).padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.white.opacity(0.04))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(0.12), lineWidth: 0.5))
-            )
         }
         .buttonStyle(.plain)
     }
@@ -232,35 +326,33 @@ private struct KeyedIconButton: View {
 
 private struct KeyPill: View {
     var text: String
+    @ObservedObject private var overlay = OverlayModel.shared
     var body: some View {
-        Text(text)
-            .font(.system(size: 11, weight: .semibold, design: .rounded))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(.thinMaterial)
-                    .overlay(
+        Group {
+            if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
+                Text(text)
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .glassEffect(.clear, in: .rect(cornerRadius: 4))
+            } else {
+                Text(text)
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .stroke(.white.opacity(0.22), lineWidth: 0.5)
+                            .fill(.thinMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .stroke(.white.opacity(0.22), lineWidth: 0.5)
+                            )
                     )
-            )
+            }
+        }
     }
 }
 
-private struct MiniIconButton: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 12.5, weight: .semibold))
-            .frame(width: 28, height: 28)
-            .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(.thinMaterial)
-                    .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white.opacity(0.18), lineWidth: 0.75))
-            )
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
-    }
-}
 
 
 
