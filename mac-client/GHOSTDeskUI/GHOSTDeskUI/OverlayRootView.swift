@@ -81,12 +81,21 @@ struct OverlayRootView: View {
 
             if showOnboarding {
                 OnboardingOverlayView(onSkip: completeOnboarding, onFinish: completeOnboarding)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea()
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
                     .zIndex(5)
             }
         }
         .onAppear { refreshOnboardingState() }
         .onChange(of: auth.isAuthorized) { _ in refreshOnboardingState() }
+        .onChange(of: showOnboarding) { active in
+            if active {
+                OverlayWindowManager.shared.freezeAutoResize()
+            } else {
+                OverlayWindowManager.shared.resumeAutoResize()
+            }
+        }
     }
 
     private func refreshOnboardingState() {
@@ -147,7 +156,7 @@ struct OverlayRootView: View {
             }
         }
         // окно подстраивается по высоте как и для других панелей
-        .overlayAutoResize()
+        .overlayAutoResize(enabled: !showOnboarding)
         .animation(.spring(response: 0.2, dampingFraction: 0.86), value: isExpanded)
         .animation(.spring(response: 0.2, dampingFraction: 0.86), value: selectedTab)
         .onChange(of: overlay.askSolveTrigger) { _ in
@@ -159,28 +168,29 @@ struct OverlayRootView: View {
             let transcriptTail = makeTranscriptTail(seconds: 40, maxChars: 900)
             Task { await askVM.submitWithoutQuery(transcript: transcriptTail) }
 
-            OverlayWindowManager.shared.scheduleResize(animate: false)
-            OverlayWindowManager.shared.kickFinalResize(after: 0.2)
+            requestOverlayResize()
         }
         .onChange(of: isExpanded) { _ in
             if isExpanded && selectedTab == .ask { askFocused = true }
-            OverlayWindowManager.shared.scheduleResize(animate: false)
-            OverlayWindowManager.shared.kickFinalResize(after: 0.2)
+            requestOverlayResize()
         }
         .onChange(of: selectedTab) { tab in
             if isExpanded && tab == .ask { askFocused = true }
-            OverlayWindowManager.shared.scheduleResize(animate: false)
-            OverlayWindowManager.shared.kickFinalResize(after: 0.2)
+            requestOverlayResize()
         }
 
         .onChange(of: showTranscript) { _ in
-            OverlayWindowManager.shared.scheduleResize(animate: false)
-            OverlayWindowManager.shared.kickFinalResize(after: 0.2)
+            requestOverlayResize()
         }
         .onAppear {
-            OverlayWindowManager.shared.scheduleResize(animate: false)
-            OverlayWindowManager.shared.kickFinalResize(after: 0.2)
+            requestOverlayResize()
         }
+    }
+
+    private func requestOverlayResize(finalAfter: TimeInterval? = 0.2) {
+        guard !showOnboarding else { return }
+        OverlayWindowManager.shared.scheduleResize(animate: false)
+        if let finalAfter { OverlayWindowManager.shared.kickFinalResize(after: finalAfter) }
     }
 
     // MARK: - Listen Panel
@@ -214,8 +224,7 @@ struct OverlayRootView: View {
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
                             showTranscript.toggle()
                         }
-                        OverlayWindowManager.shared.scheduleResize(animate: false)
-                        OverlayWindowManager.shared.kickFinalResize(after: 0.30)
+                        requestOverlayResize(finalAfter: 0.30)
                     }
                     .buttonStyle(GlassPill())
 
@@ -1976,6 +1985,15 @@ private struct OverlayAutoResize: ViewModifier {
 
 extension View {
     func overlayAutoResize() -> some View { modifier(OverlayAutoResize()) }
+
+    @ViewBuilder
+    func overlayAutoResize(enabled: Bool) -> some View {
+        if enabled {
+            overlayAutoResize()
+        } else {
+            self
+        }
+    }
 }
 
 

@@ -17,6 +17,7 @@ final class OverlayWindowManager {
     private let snapDistance: CGFloat = 12
     // MARK: - Coalesced resize
     private var resizeWorkItem: DispatchWorkItem?
+    private var finalResizeWorkItem: DispatchWorkItem?
     private var didApplyInitialPlacement = false
     
     // MARK: - Coalesced & Suppressed resize
@@ -50,11 +51,35 @@ final class OverlayWindowManager {
             self.resizeToFitContent(animate: finalAnimate)
         }
     }
+
+    /// Полностью «замораживает» авто-ресайзы и отменяет отложенные тикеты.
+    func freezeAutoResize() {
+        suppressAutoResize = true
+        resizeWorkItem?.cancel()
+        resizeWorkItem = nil
+        finalResizeWorkItem?.cancel()
+        finalResizeWorkItem = nil
+    }
+
+    /// Возобновляет авто-ресайз и сразу подгоняет окно под текущий контент.
+    func resumeAutoResize(animate: Bool = true) {
+        suppressAutoResize = false
+        resizeWorkItem?.cancel()
+        resizeWorkItem = nil
+        finalResizeWorkItem?.cancel()
+        finalResizeWorkItem = nil
+        resizeToFitContent(animate: animate)
+    }
+
     /// Один финальный анимированный ресайз после завершения spring-анимации SwiftUI.
     func kickFinalResize(after delay: TimeInterval = 0.38) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+        finalResizeWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.finalResizeWorkItem = nil
             self?.resizeToFitContent(animate: true)
         }
+        finalResizeWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
     }
     
 
