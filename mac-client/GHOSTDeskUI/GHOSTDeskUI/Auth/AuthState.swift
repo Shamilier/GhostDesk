@@ -211,6 +211,11 @@ final class AuthState: ObservableObject {
         saveKeychainValue("completed", account: Keychain.onboardingAccount)
     }
 
+    func resetAuthorizationAndOnboarding() {
+        signOut(reason: nil)
+        saveKeychainValue(nil, account: Keychain.onboardingAccount)
+    }
+
     var currentKey: String? {
         accessToken
     }
