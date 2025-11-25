@@ -127,10 +127,11 @@ struct OverlayRootView: View {
     private func resolveAnchors(_ anchors: [OnboardingTarget: Anchor<CGRect>], proxy: GeometryProxy) {
         DispatchQueue.main.async {
             onboardingFrames = anchors.mapValues { anchor in
-                proxy[anchor, in: .named("onboarding-space")]
+                proxy[anchor]  // <- тут просто сабскрипт
             }
         }
     }
+
 
     private func onboardingPreferredSize() -> CGSize {
         let screen = NSScreen.main?.visibleFrame.size ?? CGSize(width: 1280, height: 800)
@@ -1581,7 +1582,7 @@ final class AskVM: ObservableObject {
         var body = Data()
         func appendField(_ name: String, _ value: String) {
             body.append("--\(boundary)\r\n".data(using: .utf8)!)
-            body.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"\(name)\";\r\n\r\n".data(using: .utf8)!)
             body.append("\(value)\r\n".data(using: .utf8)!)
         }
         func appendFile(_ name: String, filename: String, mime: String, data: Data) {
