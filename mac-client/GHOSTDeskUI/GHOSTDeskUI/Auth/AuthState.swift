@@ -191,6 +191,11 @@ final class AuthState: ObservableObject {
         persistProfile(profile)
         scheduleRefreshTask()
     }
+    
+    func resetAuthorizationAndOnboarding() {
+            signOut(reason: nil)
+            saveKeychainValue(nil, account: Keychain.onboardingAccount)
+        }
 
     func signOut(reason: String? = nil) {
         session = nil
