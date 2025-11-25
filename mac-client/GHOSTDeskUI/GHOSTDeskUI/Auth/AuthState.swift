@@ -84,6 +84,7 @@ final class AuthState: ObservableObject {
         static let service = Bundle.main.bundleIdentifier ?? "com.ghostai.overlay"
         static let accessAccount = "AuthState.accessToken"
         static let refreshAccount = "AuthState.refreshToken"
+        static let onboardingAccount = "AuthState.onboardingCompleted"
     }
 
     @Published private(set) var session: AuthSession?
@@ -200,6 +201,14 @@ final class AuthState: ObservableObject {
         persistProfile(nil)
         refreshTask?.cancel()
         refreshTask = nil
+    }
+
+    func isOnboardingCompleted() -> Bool {
+        Self.loadKeychainValue(account: Keychain.onboardingAccount) == "completed"
+    }
+
+    func markOnboardingCompleted() {
+        saveKeychainValue("completed", account: Keychain.onboardingAccount)
     }
 
     var currentKey: String? {
