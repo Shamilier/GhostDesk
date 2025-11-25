@@ -3,6 +3,7 @@ import Combine
 import AVFoundation
 import CoreML
 import WhisperKit
+import AppKit
 
 import ScreenCaptureKit
 import CoreMedia
@@ -92,6 +93,7 @@ struct OverlayRootView: View {
         .onChange(of: showOnboarding) { active in
             if active {
                 OverlayWindowManager.shared.freezeAutoResize()
+                OverlayWindowManager.shared.updateSize(to: onboardingPreferredSize())
             } else {
                 OverlayWindowManager.shared.resumeAutoResize()
             }
@@ -111,6 +113,14 @@ struct OverlayRootView: View {
         withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
             showOnboarding = false
         }
+    }
+
+    private func onboardingPreferredSize() -> CGSize {
+        let screen = NSScreen.main?.visibleFrame.size ?? CGSize(width: 1280, height: 800)
+        let targetWidth = min(screen.width - 80, 1180)
+        let targetHeight = min(screen.height - 120, 760)
+
+        return CGSize(width: max(targetWidth, 760), height: max(targetHeight, 560))
     }
 
     private var overlayIsland: some View {
