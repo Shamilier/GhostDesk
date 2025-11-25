@@ -32,6 +32,7 @@ struct OverlayRootView: View {
     @State private var showTranscript = true
     @State private var showResponse: Bool = false
     @State private var lastNonSettingsTab: CommandTab = .listen
+    @State private var showOnboarding = false
     // MARK: - Tabs
 
 
@@ -75,7 +76,32 @@ struct OverlayRootView: View {
     }
 
     private var authorizedOverlay: some View {
-        overlayIsland
+        ZStack {
+            overlayIsland
+
+            if showOnboarding {
+                OnboardingOverlayView(onSkip: completeOnboarding, onFinish: completeOnboarding)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    .zIndex(5)
+            }
+        }
+        .onAppear { refreshOnboardingState() }
+        .onChange(of: auth.isAuthorized) { _ in refreshOnboardingState() }
+    }
+
+    private func refreshOnboardingState() {
+        guard auth.isAuthorized else {
+            showOnboarding = false
+            return
+        }
+        showOnboarding = !auth.isOnboardingCompleted()
+    }
+
+    private func completeOnboarding() {
+        auth.markOnboardingCompleted()
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
+            showOnboarding = false
+        }
     }
 
     private var overlayIsland: some View {
