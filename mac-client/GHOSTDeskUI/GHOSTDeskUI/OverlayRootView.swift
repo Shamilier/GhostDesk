@@ -35,6 +35,7 @@ struct OverlayRootView: View {
     @State private var lastNonSettingsTab: CommandTab = .listen
     @State private var showOnboarding = false
     @State private var onboardingFrames: [OnboardingTarget: CGRect] = [:]
+    @State private var tutorialTargets: [OnboardingTarget: CGRect] = [:]
     // MARK: - Tabs
 
 
@@ -88,14 +89,6 @@ struct OverlayRootView: View {
                             .onChange(of: anchors) { new in resolveAnchors(new, proxy: proxy) }
                     }
                 }
-
-            if showOnboarding {
-                OnboardingOverlayView(onSkip: completeOnboarding, onFinish: completeOnboarding, targets: onboardingFrames)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .ignoresSafeArea()
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                    .zIndex(5)
-            }
         }
         .onAppear { refreshOnboardingState() }
         .onChange(of: auth.isAuthorized) { _ in refreshOnboardingState() }
@@ -103,9 +96,15 @@ struct OverlayRootView: View {
             if active {
                 OverlayWindowManager.shared.freezeAutoResize()
                 OverlayWindowManager.shared.updateSize(to: onboardingPreferredSize())
+                presentTutorialOverlay()
             } else {
                 OverlayWindowManager.shared.resumeAutoResize()
+                TutorialOverlayManager.shared.dismiss()
             }
+        }
+        .onChange(of: onboardingFrames) { _ in updateTutorialTargets() }
+        .onChange(of: tutorialTargets) { targets in
+            TutorialOverlayManager.shared.updateTargets(targets)
         }
     }
 
@@ -138,6 +137,51 @@ struct OverlayRootView: View {
         let targetHeight = min(screen.height - 120, 760)
 
         return CGSize(width: max(targetWidth, 760), height: max(targetHeight, 560))
+    }
+
+    private func updateTutorialTargets() {
+        tutorialTargets = OverlayWindowManager.shared.framesInScreenSpace(from: onboardingFrames)
+    }
+
+    private func presentTutorialOverlay() {
+        TutorialOverlayManager.shared.present(
+            steps: tutorialSteps,
+            targets: tutorialTargets,
+            onClose: completeOnboarding
+        )
+    }
+
+    private var tutorialSteps: [TutorialStep] {
+        [
+            TutorialStep(
+                target: .toolbarShell,
+                title: "Плавающий тулбар",
+                subtitle: "Ghost остаётся поверх экранов — здесь виден статус записи и основные действия.",
+                position: .bottom,
+                highlightPadding: 18
+            ),
+            TutorialStep(
+                target: .tabSwitcher,
+                title: "Переключатель режимов",
+                subtitle: "Listen и Ask работают как обычно — обучающий слой не мешает взаимодействию.",
+                position: .bottom,
+                highlightPadding: 14
+            ),
+            TutorialStep(
+                target: .visibilityToggle,
+                title: "Свернуть окно",
+                subtitle: "Кнопка с глазом сворачивает панель. Попробуйте даже во время обучения.",
+                position: .right,
+                highlightPadding: 12
+            ),
+            TutorialStep(
+                target: .menu,
+                title: "Меню настроек",
+                subtitle: "Три точки открывают меню и настройки — их можно менять прямо сейчас.",
+                position: .top,
+                highlightPadding: 14
+            )
+        ]
     }
 
     private var overlayIsland: some View {

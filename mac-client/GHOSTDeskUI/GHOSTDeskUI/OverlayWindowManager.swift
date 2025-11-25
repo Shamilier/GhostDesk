@@ -348,10 +348,28 @@ final class OverlayPanel: NSPanel {
         becomesKeyOnlyIfNeeded = false
         worksWhenModal = true
 
-        level = .statusBar
+        level = .statusBar + 2
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .stationary]
         sharingType = .none
         acceptsMouseMovedEvents = true
+    }
+
+    var screenFrame: CGRect? { window?.frame }
+
+    func frameInScreen(from localRect: CGRect) -> CGRect? {
+        guard let window, let hostingView else { return nil }
+        let windowRect = hostingView.convert(NSRect(origin: localRect.origin, size: localRect.size), to: nil)
+        let screenRect = window.convertToScreen(windowRect)
+        return CGRect(x: screenRect.origin.x, y: screenRect.origin.y, width: screenRect.width, height: screenRect.height)
+    }
+
+    func framesInScreenSpace(from localFrames: [OnboardingTarget: CGRect]) -> [OnboardingTarget: CGRect] {
+        var result: [OnboardingTarget: CGRect] = [:]
+        for (target, frame) in localFrames {
+            guard let screenRect = frameInScreen(from: frame) else { continue }
+            result[target] = screenRect
+        }
+        return result
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
