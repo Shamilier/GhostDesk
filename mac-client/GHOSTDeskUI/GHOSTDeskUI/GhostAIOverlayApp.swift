@@ -21,6 +21,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()  // теперь тип виден
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if KeychainDebugConfig.resetOnLaunch {
+            resetKeychain()
+        }
+
         NSApp.setActivationPolicy(.accessory)
 
         oauthCoordinator.configure(authState: authState)
