@@ -145,8 +145,29 @@ final class OverlayWindowManager {
     }
 
     func updateSize(to newContentSize: CGSize, animate: Bool = true) {
-        lastContentSize = newContentSize
-        resizeToFitContent(animate: animate)
+        guard let window else { return }
+
+        // Clamp к нашим минимальным ограничениям, чтобы окно не схлопывалось
+        let targetW = max(newContentSize.width, minimumContentSize.width)
+        let targetH = max(newContentSize.height, minimumContentSize.height)
+
+        // Якорим верхнюю грань окна, как и в обычном resizeToFitContent
+        var frame = window.frame
+        let deltaH = targetH - frame.size.height
+        frame.origin.y -= deltaH
+        frame.size = CGSize(width: targetW, height: targetH)
+
+        if animate {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.25
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                window.animator().setFrame(frame, display: true)
+            }
+        } else {
+            window.setFrame(frame, display: true)
+        }
+
+        lastContentSize = CGSize(width: targetW, height: targetH)
     }
 
     func hide() {
