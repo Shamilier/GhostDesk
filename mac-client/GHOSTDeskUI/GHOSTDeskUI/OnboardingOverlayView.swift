@@ -1,5 +1,28 @@
 import SwiftUI
 
+enum OnboardingTarget: Hashable {
+    case toolbarShell
+    case tabSwitcher
+    case visibilityToggle
+    case menu
+}
+
+struct OnboardingTargetPreferenceKey: PreferenceKey {
+    static var defaultValue: [OnboardingTarget: Anchor<CGRect>] = [:]
+
+    static func reduce(value: inout [OnboardingTarget: Anchor<CGRect>], nextValue: () -> [OnboardingTarget: Anchor<CGRect>]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+extension View {
+    func onboardingTarget(_ target: OnboardingTarget) -> some View {
+        anchorPreference(key: OnboardingTargetPreferenceKey.self, value: .bounds) { anchor in
+            [target: anchor]
+        }
+    }
+}
+
 struct OnboardingOverlayView: View {
     struct Step: Identifiable, Hashable {
         let id = UUID()
@@ -7,10 +30,9 @@ struct OnboardingOverlayView: View {
         let subtitle: String
         let icon: String
         let accent: Color
-        let highlightSize: CGSize
-        let highlightAlignment: Alignment
-        let highlightOffset: CGSize
+        let target: OnboardingTarget
         let tips: [String]
+        var padding: CGFloat = 12
     }
 
     @State private var currentStepIndex: Int = 0
@@ -19,96 +41,83 @@ struct OnboardingOverlayView: View {
 
     var onSkip: () -> Void
     var onFinish: () -> Void
+    var targets: [OnboardingTarget: CGRect]
 
     private var steps: [Step] {
         [
             Step(
-                title: "Центр управления",
-                subtitle: "Запускайте/останавливайте запись, открывайте настройки и переключайтесь между режимами на верхней панели островка.",
-                icon: "rectangle.3.offgrid",
+                title: "Главное окно", // 1
+                subtitle: "Это настоящий плавающий тулбар Ghost. Он всегда остаётся под рукой и отображает актуальное состояние записи.",
+                icon: "rectangle.and.hand.point.up.left",
                 accent: Color.cyan,
-                highlightSize: CGSize(width: 340, height: 84),
-                highlightAlignment: .top,
-                highlightOffset: CGSize(width: 0, height: 40),
+                target: .toolbarShell,
                 tips: [
-                    "Нажмите кнопку глаза, чтобы спрятать или развернуть островок.",
-                    "Клик по меню откроет быстрые настройки и пресеты.",
-                    "Цвет индикатора показывает текущий статус записи."
-                ]
+                    "Всё здесь интерактивно: попробуйте нажать вкладки или кнопку воспроизведения.",
+                    "Цветовое свечение и статус совпадают с обычным режимом работы.",
+                    "Закрепите окно в удобном месте — обучение повторяет реальный сценарий."
+                ],
+                padding: 18
             ),
             Step(
-                title: "Живой транскрипт",
-                subtitle: "Мы слушаем системный звук или микрофон и показываем живой транскрипт. Ghost может резюмировать и подсвечивать инсайты.",
-                icon: "waveform",
+                title: "Переключатель вкладок",
+                subtitle: "Listen показывает живой транскрипт и инсайты, Ask — задаёт вопросы Ghost по свежему контексту.",
+                icon: "square.grid.2x2",
                 accent: Color.green,
-                highlightSize: CGSize(width: 420, height: 260),
-                highlightAlignment: .center,
-                highlightOffset: CGSize(width: 0, height: -12),
+                target: .tabSwitcher,
                 tips: [
-                    "Переключайтесь между \"Транскрипт\" и \"Инсайты\" одной кнопкой.",
-                    "Состояние LiveDot подсказывает, когда мы записываем.",
-                    "Скролл автоматически следует за новым текстом, если авто-прокрутка включена."
+                    "Клик по вкладке открывает соответствующую панель прямо под тулбаром.",
+                    "Мы оставляем фокус в поле ввода на Ask, чтобы сразу начать печатать.",
+                    "Реакции и горячие клавиши работают так же, как и вне обучения."
                 ]
             ),
             Step(
-                title: "Задавайте вопросы",
-                subtitle: "Во вкладке Вопрос можно отправить свой запрос или попросить Ghost продолжить мысль, опираясь на свежий контекст.",
-                icon: "bubble.left.and.bubble.right",
+                title: "Спрятать или развернуть",
+                subtitle: "Кнопка с глазом разворачивает плавающее окно или убирает его, оставляя только компактный островок.",
+                icon: "eye",
                 accent: Color.purple,
-                highlightSize: CGSize(width: 420, height: 210),
-                highlightAlignment: .center,
-                highlightOffset: CGSize(width: 0, height: 180),
+                target: .visibilityToggle,
                 tips: [
-                    "Начните печатать — поле сразу получает фокус при открытии вкладки.",
-                    "Используйте кнопку отправки, чтобы получить ответ Ghost прямо в оверлее.",
-                    "Мы подставим последние минуты диалога, даже если текстовое поле пустое."
-                ]
+                    "Нажмите, чтобы увидеть, как окно сворачивается — это живое поведение реального UI.",
+                    "Ghost запоминает состояние и размер даже после обучения.",
+                    "В свернутом виде тулбар остаётся кликабельным для быстрого возврата."
+                ],
+                padding: 10
             ),
             Step(
-                title: "Готовы к работе",
-                subtitle: "Ghost работает в фоне. Горячие клавиши и иконка в меню помогут быстро открыть/скрыть оверлей.",
-                icon: "sparkles",
+                title: "Меню и настройки",
+                subtitle: "Три точки открывают быстрые действия и доступ к Settings. Можно переключить источники и провайдеров транскрипции.",
+                icon: "ellipsis",
                 accent: Color.orange,
-                highlightSize: CGSize(width: 240, height: 60),
-                highlightAlignment: .bottomTrailing,
-                highlightOffset: CGSize(width: -20, height: -22),
+                target: .menu,
                 tips: [
-                    "Нажмите комбинацию горячих клавиш, чтобы развернуть окно из любой точки.",
-                    "Кнопка \"Готово\" закроет обучение и сохранит настройки.",
-                    "В настройках можно подключить Deepgram/Whisper и выбрать источник звука."
-                ]
+                    "Открывайте меню, чтобы увидеть пресеты и системные команды.",
+                    "Настройки открываются в реальном окне — можно менять параметры прямо сейчас.",
+                    "Закончите обучение кнопкой \"Готово\" ниже, когда будете готовы."
+                ],
+                padding: 12
             )
         ]
     }
 
     private var step: Step { steps[currentStepIndex] }
+    private var highlightFrame: CGRect? { targets[step.target] }
 
     var body: some View {
         GeometryReader { proxy in
-            ZStack {
-                Color.black.opacity(0.76)
-                    .ignoresSafeArea()
+            ZStack(alignment: .topLeading) {
+                dimmedBackdrop(in: proxy.size)
 
-                RadialGradient(
-                    colors: [step.accent.opacity(0.35), .clear],
-                    center: .center,
-                    startRadius: 80,
-                    endRadius: min(proxy.size.width, proxy.size.height)
-                )
-                .blur(radius: 40)
-                .ignoresSafeArea()
-                .animation(.easeInOut(duration: 0.35), value: step.accent)
-
-                spotlight(in: proxy.size)
-
-                VStack(alignment: .leading, spacing: 20) {
-                    header
-                    Spacer()
-                    infoCard(proxy.size)
+                if let frame = highlightFrame {
+                    highlightRing(for: frame)
+                    connector(from: frame, in: proxy.size)
+                    infoCard(frame, proxy.size)
+                } else {
+                    infoCard(CGRect(origin: .zero, size: proxy.size), proxy.size)
                 }
-                .padding(.horizontal, 32)
-                .padding(.top, 32)
-                .padding(.bottom, 28)
+
+                header
+                    .padding(.top, 22)
+                    .padding(.horizontal, 24)
 
                 skipButton
             }
@@ -146,8 +155,8 @@ struct OnboardingOverlayView: View {
         .padding(.horizontal, 18)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial.opacity(0.7))
-                .shadow(color: .black.opacity(0.35), radius: 16, x: 0, y: 10)
+                .fill(.ultraThinMaterial.opacity(0.8))
+                .shadow(color: .black.opacity(0.45), radius: 16, x: 0, y: 10)
         )
     }
 
@@ -162,64 +171,89 @@ struct OnboardingOverlayView: View {
         }
     }
 
-    private func anchorPoint(for alignment: Alignment, in size: CGSize) -> CGPoint {
-        switch alignment {
-        case .top:
-            return CGPoint(x: size.width / 2, y: size.height * 0.20)
-        case .bottom:
-            return CGPoint(x: size.width / 2, y: size.height * 0.80)
-        case .bottomTrailing:
-            return CGPoint(x: size.width * 0.80, y: size.height * 0.82)
-        default:
-            return CGPoint(x: size.width / 2, y: size.height / 2)
-        }
-    }
-
-    private func spotlight(in size: CGSize) -> some View {
-        let anchor = anchorPoint(for: step.highlightAlignment, in: size)
-        let frame = CGRect(
-            x: anchor.x - (step.highlightSize.width / 2) + step.highlightOffset.width,
-            y: anchor.y - (step.highlightSize.height / 2) + step.highlightOffset.height,
-            width: step.highlightSize.width,
-            height: step.highlightSize.height
-        )
-
-        return ZStack {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(step.accent.opacity(0.9), lineWidth: 2)
-                .background(
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [step.accent.opacity(0.14), step.accent.opacity(0.02)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .blur(radius: pulse ? 20 : 34)
-                        .opacity(0.9)
-                        .animation(.easeInOut(duration: 1.2), value: pulse)
-                )
-                .frame(width: frame.width, height: frame.height)
-                .position(x: frame.midX, y: frame.midY)
-                .shadow(color: step.accent.opacity(0.45), radius: 18, x: 0, y: 10)
-                .overlay(alignment: .topTrailing) {
-                    if currentStepIndex == 0 {
-                        Label("Кликни, чтобы развернуть", systemImage: "hand.tap")
-                            .font(.caption2.weight(.semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(.ultraThinMaterial.opacity(0.9)))
-                            .foregroundStyle(.primary)
-                            .offset(x: 6, y: -10)
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                    }
+    private func dimmedBackdrop(in size: CGSize) -> some View {
+        ZStack {
+            Canvas { context, canvasSize in
+                var path = Path(CGRect(origin: .zero, size: canvasSize))
+                if let frame = highlightFrame?.insetBy(dx: -step.padding, dy: -step.padding) {
+                    path.addRoundedRect(in: frame, cornerSize: CGSize(width: 18, height: 18))
                 }
+                context.fill(path, with: .color(Color.black.opacity(0.72)), style: FillStyle(eoFill: true))
+            }
+            .blur(radius: 2)
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+
+            RadialGradient(
+                colors: [step.accent.opacity(0.25), .clear],
+                center: .center,
+                startRadius: 60,
+                endRadius: min(size.width, size.height)
+            )
+            .blur(radius: 32)
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
         }
+        .animation(.easeInOut(duration: 0.35), value: highlightFrame)
+        .animation(.easeInOut(duration: 0.35), value: step.accent)
     }
 
-    private func infoCard(_ size: CGSize) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+    private func highlightRing(for frame: CGRect) -> some View {
+        let padded = frame.insetBy(dx: -step.padding, dy: -step.padding)
+
+        return RoundedRectangle(cornerRadius: 22, style: .continuous)
+            .stroke(step.accent.opacity(0.95), lineWidth: 2)
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [step.accent.opacity(0.22), step.accent.opacity(0.05)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .blur(radius: pulse ? 18 : 28)
+                    .opacity(0.9)
+            )
+            .frame(width: padded.width, height: padded.height)
+            .position(x: padded.midX, y: padded.midY)
+            .shadow(color: step.accent.opacity(0.55), radius: 18, x: 0, y: 12)
+            .animation(.easeInOut(duration: 1.2), value: pulse)
+            .allowsHitTesting(false)
+    }
+
+    private func connector(from frame: CGRect, in size: CGSize) -> some View {
+        let calloutPoint = calloutPosition(for: frame, in: size)
+        let start = CGPoint(x: frame.midX, y: frame.midY)
+        let control = CGPoint(x: (start.x + calloutPoint.x) / 2, y: min(start.y, calloutPoint.y) - 20)
+
+        return Path { path in
+            path.move(to: start)
+            path.addQuadCurve(to: calloutPoint, control: control)
+        }
+        .stroke(step.accent.opacity(0.65), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round, dash: [2, 6]))
+        .shadow(color: step.accent.opacity(0.35), radius: 8)
+        .animation(.easeInOut(duration: 0.35), value: currentStepIndex)
+        .allowsHitTesting(false)
+    }
+
+    private func calloutPosition(for frame: CGRect, in size: CGSize) -> CGPoint {
+        let cardWidth = min(size.width - 48, 420)
+        let x = clamp(frame.midX - cardWidth / 2, lower: 24, upper: size.width - cardWidth - 24)
+        let placeAbove = frame.midY > size.height * 0.52
+        let tentativeY = placeAbove ? (frame.minY - cardSize.height - 32) : (frame.maxY + 32)
+        let safeY = clamp(tentativeY, lower: 56, upper: size.height - cardSize.height - 36)
+        return CGPoint(x: x + cardWidth / 2, y: safeY + cardSize.height / 2)
+    }
+
+    @State private var cardSize: CGSize = CGSize(width: 380, height: 200)
+
+    private func infoCard(_ frame: CGRect, _ size: CGSize) -> some View {
+        let cardWidth = min(size.width - 48, 420)
+        let placeAbove = frame.midY > size.height * 0.52
+        let origin = calloutPosition(for: frame, in: size)
+
+        return VStack(alignment: .leading, spacing: 16) {
             Text(step.title)
                 .font(.title2.weight(.bold))
                 .foregroundStyle(.white)
@@ -255,18 +289,33 @@ struct OnboardingOverlayView: View {
                     )
             )
 
-            HStack {
+            HStack(spacing: 10) {
+                Button(action: retreat) {
+                    Label("Назад", systemImage: "arrow.left")
+                        .font(.headline.weight(.semibold))
+                        .padding(.vertical, 11)
+                        .padding(.horizontal, 16)
+                        .frame(minWidth: 110)
+                        .background(.ultraThinMaterial.opacity(currentStepIndex == 0 ? 0.5 : 0.9), in: Capsule())
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+                .disabled(currentStepIndex == 0)
+
+                Spacer()
+
                 Text("Шаг \(currentStepIndex + 1) из \(steps.count)")
                     .font(.subheadline.monospacedDigit())
                     .foregroundStyle(.secondary)
-                Spacer()
+                    .padding(.horizontal, 6)
+
                 Button(action: advance) {
                     Label(currentStepIndex == steps.count - 1 ? "Готово" : "Далее", systemImage: currentStepIndex == steps.count - 1 ? "checkmark" : "arrow.right")
                         .font(.headline.weight(.semibold))
                         .padding(.vertical, 12)
                         .padding(.horizontal, 18)
                         .frame(minWidth: 140)
-                        .background(step.accent.opacity(0.9), in: Capsule())
+                        .background(step.accent.opacity(0.95), in: Capsule())
                         .foregroundStyle(.black.opacity(0.9))
                 }
                 .buttonStyle(.plain)
@@ -274,7 +323,7 @@ struct OnboardingOverlayView: View {
             }
         }
         .padding(24)
-        .frame(maxWidth: min(size.width - 64, 560))
+        .frame(width: cardWidth, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 24)
                 .fill(.ultraThinMaterial)
@@ -284,7 +333,16 @@ struct OnboardingOverlayView: View {
             RoundedRectangle(cornerRadius: 24)
                 .strokeBorder(step.accent.opacity(0.35), lineWidth: 1)
         )
+        .overlay(
+            GeometryReader { cardGeo in
+                Color.clear
+                    .onAppear { cardSize = cardGeo.size }
+                    .onChange(of: cardGeo.size) { new in cardSize = new }
+            }
+        )
+        .position(origin)
         .animation(.spring(response: 0.5, dampingFraction: 0.86), value: currentStepIndex)
+        .transition(placeAbove ? .move(edge: .bottom).combined(with: .opacity) : .move(edge: .top).combined(with: .opacity))
     }
 
     private var skipButton: some View {
@@ -319,10 +377,27 @@ struct OnboardingOverlayView: View {
             onFinish()
         }
     }
+
+    private func retreat() {
+        guard currentStepIndex > 0 else { return }
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.88)) {
+            currentStepIndex -= 1
+        }
+    }
+
+    private func clamp(_ value: CGFloat, lower: CGFloat, upper: CGFloat) -> CGFloat {
+        min(max(value, lower), upper)
+    }
 }
 
 #Preview {
-    OnboardingOverlayView(onSkip: {}, onFinish: {})
+    let frames: [OnboardingTarget: CGRect] = [
+        .toolbarShell: CGRect(x: 120, y: 120, width: 360, height: 60),
+        .tabSwitcher: CGRect(x: 200, y: 120, width: 160, height: 36),
+        .visibilityToggle: CGRect(x: 380, y: 122, width: 36, height: 36),
+        .menu: CGRect(x: 430, y: 122, width: 36, height: 36)
+    ]
+    return OnboardingOverlayView(onSkip: {}, onFinish: {}, targets: frames)
         .background(.black)
         .preferredColorScheme(.dark)
 }
