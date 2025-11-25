@@ -302,7 +302,7 @@ final class OverlayPanel: NSPanel {
         becomesKeyOnlyIfNeeded = false
         worksWhenModal = true
 
-        level = .statusBar
+        level = NSWindow.Level(Int(NSWindow.Level.statusBar.rawValue + 2))
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .stationary]
         sharingType = .none
         acceptsMouseMovedEvents = true

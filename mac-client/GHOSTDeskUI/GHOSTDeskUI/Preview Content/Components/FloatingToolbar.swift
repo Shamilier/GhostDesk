@@ -15,6 +15,7 @@ public struct FloatingToolbar: View {
     public var onEyeTap: () -> Void
     public var onMenuTap: () -> Void
     @Namespace private var toolbarGlassNamespace
+    @ObservedObject private var overlay = OverlayModel.shared
 
     public init(
         isRecording: Bool,
@@ -40,6 +41,9 @@ public struct FloatingToolbar: View {
             onMenuTap: onMenuTap
         )
         .frame(maxWidth: 560)
+        .onPreferenceChange(ToolbarAnchorPreferenceKey.self) { anchors in
+            overlay.updateToolbarAnchors(anchors)
+        }
     }
 }
 
@@ -66,11 +70,13 @@ private struct CommandBar: View {
 
 
             KeyedIconButton(system: "eye", key: "⌘E", glassNamespace: glassNamespace, action: onEyeTap)
+                .background(ToolbarAnchorReporter(id: .eye))
             Button(action: onMenuTap) {
                 Image(systemName: "ellipsis")
                     .rotationEffect(.degrees(90))
             }
             .buttonStyle(MiniIconButton())
+            .background(ToolbarAnchorReporter(id: .menu))
 
         }
         Group {
@@ -132,6 +138,7 @@ private struct CommandBar: View {
             }
         }
         .frame(maxWidth: 560)
+        .background(ToolbarAnchorReporter(id: .shell))
     }
 }
 
@@ -189,6 +196,7 @@ private struct TabSwitcher: View {
                 onTabTap()
             }
             .frame(width: tabWidth, height: tabHeight)
+            .background(ToolbarAnchorReporter(id: .listen))
 
             TabChip(title: "Ask", icon: "bubble.right",
                     isActive: selected == .ask,
@@ -198,9 +206,35 @@ private struct TabSwitcher: View {
                 onTabTap()
             }
             .frame(width: tabWidth, height: tabHeight)
+            .background(ToolbarAnchorReporter(id: .ask))
         }
     }
 }
+
+// MARK: - Anchors for tutorial overlay
+
+private struct ToolbarAnchorPreferenceKey: PreferenceKey {
+    static var defaultValue: [OverlayModel.ToolbarAnchor] = []
+
+    static func reduce(value: inout [OverlayModel.ToolbarAnchor], nextValue: () -> [OverlayModel.ToolbarAnchor]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+private struct ToolbarAnchorReporter: View {
+    let id: OverlayModel.ToolbarAnchorID
+
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear.preference(key: ToolbarAnchorPreferenceKey.self, value: [
+                OverlayModel.ToolbarAnchor(id: id, frameInScreen: proxy.frame(in: .global))
+            ])
+        }
+    }
+}
+
+
+
 
 
 
