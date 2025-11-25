@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct OnboardingOverlayView: View {
-    struct Step: Identifiable, Hashable {
+    struct Step: Identifiable {
         let id = UUID()
         let title: String
         let subtitle: String
