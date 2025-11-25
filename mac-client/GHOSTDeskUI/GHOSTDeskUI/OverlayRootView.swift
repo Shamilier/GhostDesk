@@ -34,6 +34,7 @@ struct OverlayRootView: View {
     @State private var showResponse: Bool = false
     @State private var lastNonSettingsTab: CommandTab = .listen
     @State private var showOnboarding = false
+    @State private var onboardingFrames: [OnboardingTarget: CGRect] = [:]
     // MARK: - Tabs
 
 
@@ -79,9 +80,17 @@ struct OverlayRootView: View {
     private var authorizedOverlay: some View {
         ZStack {
             overlayIsland
+                .coordinateSpace(name: "onboarding-space")
+                .overlayPreferenceValue(OnboardingTargetPreferenceKey.self) { anchors in
+                    GeometryReader { proxy in
+                        Color.clear
+                            .onAppear { resolveAnchors(anchors, proxy: proxy) }
+                            .onChange(of: anchors) { new in resolveAnchors(new, proxy: proxy) }
+                    }
+                }
 
             if showOnboarding {
-                OnboardingOverlayView(onSkip: completeOnboarding, onFinish: completeOnboarding)
+                OnboardingOverlayView(onSkip: completeOnboarding, onFinish: completeOnboarding, targets: onboardingFrames)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .ignoresSafeArea()
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
@@ -112,6 +121,14 @@ struct OverlayRootView: View {
         auth.markOnboardingCompleted()
         withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
             showOnboarding = false
+        }
+    }
+
+    private func resolveAnchors(_ anchors: [OnboardingTarget: Anchor<CGRect>], proxy: GeometryProxy) {
+        DispatchQueue.main.async {
+            onboardingFrames = anchors.mapValues { anchor in
+                proxy[anchor, in: .named("onboarding-space")]
+            }
         }
     }
 

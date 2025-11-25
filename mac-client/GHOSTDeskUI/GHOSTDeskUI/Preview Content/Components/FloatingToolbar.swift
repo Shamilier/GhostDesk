@@ -63,14 +63,17 @@ private struct CommandBar: View {
                 onTabTap: { onPrimaryTap() },
                 glassNamespace: glassNamespace
             )
+            .onboardingTarget(.tabSwitcher)
 
 
             KeyedIconButton(system: "eye", key: "⌘E", glassNamespace: glassNamespace, action: onEyeTap)
+                .onboardingTarget(.visibilityToggle)
             Button(action: onMenuTap) {
                 Image(systemName: "ellipsis")
                     .rotationEffect(.degrees(90))
             }
             .buttonStyle(MiniIconButton())
+            .onboardingTarget(.menu)
 
         }
         Group {
@@ -79,6 +82,7 @@ private struct CommandBar: View {
                     toolbarContent
                         .frame(height: 48)
                         .padding(.horizontal, 14)
+                        .onboardingTarget(.toolbarShell)
                         .glassEffect(.clear, in: .capsule)
                         .overlay(
                           Capsule().stroke(
@@ -121,6 +125,7 @@ private struct CommandBar: View {
                 toolbarContent
                     .frame(height: 44)
                     .padding(.horizontal, 12)
+                    .onboardingTarget(.toolbarShell)
                     .background(.ultraThinMaterial, in: Capsule())
                     .overlay(
                         Capsule().strokeBorder(
