@@ -47,6 +47,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
+        model.$isTutorialVisible
+            .receive(on: RunLoop.main)
+            .sink { [weak self] visible in
+                guard let self else { return }
+                if visible {
+                    TutorialOverlayManager.shared.present(model: self.model)
+                    OverlayWindowManager.shared.bringToFront()
+                } else {
+                    TutorialOverlayManager.shared.hide()
+                }
+            }
+            .store(in: &cancellables)
+
         // показать при старте
         OverlayWindowManager.shared.show(model: model, auth: authState)
 

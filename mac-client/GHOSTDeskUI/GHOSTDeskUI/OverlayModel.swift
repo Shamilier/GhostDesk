@@ -47,6 +47,36 @@ final class OverlayModel: ObservableObject {
         case idle, starting, running, stopping
     }
 
+    enum CalloutPosition: String, Codable {
+        case automatic
+        case above
+        case below
+        case leading
+        case trailing
+    }
+
+    struct TutorialStep: Identifiable, Equatable {
+        let id: String
+        var title: String
+        var description: String
+        var targetFrameInScreenSpace: CGRect
+        var calloutPosition: CalloutPosition
+
+        init(
+            id: String,
+            title: String,
+            description: String,
+            targetFrameInScreenSpace: CGRect = .zero,
+            calloutPosition: CalloutPosition = .automatic
+        ) {
+            self.id = id
+            self.title = title
+            self.description = description
+            self.targetFrameInScreenSpace = targetFrameInScreenSpace
+            self.calloutPosition = calloutPosition
+        }
+    }
+
     struct TranscriptionChannelState: Equatable {
         var phase: AudioChannelPhase = .idle
         var isTranscribing: Bool = false
@@ -69,6 +99,9 @@ final class OverlayModel: ObservableObject {
     @Published var isFocusable: Bool = true
     @Published var transparencyIndex: Int = 1     // 0…5
     @Published var fontScaleIndex: Int = 1        // 0…5
+    @Published var isTutorialVisible: Bool = false
+    @Published var tutorialSteps: [TutorialStep] = TutorialStep.sampleSteps()
+    @Published var activeTutorialStepIndex: Int = 0
     @Published var isHiddenFromScreenCapture: Bool = {
         let defaults = UserDefaults.standard
         guard defaults.object(forKey: Defaults.screenCaptureHidden) != nil else { return true }
@@ -134,6 +167,11 @@ final class OverlayModel: ObservableObject {
     var prefersLiquidGlass: Bool {
         get { preferredDesignStyle == .liquid }
         set { preferredDesignStyle = newValue ? .liquid : .classic }
+    }
+
+    var activeTutorialStep: TutorialStep? {
+        guard tutorialSteps.indices.contains(activeTutorialStepIndex) else { return nil }
+        return tutorialSteps[activeTutorialStepIndex]
     }
 
     private init() {
@@ -205,6 +243,57 @@ final class OverlayModel: ObservableObject {
         }
     }
 
+    // MARK: - Tutorial
+
+    func startTutorial() {
+        activeTutorialStepIndex = 0
+        isTutorialVisible = true
+    }
+
+    func finishTutorial() {
+        isTutorialVisible = false
+    }
+
+    func goToNextTutorialStep() {
+        let next = activeTutorialStepIndex + 1
+        guard next < tutorialSteps.count else {
+            finishTutorial()
+            return
+        }
+        activeTutorialStepIndex = next
+    }
+
+    func goToPreviousTutorialStep() {
+        guard activeTutorialStepIndex > 0 else { return }
+        activeTutorialStepIndex -= 1
+    }
+
+    func updateTutorialAnchors(_ anchors: [String: CGRect]) {
+        for idx in tutorialSteps.indices {
+            let id = tutorialSteps[idx].id
+            if let newFrame = anchors[id] {
+                tutorialSteps[idx].targetFrameInScreenSpace = newFrame
+            }
+        }
+    }
+
+    func refreshTutorialAnchors(from onboardingTargets: [OnboardingTarget: CGRect]) {
+        let mapped = onboardingTargets.reduce(into: [String: CGRect]()) { partialResult, pair in
+            let id = tutorialIdentifier(for: pair.key)
+            partialResult[id] = pair.value
+        }
+        updateTutorialAnchors(mapped)
+    }
+
+    private func tutorialIdentifier(for target: OnboardingTarget) -> String {
+        switch target {
+        case .toolbarShell: return "toolbar-shell"
+        case .tabSwitcher: return "tab-switcher"
+        case .visibilityToggle: return "visibility-toggle"
+        case .menu: return "menu-button"
+        }
+    }
+
     // MARK: helpers/actions
     func clamp(_ v: Int, _ lo: Int, _ hi: Int) -> Int { max(lo, min(v, hi)) }
 
@@ -262,5 +351,40 @@ final class OverlayModel: ObservableObject {
 
             askSolveTrigger &+= 1
         }
+    }
+}
+
+extension OverlayModel.TutorialStep {
+    static func sampleSteps() -> [OverlayModel.TutorialStep] {
+        [
+            OverlayModel.TutorialStep(
+                id: "toolbar-shell",
+                title: "Плавающее окно Ghost",
+                description: "Тулбар всегда остаётся поверх всего остального и сохраняет привычное поведение.",
+                targetFrameInScreenSpace: CGRect(x: 120, y: 620, width: 420, height: 64),
+                calloutPosition: .above
+            ),
+            OverlayModel.TutorialStep(
+                id: "tab-switcher",
+                title: "Переключение Listen / Ask",
+                description: "Подсказка показывает, где менять контекст: транскрипт или вопросы к Ghost.",
+                targetFrameInScreenSpace: CGRect(x: 180, y: 624, width: 160, height: 40),
+                calloutPosition: .below
+            ),
+            OverlayModel.TutorialStep(
+                id: "visibility-toggle",
+                title: "Кнопка разворота",
+                description: "Иконка глаза сворачивает или разворачивает интерфейс. В обучении кнопка остаётся интерактивной.",
+                targetFrameInScreenSpace: CGRect(x: 360, y: 624, width: 42, height: 42),
+                calloutPosition: .trailing
+            ),
+            OverlayModel.TutorialStep(
+                id: "menu-button",
+                title: "Меню действий",
+                description: "Три точки открывают меню. В обучении можно нажимать элементы и видеть реальное поведение.",
+                targetFrameInScreenSpace: CGRect(x: 420, y: 624, width: 42, height: 42),
+                calloutPosition: .trailing
+            )
+        ]
     }
 }

@@ -129,6 +129,12 @@ struct OverlayRootView: View {
             onboardingFrames = anchors.mapValues { anchor in
                 proxy[anchor]  // <- тут просто сабскрипт
             }
+
+            let screenRects = onboardingFrames.compactMap { pair -> (OnboardingTarget, CGRect)? in
+                guard let screenRect = OverlayWindowManager.shared.rectInScreenSpace(for: pair.value) else { return nil }
+                return (pair.key, screenRect)
+            }
+            overlay.refreshTutorialAnchors(from: Dictionary(uniqueKeysWithValues: screenRects))
         }
     }
 

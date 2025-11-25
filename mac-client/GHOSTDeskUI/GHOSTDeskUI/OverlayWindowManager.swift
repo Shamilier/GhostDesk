@@ -214,9 +214,21 @@ final class OverlayWindowManager {
         window?.ignoresMouseEvents = !focusable
     }
 
+    func bringToFront() {
+        window?.orderFrontRegardless()
+    }
+
     func updateScreenCaptureVisibility(hidden: Bool) {
         hidesFromScreenCapture = hidden
         window?.sharingType = hidden ? .none : .readOnly
+    }
+
+    func rectInScreenSpace(for viewRect: CGRect) -> CGRect? {
+        let host = hostingView ?? (window?.contentView as? NSHostingView<AnyView>)
+        guard let hostingView = host, let window = hostingView.window else { return nil }
+
+        let windowRect = hostingView.convert(viewRect, to: nil)
+        return window.convertToScreen(windowRect)
     }
 
     // MARK: - Helpers
@@ -348,7 +360,7 @@ final class OverlayPanel: NSPanel {
         becomesKeyOnlyIfNeeded = false
         worksWhenModal = true
 
-        level = .statusBar
+        level = .screenSaver
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .stationary]
         sharingType = .none
         acceptsMouseMovedEvents = true
