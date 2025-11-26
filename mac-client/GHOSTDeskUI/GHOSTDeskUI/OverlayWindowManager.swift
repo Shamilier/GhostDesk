@@ -190,8 +190,11 @@ final class OverlayWindowManager {
         let resize = center.addObserver(forName: NSWindow.didEndLiveResizeNotification, object: window, queue: .main) { [weak self] _ in
             self?.handleWindowFrameChange(window)
         }
+        let didResize = center.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { [weak self] _ in
+            self?.handleWindowFrameChange(window)
+        }
 
-        windowObservers = [move, resize].compactMap { $0 }
+        windowObservers = [move, resize, didResize].compactMap { $0 }
     }
 
     private func stopObservingWindowMovements() {
@@ -202,19 +205,35 @@ final class OverlayWindowManager {
     }
 
     private func handleWindowFrameChange(_ window: NSWindow) {
-        let newFrame = window.frame
+        handleWindowFrameChange(from: lastKnownWindowFrame, to: window.frame)
+    }
 
-        guard let lastFrame = lastKnownWindowFrame else {
+    private func handleWindowFrameChange(from previousFrame: NSRect?, to newFrame: NSRect) {
+        guard let previousFrame else {
             lastKnownWindowFrame = newFrame
             return
         }
 
-        lastKnownWindowFrame = newFrame
-        let dx = newFrame.origin.x - lastFrame.origin.x
-        let dy = newFrame.origin.y - lastFrame.origin.y
+        guard previousFrame != newFrame else { return }
 
-        guard dx != 0 || dy != 0 else { return }
-        OverlayModel.shared.shiftToolbarAnchors(dx: dx, dy: dy)
+        // Реальный сдвиг контента определяется по верхнему левому углу, а не по origin окна,
+        // потому что resizeToFitContent двигает origin.y при росте высоты, сохраняя верхнюю грань.
+        let previousTopLeft = CGPoint(x: previousFrame.minX, y: previousFrame.maxY)
+        let newTopLeft = CGPoint(x: newFrame.minX, y: newFrame.maxY)
+
+        let dx = newTopLeft.x - previousTopLeft.x
+        let dy = newTopLeft.y - previousTopLeft.y
+
+        if dx != 0 || dy != 0 {
+            OverlayModel.shared.shiftToolbarAnchors(dx: dx, dy: dy)
+        }
+
+        if previousFrame.size != newFrame.size {
+            OverlayModel.shared.refreshTutorialTargetsFromAnchors()
+        }
+
+        TutorialOverlayManager.shared.refreshOverlayFrame()
+        lastKnownWindowFrame = newFrame
     }
 
     // MARK: - Helpers
@@ -316,6 +335,8 @@ extension OverlayWindowManager {
         frame.size.height = targetH
         frame.size.width  = max(frame.size.width, targetW)
 
+        let oldFrame = window.frame
+
         // выставляем фрейм (лучше через анимационный контекст)
         if animate {
             NSAnimationContext.runAnimationGroup { ctx in
@@ -327,6 +348,8 @@ extension OverlayWindowManager {
             window.setFrame(frame, display: true)
         }
         lastContentSize = CGSize(width: targetW, height: targetH)
+
+        handleWindowFrameChange(from: lastKnownWindowFrame ?? oldFrame, to: window.frame)
     }
 }
 
