@@ -211,10 +211,7 @@ final class OverlayWindowManager {
 
         lastKnownWindowFrame = newFrame
         let dx = newFrame.origin.x - lastFrame.origin.x
-        // AppKit's Y grows upward, while SwiftUI overlay coordinates grow downward.
-               // Invert the vertical delta so tutorial anchors follow the toolbar movement
-               // in the same visual direction.
-        let dy = -(newFrame.origin.y - lastFrame.origin.y)
+        let dy = newFrame.origin.y - lastFrame.origin.y
 
         guard dx != 0 || dy != 0 else { return }
         OverlayModel.shared.shiftToolbarAnchors(dx: dx, dy: dy)

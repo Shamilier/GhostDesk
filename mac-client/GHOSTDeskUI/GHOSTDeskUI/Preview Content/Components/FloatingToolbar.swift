@@ -234,18 +234,22 @@ private struct ToolbarAnchorReporter: View {
     }
 
     private func frameInScreen(_ proxy: GeometryProxy) -> CGRect {
-//        let frameInWindow = proxy.frame(in: .global)
-//
-//        if let window = NSApplication.shared.windows.first(where: { $0 is OverlayPanel }) {
-//            return window.convertToScreen(frameInWindow)
-//        }
-//
-//        return frameInWindow
-        // `.global` already returns a rect in screen coordinates for the overlay panel.
-                // Using it directly keeps tutorial anchors aligned with the overlay window
-                // without an extra conversion that would double-apply the window origin.
+        // В SwiftUI `.global` возвращает координаты относительно окна панели (origin вверху слева).
+        // Для туториала нужны реальные screen-координаты AppKit (origin внизу слева), поэтому
+        // добавляем origin окна и переворачиваем ось Y по высоте окна.
+        let frameInWindow = proxy.frame(in: .global)
 
-        proxy.frame(in: .global)
+        guard let window = NSApplication.shared.windows.first(where: { $0 is OverlayPanel }) else {
+            return frameInWindow
+        }
+
+        let windowFrame = window.frame
+        let screenOrigin = CGPoint(
+            x: windowFrame.origin.x + frameInWindow.minX,
+            y: windowFrame.origin.y + (windowFrame.height - frameInWindow.maxY)
+        )
+
+        return CGRect(origin: screenOrigin, size: frameInWindow.size)
     }
 }
 
