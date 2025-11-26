@@ -176,6 +176,11 @@ final class OverlayModel: ObservableObject {
         return tutorialSteps[activeTutorialStepIndex]
     }
 
+    var activeTutorialAnchorID: ToolbarAnchorID? {
+        guard isTutorialVisible else { return nil }
+        return activeTutorialStep?.anchorID
+    }
+
     private init() {
         transcriptionStates = Dictionary(uniqueKeysWithValues: AudioSourceKind.allCases.map { ($0, TranscriptionChannelState()) })
         updateDerivedTranscriptionState()

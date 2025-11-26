@@ -58,6 +58,7 @@ private struct CommandBar: View {
     @ObservedObject private var overlay = OverlayModel.shared
 
     var body: some View {
+        let activeAnchor = overlay.activeTutorialAnchorID
         let toolbarContent = HStack(spacing: 10) {
             // logo
             ToolbarLogo(glassNamespace: glassNamespace)
@@ -66,21 +67,33 @@ private struct CommandBar: View {
                 selected: $selected,
                 isRecording: isRecording,
                 onTabTap: { onPrimaryTap() },
-                glassNamespace: glassNamespace
+                glassNamespace: glassNamespace,
+                activeTutorialAnchorID: activeAnchor
             )
 
 
-            KeyedIconButton(system: "eye", key: "⌘E", glassNamespace: glassNamespace, action: onEyeTap)
-                .background(ToolbarAnchorReporter(id: .eye))
+            let eyeIsHighlighted = overlay.isTutorialVisible && activeAnchor == .eye
+            KeyedIconButton(
+                system: "eye",
+                key: "⌘E",
+                glassNamespace: glassNamespace,
+                isActiveInTutorial: eyeIsHighlighted,
+                action: onEyeTap
+            )
+            .tutorialHighlight(active: eyeIsHighlighted, shape: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(ToolbarAnchorReporter(id: .eye))
+
+            let menuIsHighlighted = overlay.isTutorialVisible && activeAnchor == .menu
             Button(action: onMenuTap) {
                 Image(systemName: "ellipsis")
                     .rotationEffect(.degrees(90))
             }
             .buttonStyle(MiniIconButton())
+            .tutorialHighlight(active: menuIsHighlighted, shape: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .background(ToolbarAnchorReporter(id: .menu))
 
         }
-        Group {
+        let toolbarShell = Group {
             if overlay.usesLiquidGlass, #available(macOS 26.0, *) {
                 GlassEffectContainer(spacing: 10) {
                     toolbarContent
@@ -135,9 +148,19 @@ private struct CommandBar: View {
                                            startPoint: .topLeading, endPoint: .bottomTrailing),
                             lineWidth: 1
                         )
-                    )
+                        )
             }
         }
+        ZStack {
+            toolbarShell
+            if overlay.isTutorialVisible {
+                Capsule()
+                    .fill(Color.black.opacity(0.35))
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.28), value: overlay.isTutorialVisible)
         .frame(maxWidth: 560)
         .background(ToolbarAnchorReporter(id: .shell))
     }
@@ -181,16 +204,19 @@ private struct TabSwitcher: View {
     var isRecording: Bool
     var onTabTap: () -> Void
     var glassNamespace: Namespace.ID
+    var activeTutorialAnchorID: OverlayModel.ToolbarAnchorID?
 
     private let tabWidth:  CGFloat = 82
     private let tabHeight: CGFloat = 28
 
     @Namespace private var ns
+    @ObservedObject private var overlay = OverlayModel.shared
 
     var body: some View {
         HStack(spacing: 8) {
             TabChip(title: "Listen", icon: "waveform",
                     isActive: selected == .listen,
+                    isActiveInTutorial: overlay.isTutorialVisible && activeTutorialAnchorID == .listen,
                     ns: ns,
                     glassNamespace: glassNamespace) {
                 selected = .listen
@@ -201,6 +227,7 @@ private struct TabSwitcher: View {
 
             TabChip(title: "Ask", icon: "bubble.right",
                     isActive: selected == .ask,
+                    isActiveInTutorial: overlay.isTutorialVisible && activeTutorialAnchorID == .ask,
                     ns: ns,
                     glassNamespace: glassNamespace) {
                 selected = .ask
@@ -264,6 +291,7 @@ private struct TabChip: View {
     var title: String
     var icon: String
     var isActive: Bool
+    var isActiveInTutorial: Bool
     var ns: Namespace.ID
     var glassNamespace: Namespace.ID
     var onTap: () -> Void
@@ -311,6 +339,7 @@ private struct TabChip: View {
         }
         .buttonStyle(.plain)
         .contentShape(Capsule())
+        .tutorialHighlight(active: isActiveInTutorial, shape: Capsule())
     }
 }
 
@@ -322,6 +351,7 @@ private struct KeyedIconButton: View {
     var system: String
     var key: String
     var glassNamespace: Namespace.ID
+    var isActiveInTutorial: Bool
     var action: () -> Void
     @ObservedObject private var overlay = OverlayModel.shared
 
@@ -369,6 +399,7 @@ private struct KeyedIconButton: View {
             }
         }
         .buttonStyle(.plain)
+        .tutorialHighlight(active: isActiveInTutorial, shape: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -421,5 +452,42 @@ private struct PulseDot: View {
                 anim = true
             }
         }
+    }
+}
+
+// MARK: - Tutorial highlight modifier
+
+private struct TutorialHighlightModifier<S: Shape>: ViewModifier {
+    var isActive: Bool
+    var shape: S
+
+    @State private var pulse = false
+
+    func body(content: Content) -> some View {
+        content
+            .brightness(isActive ? 0.08 : 0)
+            .scaleEffect(isActive ? 1.02 : 1.0)
+            .overlay(alignment: .center) {
+                if isActive {
+                    shape
+                        .fill(Color.accentColor.opacity(0.18))
+                        .overlay(shape.stroke(Color.accentColor.opacity(0.9), lineWidth: 1.1))
+                        .shadow(color: Color.accentColor.opacity(0.35), radius: 12, y: 6)
+                        .shadow(color: Color.accentColor.opacity(0.5), radius: 18)
+                        .scaleEffect(pulse ? 1.015 : 0.985)
+                        .opacity(pulse ? 1 : 0.95)
+                        .onAppear { pulse = true }
+                        .onDisappear { pulse = false }
+                        .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: pulse)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isActive)
+    }
+}
+
+private extension View {
+    func tutorialHighlight<S: Shape>(active: Bool, shape: S) -> some View {
+        modifier(TutorialHighlightModifier(isActive: active, shape: shape))
     }
 }
