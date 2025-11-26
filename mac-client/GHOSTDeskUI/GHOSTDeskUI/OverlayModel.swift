@@ -375,6 +375,17 @@ final class OverlayModel: ObservableObject {
         updateTutorialTargetsForAnchors()
     }
 
+    func refreshTutorialTargetsFromAnchors() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.refreshTutorialTargetsFromAnchors()
+            }
+            return
+        }
+
+        updateTutorialTargetsForAnchors()
+    }
+
     private func updateTutorialTargetsForAnchors() {
         guard !tutorialSteps.isEmpty else { return }
         var updated = tutorialSteps
