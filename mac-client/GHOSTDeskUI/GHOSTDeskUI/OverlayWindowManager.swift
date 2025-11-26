@@ -285,13 +285,14 @@ extension OverlayWindowManager {
         let screenMaxH = screen?.visibleFrame.height ?? 1200
         let hardMaxHeight = max(200, floor(screenMaxH - 20)) // clamp сверху
 
-        // ✅ Измеряем: фиксируем ШИРИНУ и ставим БЕЗОПАСНУЮ "потолочную" высоту
-        let originalSize = hosting.frame.size
-        hosting.setFrameSize(NSSize(width: availableWidth, height: hardMaxHeight))
+        // ✅ Измеряем размер без изменения реального фрейма, чтобы не триггерить каскадные
+        // Update Constraints циклы внутри AppKit/SwiftUI. Ставим временный width-constraint
+        // и снимаем его сразу после вычисления.
+        let widthConstraint = hosting.widthAnchor.constraint(equalToConstant: availableWidth)
+        widthConstraint.isActive = true
         hosting.layoutSubtreeIfNeeded()
         var measured = hosting.fittingSize
-        // вернуть как было (на всякий)
-        hosting.setFrameSize(originalSize)
+        widthConstraint.isActive = false
 
         // Санитизируем
         if !measured.width.isFinite || measured.width <= 0 { measured.width = availableWidth }
