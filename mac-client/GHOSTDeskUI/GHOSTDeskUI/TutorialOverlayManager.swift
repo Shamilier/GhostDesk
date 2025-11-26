@@ -5,7 +5,8 @@ final class TutorialOverlayManager {
     static let shared = TutorialOverlayManager()
 
     private var window: TutorialOverlayWindow?
-    private var hostingView: NSHostingView<TutorialOverlayView>?
+    private var hostingView: NSHostingView<AnyView>?      // ← тут
+
     private var currentScreen: NSScreen?
 
     private init() {}
@@ -14,17 +15,19 @@ final class TutorialOverlayManager {
         guard let screen else { return }
         currentScreen = screen
 
+        let rootView = AnyView(                      // ← оборачиваем в AnyView
+            TutorialOverlayView(screenFrame: screen.frame)
+                .environmentObject(OverlayModel.shared)
+        )
+
         if window == nil {
             let overlayWindow = TutorialOverlayWindow(contentRect: screen.frame)
-            let rootView = TutorialOverlayView(screenFrame: screen.frame)
-                .environmentObject(OverlayModel.shared)
             let host = NSHostingView(rootView: rootView)
             overlayWindow.contentView = host
             window = overlayWindow
             hostingView = host
         } else if let host = hostingView {
-            host.rootView = TutorialOverlayView(screenFrame: screen.frame)
-                .environmentObject(OverlayModel.shared)
+            host.rootView = rootView                 // ← тип теперь совпадает
         }
 
         window?.setFrame(screen.frame, display: true)
