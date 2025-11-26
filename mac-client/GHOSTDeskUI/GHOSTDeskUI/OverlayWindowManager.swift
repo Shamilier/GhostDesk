@@ -17,6 +17,7 @@ final class OverlayWindowManager {
     private let snapDistance: CGFloat = 12
     private var windowObservers: [NSObjectProtocol] = []
     private var lastKnownWindowFrame: NSRect?
+    private var isResizingNow = false
     // MARK: - Coalesced resize
     private var resizeWorkItem: DispatchWorkItem?
     private var didApplyInitialPlacement = false
@@ -61,6 +62,7 @@ final class OverlayWindowManager {
     
 
     var isVisible: Bool { window?.isVisible ?? false }
+    var isResizing: Bool { isResizingNow }
 
     func show(model: OverlayModel, auth: AuthState) {
         authState = auth
@@ -261,6 +263,11 @@ private extension OverlayWindowManager {
 extension OverlayWindowManager {
     /// Подгоняет NSPanel под intrinsic-размер SwiftUI-контента (без бесконечных высот).
     func resizeToFitContent(animate: Bool = true) {
+        // Избегаем повторных входов, которые могут триггерить бесконечный цикл constraints
+        guard !isResizingNow else { return }
+        isResizingNow = true
+        defer { isResizingNow = false }
+
         guard let window = window else { return }
 
         // Берём уже существующий NSHostingView<AnyView>
@@ -278,13 +285,14 @@ extension OverlayWindowManager {
         let screenMaxH = screen?.visibleFrame.height ?? 1200
         let hardMaxHeight = max(200, floor(screenMaxH - 20)) // clamp сверху
 
-        // ✅ Измеряем: фиксируем ШИРИНУ и ставим БЕЗОПАСНУЮ "потолочную" высоту
-        let originalSize = hosting.frame.size
-        hosting.setFrameSize(NSSize(width: availableWidth, height: hardMaxHeight))
+        // ✅ Измеряем размер без изменения реального фрейма, чтобы не триггерить каскадные
+        // Update Constraints циклы внутри AppKit/SwiftUI. Ставим временный width-constraint
+        // и снимаем его сразу после вычисления.
+        let widthConstraint = hosting.widthAnchor.constraint(equalToConstant: availableWidth)
+        widthConstraint.isActive = true
         hosting.layoutSubtreeIfNeeded()
         var measured = hosting.fittingSize
-        // вернуть как было (на всякий)
-        hosting.setFrameSize(originalSize)
+        widthConstraint.isActive = false
 
         // Санитизируем
         if !measured.width.isFinite || measured.width <= 0 { measured.width = availableWidth }
