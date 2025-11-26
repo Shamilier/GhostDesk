@@ -142,12 +142,13 @@ struct TutorialOverlayView: View {
     private func calloutLayout(for step: OverlayModel.TutorialStep, canvas: CGSize) -> CalloutLayout {
         let highlight = localRect(for: step.targetFrameInScreenSpace)
         let obstacles = obstacleLocalRects()
+        let paddedObstacles = inflate(obstacles, by: obstaclePadding)
         let best = bestCalloutRect(
             for: step,
             highlight: highlight,
             canvas: canvas,
             size: calloutSize,
-            obstacles: obstacles
+            obstacles: paddedObstacles
         )
         return CalloutLayout(rect: best.rect, position: best.position, highlight: highlight)
     }
@@ -155,6 +156,8 @@ struct TutorialOverlayView: View {
     private func obstacleLocalRects() -> [CGRect] {
         overlay.tutorialObstacles.activeFramesInScreen.map(localRect(for:))
     }
+
+    private var obstaclePadding: CGFloat { 14 }
 
     private func bestCalloutRect(
         for step: OverlayModel.TutorialStep,
@@ -172,23 +175,25 @@ struct TutorialOverlayView: View {
         for position in candidates {
             let ideal = calloutRect(for: position, highlight: highlight, size: size)
             let clamped = clampedCalloutRect(ideal, canvas: canvas)
-            let overlap = overlapArea(of: clamped, with: obstacles)
+            let adjusted = offsetRect(clamped, avoiding: obstacles, canvas: canvas)
+            let overlap = overlapArea(of: adjusted, with: obstacles)
 
-            if overlap == 0 { return (clamped, position) }
+            if overlap == 0 { return (adjusted, position) }
 
             if let currentBest = best {
                 if overlap < currentBest.overlap {
-                    best = (clamped, position, overlap)
+                    best = (adjusted, position, overlap)
                 }
             } else {
-                best = (clamped, position, overlap)
+                best = (adjusted, position, overlap)
             }
         }
 
         if let best { return (best.rect, best.position) }
 
         let fallback = clampedCalloutRect(calloutRect(for: step.calloutPosition, highlight: highlight, size: size), canvas: canvas)
-        return (fallback, step.calloutPosition)
+        let adjustedFallback = offsetRect(fallback, avoiding: obstacles, canvas: canvas)
+        return (adjustedFallback, step.calloutPosition)
     }
 
     private func calloutRect(for position: OverlayModel.CalloutPosition, highlight: CGRect, size: CGSize) -> CGRect {
@@ -212,6 +217,63 @@ struct TutorialOverlayView: View {
         let clampedX = min(max(rect.origin.x, 24), canvas.width - rect.width - 24)
         let clampedY = min(max(rect.origin.y, 24), canvas.height - rect.height - 24)
         return CGRect(origin: CGPoint(x: clampedX, y: clampedY), size: rect.size)
+    }
+
+    private func offsetRect(_ rect: CGRect, avoiding obstacles: [CGRect], canvas: CGSize) -> CGRect {
+        guard !obstacles.isEmpty else { return rect }
+
+        var adjusted = rect
+        let bounds = CGRect(x: 24, y: 24, width: canvas.width - 48, height: canvas.height - 48)
+
+        for obstacle in obstacles {
+            guard adjusted.intersects(obstacle) else { continue }
+
+            let moveLeft = obstacle.minX - adjusted.maxX
+            let moveRight = obstacle.maxX - adjusted.minX
+            let moveUp = obstacle.minY - adjusted.maxY
+            let moveDown = obstacle.maxY - adjusted.minY
+
+            let candidates: [CGPoint] = [
+                CGPoint(x: moveLeft, y: 0),
+                CGPoint(x: moveRight, y: 0),
+                CGPoint(x: 0, y: moveUp),
+                CGPoint(x: 0, y: moveDown)
+            ]
+
+            var bestTranslation: CGPoint?
+
+            for translation in candidates {
+                let shifted = adjusted.offsetBy(dx: translation.x, dy: translation.y)
+                let clamped = clamp(shifted, within: bounds)
+
+                guard !clamped.intersects(obstacle) else { continue }
+
+                if let current = bestTranslation {
+                    if abs(translation.x) + abs(translation.y) < abs(current.x) + abs(current.y) {
+                        bestTranslation = translation
+                    }
+                } else {
+                    bestTranslation = translation
+                }
+            }
+
+            if let translation = bestTranslation {
+                adjusted = adjusted.offsetBy(dx: translation.x, dy: translation.y)
+                adjusted = clamp(adjusted, within: bounds)
+            }
+        }
+
+        return adjusted
+    }
+
+    private func clamp(_ rect: CGRect, within bounds: CGRect) -> CGRect {
+        let clampedX = min(max(rect.origin.x, bounds.minX), bounds.maxX - rect.width)
+        let clampedY = min(max(rect.origin.y, bounds.minY), bounds.maxY - rect.height)
+        return CGRect(origin: CGPoint(x: clampedX, y: clampedY), size: rect.size)
+    }
+
+    private func inflate(_ rects: [CGRect], by padding: CGFloat) -> [CGRect] {
+        rects.map { $0.insetBy(dx: -padding, dy: -padding) }
     }
 
     private func overlapArea(of rect: CGRect, with obstacles: [CGRect]) -> CGFloat {
