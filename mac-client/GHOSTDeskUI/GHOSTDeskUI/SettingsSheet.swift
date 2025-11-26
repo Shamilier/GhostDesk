@@ -298,6 +298,25 @@ struct SettingsSheet: View {
                             }
                         }
 
+                        GlassSection("Сброс хранения") {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Удаляет из Keychain токены авторизации и данные о прохождении onboarding. После очистки потребуются повторный вход и настройка.")
+                                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                                    .foregroundStyle(ST.textSec)
+
+                                Button(role: .destructive) {
+                                    auth.purgeKeychainAndOnboardingState()
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "key.fill")
+                                        Text("Очистить Keychain")
+                                    }
+                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                }
+                                .buttonStyle(GlassPill(tint: .red))
+                            }
+                        }
+
 
                         // === Низ (кнопки действия) ===
                     }

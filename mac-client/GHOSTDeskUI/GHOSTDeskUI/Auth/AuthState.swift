@@ -202,6 +202,12 @@ final class AuthState: ObservableObject {
         refreshTask = nil
     }
 
+    func purgeKeychainAndOnboardingState() {
+        signOut()
+        clearKeychainServiceItems()
+        OAuthCoordinator.shared.clearPersistentAuthorizationArtifacts()
+    }
+
     var currentKey: String? {
         accessToken
     }
@@ -281,6 +287,18 @@ final class AuthState: ObservableObject {
             if account == Keychain.accessAccount {
                 print("[AuthState] Access token saved to Keychain.")
             }
+        }
+    }
+
+    private func clearKeychainServiceItems() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Keychain.service
+        ]
+
+        let status = SecItemDelete(query as CFDictionary)
+        if status != errSecSuccess && status != errSecItemNotFound {
+            print("[AuthState] Failed to clear Keychain items: \(status)")
         }
     }
 

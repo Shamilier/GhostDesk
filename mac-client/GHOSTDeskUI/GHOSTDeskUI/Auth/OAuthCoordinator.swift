@@ -55,6 +55,11 @@ final class OAuthCoordinator: ObservableObject {
         self.authState = authState
     }
 
+    func clearPersistentAuthorizationArtifacts() {
+        resetPending()
+        isAuthorizing = false
+    }
+
     func startAuthorization(flow: OAuthFlowKind) {
         assert(authState != nil, "OAuthCoordinator.configure(authState:) must be called before starting authorization.")
         guard let authState else { return }
