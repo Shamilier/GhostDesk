@@ -35,6 +35,33 @@ final class OverlayModel: ObservableObject {
         var frameInScreen: CGRect
     }
 
+    enum TutorialObstacleKind: CaseIterable {
+        case toolbar
+        case listenPanel
+        case askPanel
+        case settingsPanel
+    }
+
+    struct TutorialObstacles: Equatable {
+        var toolbarFrameInScreen: CGRect?
+        var listenPanelFrameInScreen: CGRect?
+        var askPanelFrameInScreen: CGRect?
+        var settingsPanelFrameInScreen: CGRect?
+
+        var activeFramesInScreen: [CGRect] {
+            [toolbarFrameInScreen, listenPanelFrameInScreen, askPanelFrameInScreen, settingsPanelFrameInScreen]
+                .compactMap { frame in
+                    guard let frame, !frame.isNull, !frame.isEmpty else { return nil }
+                    return frame
+                }
+        }
+    }
+
+    struct TutorialObstacleFrame: Equatable {
+        let kind: TutorialObstacleKind
+        let frameInScreen: CGRect?
+    }
+
     struct TutorialStep: Identifiable, Equatable {
         let id: String
         var title: String
@@ -141,6 +168,7 @@ final class OverlayModel: ObservableObject {
     @Published var tutorialSteps: [TutorialStep] = []
     @Published var activeTutorialStepIndex: Int = 0
     @Published private(set) var toolbarAnchors: [ToolbarAnchorID: CGRect] = [:]
+    @Published private(set) var tutorialObstacles = TutorialObstacles()
 
 
     // Константы
@@ -326,6 +354,50 @@ final class OverlayModel: ObservableObject {
         }
         guard changed else { return }
         updateTutorialTargetsForAnchors()
+    }
+
+    func updateToolbarFrameInScreen(_ frame: CGRect?) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.updateToolbarFrameInScreen(frame) }
+            return
+        }
+
+        var next = tutorialObstacles
+        next.toolbarFrameInScreen = sanitizeObstacleFrame(frame)
+        if tutorialObstacles != next { tutorialObstacles = next }
+    }
+
+    func updateTutorialPanelFrames(_ frames: [TutorialObstacleFrame]) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.updateTutorialPanelFrames(frames) }
+            return
+        }
+
+        var next = tutorialObstacles
+        next.listenPanelFrameInScreen = nil
+        next.askPanelFrameInScreen = nil
+        next.settingsPanelFrameInScreen = nil
+
+        for frame in frames {
+            let sanitized = sanitizeObstacleFrame(frame.frameInScreen)
+            switch frame.kind {
+            case .listenPanel:
+                next.listenPanelFrameInScreen = sanitized
+            case .askPanel:
+                next.askPanelFrameInScreen = sanitized
+            case .settingsPanel:
+                next.settingsPanelFrameInScreen = sanitized
+            case .toolbar:
+                next.toolbarFrameInScreen = sanitized
+            }
+        }
+
+        if tutorialObstacles != next { tutorialObstacles = next }
+    }
+
+    private func sanitizeObstacleFrame(_ frame: CGRect?) -> CGRect? {
+        guard let frame, !frame.isNull, !frame.isEmpty else { return nil }
+        return frame
     }
 
     func prepareDefaultTutorialSteps() {
