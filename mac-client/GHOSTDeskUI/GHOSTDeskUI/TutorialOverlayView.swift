@@ -6,6 +6,8 @@ struct TutorialOverlayView: View {
 
     @State private var isVisible = false
     private let calloutSize = CGSize(width: 320, height: 170)
+    // Измените значение ниже, чтобы регулировать степень затемнения фона обучения (1.0 = полностью чёрный).
+    private let dimOpacity: Double = 0.7
 
     var body: some View {
         GeometryReader { proxy in
@@ -32,7 +34,7 @@ struct TutorialOverlayView: View {
         let targetRect = localRect(for: overlay.activeTutorialStep?.targetFrameInScreenSpace ?? .zero)
 
         return ZStack {
-            Color.black.opacity(0.45)
+            Color.black.opacity(dimOpacity)
                 .ignoresSafeArea()
                 .opacity(isVisible ? 1 : 0)
                 .animation(.easeOut(duration: 0.28), value: isVisible)
@@ -75,7 +77,7 @@ struct TutorialOverlayView: View {
     private func connector(for step: OverlayModel.TutorialStep, in proxy: GeometryProxy) -> some View {
         let layout = calloutLayout(for: step, canvas: proxy.size)
         let start = connectorStart(for: layout.rect, position: layout.position)
-        let end = CGPoint(x: layout.highlight.midX, y: layout.highlight.midY)
+        let end = connectorEnd(from: start, to: layout.highlight)
 
         return ConnectorShape(start: start, end: end)
             .stroke(Color.white.opacity(0.85), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
@@ -299,6 +301,63 @@ struct TutorialOverlayView: View {
         case .trailing:
             return CGPoint(x: callout.minX, y: callout.midY)
         }
+    }
+
+    private func connectorEnd(from start: CGPoint, to highlight: CGRect) -> CGPoint {
+        guard !highlight.isEmpty else { return start }
+
+        let center = CGPoint(x: highlight.midX, y: highlight.midY)
+        let dx = center.x - start.x
+        let dy = center.y - start.y
+
+        guard dx != 0 || dy != 0 else { return center }
+
+        var intersections: [CGPoint] = []
+
+        if dx != 0 {
+            let tMinX = (highlight.minX - start.x) / dx
+            let yAtMinX = start.y + tMinX * dy
+            if tMinX >= 0, tMinX <= 1, yAtMinX >= highlight.minY, yAtMinX <= highlight.maxY {
+                intersections.append(CGPoint(x: highlight.minX, y: yAtMinX))
+            }
+
+            let tMaxX = (highlight.maxX - start.x) / dx
+            let yAtMaxX = start.y + tMaxX * dy
+            if tMaxX >= 0, tMaxX <= 1, yAtMaxX >= highlight.minY, yAtMaxX <= highlight.maxY {
+                intersections.append(CGPoint(x: highlight.maxX, y: yAtMaxX))
+            }
+        }
+
+        if dy != 0 {
+            let tMinY = (highlight.minY - start.y) / dy
+            let xAtMinY = start.x + tMinY * dx
+            if tMinY >= 0, tMinY <= 1, xAtMinY >= highlight.minX, xAtMinY <= highlight.maxX {
+                intersections.append(CGPoint(x: xAtMinY, y: highlight.minY))
+            }
+
+            let tMaxY = (highlight.maxY - start.y) / dy
+            let xAtMaxY = start.x + tMaxY * dx
+            if tMaxY >= 0, tMaxY <= 1, xAtMaxY >= highlight.minX, xAtMaxY <= highlight.maxX {
+                intersections.append(CGPoint(x: xAtMaxY, y: highlight.maxY))
+            }
+        }
+
+        guard let nearest = intersections.min(by: { lhs, rhs in
+            let lhsDistance = hypot(lhs.x - start.x, lhs.y - start.y)
+            let rhsDistance = hypot(rhs.x - start.x, rhs.y - start.y)
+            return lhsDistance < rhsDistance
+        }) else {
+            return center
+        }
+
+        let pullback: CGFloat = 8
+        let vector = CGVector(dx: nearest.x - start.x, dy: nearest.y - start.y)
+        let length = hypot(vector.dx, vector.dy)
+
+        guard length > 0 else { return nearest }
+
+        let scale = max((length - pullback) / length, 0)
+        return CGPoint(x: start.x + vector.dx * scale, y: start.y + vector.dy * scale)
     }
 }
 
