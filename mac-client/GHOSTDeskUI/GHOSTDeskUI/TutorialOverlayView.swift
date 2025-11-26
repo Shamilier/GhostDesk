@@ -100,12 +100,11 @@ struct TutorialOverlayView: View {
 
     private func localRect(for rect: CGRect) -> CGRect {
         guard !rect.isEmpty else { return .zero }
-        return CGRect(
-            x: rect.minX - screenFrame.minX,
-            y: rect.minY - screenFrame.minY,
-            width: rect.width,
-            height: rect.height
-        )
+        // Приводим screen-space AppKit (origin внизу) в локальные координаты SwiftUI (origin вверху).
+        let localX = rect.minX - screenFrame.minX
+        let localY = screenFrame.maxY - rect.maxY
+
+        return CGRect(x: localX, y: localY, width: rect.width, height: rect.height)
     }
 
     private func clampedCalloutRect(for step: OverlayModel.TutorialStep, highlight: CGRect, canvas: CGSize, size: CGSize) -> CGRect {
