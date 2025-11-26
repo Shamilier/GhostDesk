@@ -3,6 +3,7 @@ import Combine
 import AVFoundation
 import CoreML
 import WhisperKit
+import AppKit
 
 import ScreenCaptureKit
 import CoreMedia
@@ -72,6 +73,7 @@ struct OverlayRootView: View {
             .environmentObject(auth)
             .padding(.horizontal, 8)
             .environmentObject(overlay)
+            .background(TutorialObstacleReporter(kind: .settingsPanel))
     }
 
     private var authorizedOverlay: some View {
@@ -122,6 +124,9 @@ struct OverlayRootView: View {
         }
         // окно подстраивается по высоте как и для других панелей
         .overlayAutoResize()
+        .onPreferenceChange(TutorialObstaclePreferenceKey.self) { frames in
+            overlay.updateTutorialPanelFrames(frames.map { $0.asTutorialObstacleFrame })
+        }
         .animation(.spring(response: 0.2, dampingFraction: 0.86), value: isExpanded)
         .animation(.spring(response: 0.2, dampingFraction: 0.86), value: selectedTab)
         .onChange(of: overlay.askSolveTrigger) { _ in
@@ -253,6 +258,7 @@ struct OverlayRootView: View {
         }
         .frame(maxWidth: 600)
         .padding(.horizontal, 8)
+        .background(TutorialObstacleReporter(kind: .listenPanel))
     }
     
     
@@ -648,6 +654,7 @@ struct OverlayRootView: View {
         .frame(maxWidth: 600)  // Фиксируем максимальную ширину всей панели
 
         .padding(.horizontal, 8)
+        .background(TutorialObstacleReporter(kind: .askPanel))
     }
 
     // MARK: - Header (не используется в текущем лэйауте, оставлен как заготовка)
@@ -1917,6 +1924,53 @@ final class TranscriptBuffer {
             self.items.removeAll(keepingCapacity: false)
             self.partial = nil
         }
+    }
+}
+
+// === Tutorial obstacles ===
+
+private struct TutorialObstaclePayload: Equatable {
+    let kind: OverlayModel.TutorialObstacleKind
+    let frameInScreen: CGRect
+
+    var asTutorialObstacleFrame: OverlayModel.TutorialObstacleFrame {
+        OverlayModel.TutorialObstacleFrame(kind: kind, frameInScreen: frameInScreen)
+    }
+}
+
+private struct TutorialObstaclePreferenceKey: PreferenceKey {
+    static var defaultValue: [TutorialObstaclePayload] = []
+    static func reduce(value: inout [TutorialObstaclePayload], nextValue: () -> [TutorialObstaclePayload]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+private struct TutorialObstacleReporter: View {
+    let kind: OverlayModel.TutorialObstacleKind
+
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear.preference(
+                key: TutorialObstaclePreferenceKey.self,
+                value: [TutorialObstaclePayload(kind: kind, frameInScreen: frameInScreen(proxy))]
+            )
+        }
+    }
+
+    private func frameInScreen(_ proxy: GeometryProxy) -> CGRect {
+        let frameInWindow = proxy.frame(in: .global)
+
+        guard let window = NSApplication.shared.windows.first(where: { $0 is OverlayPanel }) else {
+            return frameInWindow
+        }
+
+        let windowFrame = window.frame
+        let screenOrigin = CGPoint(
+            x: windowFrame.origin.x + frameInWindow.minX,
+            y: windowFrame.origin.y + (windowFrame.height - frameInWindow.maxY)
+        )
+
+        return CGRect(origin: screenOrigin, size: frameInWindow.size)
     }
 }
 

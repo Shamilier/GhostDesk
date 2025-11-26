@@ -122,6 +122,7 @@ final class OverlayWindowManager {
             resizeToFitContent()
         }
 
+        if let window { OverlayModel.shared.updateToolbarFrameInScreen(window.frame) }
         if let window { startObservingWindowMovements(window) }
     }
 
@@ -232,6 +233,7 @@ final class OverlayWindowManager {
             OverlayModel.shared.refreshTutorialTargetsFromAnchors()
         }
 
+        OverlayModel.shared.updateToolbarFrameInScreen(newFrame)
         TutorialOverlayManager.shared.refreshOverlayFrame()
         lastKnownWindowFrame = newFrame
     }

@@ -5,6 +5,7 @@ struct TutorialOverlayView: View {
     let screenFrame: CGRect
 
     @State private var isVisible = false
+    private let calloutSize = CGSize(width: 320, height: 170)
 
     var body: some View {
         GeometryReader { proxy in
@@ -72,11 +73,9 @@ struct TutorialOverlayView: View {
     }
 
     private func connector(for step: OverlayModel.TutorialStep, in proxy: GeometryProxy) -> some View {
-        let highlight = localRect(for: step.targetFrameInScreenSpace)
-        let cardSize = CGSize(width: 320, height: 170)
-        let calloutRect = clampedCalloutRect(for: step, highlight: highlight, canvas: proxy.size, size: cardSize)
-        let start = connectorStart(for: calloutRect, position: step.calloutPosition)
-        let end = CGPoint(x: highlight.midX, y: highlight.midY)
+        let layout = calloutLayout(for: step, canvas: proxy.size)
+        let start = connectorStart(for: layout.rect, position: layout.position)
+        let end = CGPoint(x: layout.highlight.midX, y: layout.highlight.midY)
 
         return ConnectorShape(start: start, end: end)
             .stroke(Color.white.opacity(0.85), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
@@ -88,9 +87,7 @@ struct TutorialOverlayView: View {
     }
 
     private func callout(for step: OverlayModel.TutorialStep, in proxy: GeometryProxy) -> some View {
-        let highlight = localRect(for: step.targetFrameInScreenSpace)
-        let cardSize = CGSize(width: 320, height: 170)
-        let calloutRect = clampedCalloutRect(for: step, highlight: highlight, canvas: proxy.size, size: cardSize)
+        let layout = calloutLayout(for: step, canvas: proxy.size)
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -119,7 +116,7 @@ struct TutorialOverlayView: View {
             }
         }
         .padding(16)
-        .frame(width: cardSize.width, height: cardSize.height, alignment: .topLeading)
+        .frame(width: calloutSize.width, height: calloutSize.height, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -129,7 +126,7 @@ struct TutorialOverlayView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color.white.opacity(0.18), lineWidth: 1)
         )
-        .position(x: calloutRect.midX, y: calloutRect.midY)
+        .position(x: layout.rect.midX, y: layout.rect.midY)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: overlay.activeTutorialStepIndex)
     }
 
@@ -142,10 +139,62 @@ struct TutorialOverlayView: View {
         return CGRect(x: localX, y: localY, width: rect.width, height: rect.height)
     }
 
-    private func clampedCalloutRect(for step: OverlayModel.TutorialStep, highlight: CGRect, canvas: CGSize, size: CGSize) -> CGRect {
+    private func calloutLayout(for step: OverlayModel.TutorialStep, canvas: CGSize) -> CalloutLayout {
+        let highlight = localRect(for: step.targetFrameInScreenSpace)
+        let obstacles = obstacleLocalRects()
+        let best = bestCalloutRect(
+            for: step,
+            highlight: highlight,
+            canvas: canvas,
+            size: calloutSize,
+            obstacles: obstacles
+        )
+        return CalloutLayout(rect: best.rect, position: best.position, highlight: highlight)
+    }
+
+    private func obstacleLocalRects() -> [CGRect] {
+        overlay.tutorialObstacles.activeFramesInScreen.map(localRect(for:))
+    }
+
+    private func bestCalloutRect(
+        for step: OverlayModel.TutorialStep,
+        highlight: CGRect,
+        canvas: CGSize,
+        size: CGSize,
+        obstacles: [CGRect]
+    ) -> (rect: CGRect, position: OverlayModel.CalloutPosition) {
+        let baseOrder: [OverlayModel.CalloutPosition] = [.above, .below, .leading, .trailing]
+        var candidates: [OverlayModel.CalloutPosition] = [step.calloutPosition]
+        candidates.append(contentsOf: baseOrder.filter { !candidates.contains($0) })
+
+        var best: (rect: CGRect, position: OverlayModel.CalloutPosition, overlap: CGFloat)?
+
+        for position in candidates {
+            let ideal = calloutRect(for: position, highlight: highlight, size: size)
+            let clamped = clampedCalloutRect(ideal, canvas: canvas)
+            let overlap = overlapArea(of: clamped, with: obstacles)
+
+            if overlap == 0 { return (clamped, position) }
+
+            if let currentBest = best {
+                if overlap < currentBest.overlap {
+                    best = (clamped, position, overlap)
+                }
+            } else {
+                best = (clamped, position, overlap)
+            }
+        }
+
+        if let best { return (best.rect, best.position) }
+
+        let fallback = clampedCalloutRect(calloutRect(for: step.calloutPosition, highlight: highlight, size: size), canvas: canvas)
+        return (fallback, step.calloutPosition)
+    }
+
+    private func calloutRect(for position: OverlayModel.CalloutPosition, highlight: CGRect, size: CGSize) -> CGRect {
         var origin = CGPoint(x: highlight.midX - size.width / 2, y: highlight.midY - size.height / 2)
 
-        switch step.calloutPosition {
+        switch position {
         case .above:
             origin = CGPoint(x: highlight.midX - size.width / 2, y: highlight.maxY + 32)
         case .below:
@@ -156,9 +205,25 @@ struct TutorialOverlayView: View {
             origin = CGPoint(x: highlight.maxX + 32, y: highlight.midY - size.height / 2)
         }
 
-        let clampedX = min(max(origin.x, 24), canvas.width - size.width - 24)
-        let clampedY = min(max(origin.y, 24), canvas.height - size.height - 24)
-        return CGRect(origin: CGPoint(x: clampedX, y: clampedY), size: size)
+        return CGRect(origin: origin, size: size)
+    }
+
+    private func clampedCalloutRect(_ rect: CGRect, canvas: CGSize) -> CGRect {
+        let clampedX = min(max(rect.origin.x, 24), canvas.width - rect.width - 24)
+        let clampedY = min(max(rect.origin.y, 24), canvas.height - rect.height - 24)
+        return CGRect(origin: CGPoint(x: clampedX, y: clampedY), size: rect.size)
+    }
+
+    private func overlapArea(of rect: CGRect, with obstacles: [CGRect]) -> CGFloat {
+        obstacles.reduce(0) { partialResult, obstacle in
+            partialResult + overlapArea(rect, obstacle)
+        }
+    }
+
+    private func overlapArea(_ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
+        let intersection = lhs.intersection(rhs)
+        guard !intersection.isNull, !intersection.isEmpty else { return 0 }
+        return intersection.width * intersection.height
     }
 
     private func connectorStart(for callout: CGRect, position: OverlayModel.CalloutPosition) -> CGPoint {
@@ -173,6 +238,12 @@ struct TutorialOverlayView: View {
             return CGPoint(x: callout.minX, y: callout.midY)
         }
     }
+}
+
+private struct CalloutLayout {
+    let rect: CGRect
+    let position: OverlayModel.CalloutPosition
+    let highlight: CGRect
 }
 
 private struct ConnectorShape: Shape {
