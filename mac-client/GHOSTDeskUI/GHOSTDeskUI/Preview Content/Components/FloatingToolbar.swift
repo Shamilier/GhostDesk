@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // MARK: - Tabs (переименовано, чтобы не конфликтовало)
 //public enum CommandTab: String, CaseIterable {
@@ -227,9 +228,19 @@ private struct ToolbarAnchorReporter: View {
     var body: some View {
         GeometryReader { proxy in
             Color.clear.preference(key: ToolbarAnchorPreferenceKey.self, value: [
-                OverlayModel.ToolbarAnchor(id: id, frameInScreen: proxy.frame(in: .global))
+                OverlayModel.ToolbarAnchor(id: id, frameInScreen: frameInScreen(proxy))
             ])
         }
+    }
+
+    private func frameInScreen(_ proxy: GeometryProxy) -> CGRect {
+        let frameInWindow = proxy.frame(in: .global)
+
+        if let window = NSApplication.shared.windows.first(where: { $0 is OverlayPanel }) {
+            return window.convertToScreen(frameInWindow)
+        }
+
+        return frameInWindow
     }
 }
 
