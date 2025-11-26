@@ -20,7 +20,7 @@ struct TutorialOverlayView: View {
             .contentShape(Rectangle())
             .onTapGesture { } // захватываем клики, чтобы фон не пропускал к окнам под оверлеем
             .onAppear {
-                withAnimation(.easeInOut(duration: 0.25)) {
+                withAnimation(.easeOut(duration: 0.28)) {
                     isVisible = true
                 }
             }
@@ -29,11 +29,46 @@ struct TutorialOverlayView: View {
 
     private func spotlightLayer(in proxy: GeometryProxy) -> some View {
         let targetRect = localRect(for: overlay.activeTutorialStep?.targetFrameInScreenSpace ?? .zero)
-        return SpotlightShape(highlight: targetRect, radius: 14)
-            .fill(Color.black.opacity(0.55), style: FillStyle(eoFill: true))
-            .ignoresSafeArea()
-            .animation(.easeInOut(duration: 0.28), value: overlay.activeTutorialStepIndex)
+
+        return ZStack {
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+                .opacity(isVisible ? 1 : 0)
+                .animation(.easeOut(duration: 0.28), value: isVisible)
+
+            if overlay.activeTutorialStep != nil, !targetRect.isEmpty {
+                highlightView(rect: targetRect)
+            }
+        }
+    }
+
+    private func highlightView(rect: CGRect) -> some View {
+        let accent = Color.accentColor
+        let glowColor = accent.opacity(0.75)
+        let cornerRadius: CGFloat = 12
+
+        return RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .inset(by: -4)
+            .strokeBorder(accent.opacity(0.95), lineWidth: 2)
+            .shadow(color: glowColor, radius: 14, x: 0, y: 0)
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(
+                        RadialGradient(
+                            gradient: Gradient(colors: [accent.opacity(0.28), accent.opacity(0)]),
+                            center: .center,
+                            startRadius: 4,
+                            endRadius: max(rect.width, rect.height) * 0.75
+                        )
+                    )
+                    .blendMode(.screen)
+            )
+            .frame(width: rect.width, height: rect.height)
+            .position(x: rect.midX, y: rect.midY)
+            .scaleEffect(isVisible ? 1 : 0.96)
             .opacity(isVisible ? 1 : 0)
+            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isVisible)
+            .animation(.spring(response: 0.4, dampingFraction: 0.85), value: overlay.activeTutorialStepIndex)
     }
 
     private func connector(for step: OverlayModel.TutorialStep, in proxy: GeometryProxy) -> some View {
@@ -49,7 +84,7 @@ struct TutorialOverlayView: View {
                 ArrowHead(end: end, start: start)
                     .fill(Color.white.opacity(0.9))
             )
-            .animation(.easeInOut(duration: 0.25), value: overlay.activeTutorialStepIndex)
+            .animation(.spring(response: 0.4, dampingFraction: 0.85), value: overlay.activeTutorialStepIndex)
     }
 
     private func callout(for step: OverlayModel.TutorialStep, in proxy: GeometryProxy) -> some View {
@@ -137,20 +172,6 @@ struct TutorialOverlayView: View {
         case .trailing:
             return CGPoint(x: callout.minX, y: callout.midY)
         }
-    }
-}
-
-private struct SpotlightShape: Shape {
-    var highlight: CGRect
-    var radius: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.addRect(rect)
-        if !highlight.isEmpty {
-            path.addRoundedRect(in: highlight, cornerSize: CGSize(width: radius, height: radius))
-        }
-        return path
     }
 }
 
