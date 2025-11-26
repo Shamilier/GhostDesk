@@ -358,6 +358,23 @@ final class OverlayModel: ObservableObject {
         activeTutorialStepIndex = max(0, activeTutorialStepIndex - 1)
     }
 
+    func shiftToolbarAnchors(dx: CGFloat, dy: CGFloat) {
+        guard dx != 0 || dy != 0 else { return }
+
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.shiftToolbarAnchors(dx: dx, dy: dy)
+            }
+            return
+        }
+
+        guard !toolbarAnchors.isEmpty else { return }
+
+        let shifted = toolbarAnchors.mapValues { $0.offsetBy(dx: dx, dy: dy) }
+        toolbarAnchors = shifted
+        updateTutorialTargetsForAnchors()
+    }
+
     private func updateTutorialTargetsForAnchors() {
         guard !tutorialSteps.isEmpty else { return }
         var updated = tutorialSteps

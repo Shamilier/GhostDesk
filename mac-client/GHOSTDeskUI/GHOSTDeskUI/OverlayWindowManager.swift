@@ -15,6 +15,8 @@ final class OverlayWindowManager {
     private var authState: AuthState?
     private var hidesFromScreenCapture = true
     private let snapDistance: CGFloat = 12
+    private var windowObservers: [NSObjectProtocol] = []
+    private var lastKnownWindowFrame: NSRect?
     // MARK: - Coalesced resize
     private var resizeWorkItem: DispatchWorkItem?
     private var didApplyInitialPlacement = false
@@ -117,6 +119,8 @@ final class OverlayWindowManager {
             // ✅ на всякий случай подгоняем и тут, если до этого окно «раздулось»
             resizeToFitContent()
         }
+
+        if let window { startObservingWindowMovements(window) }
     }
 
     func updateSize(to newContentSize: CGSize, animate: Bool = true) {
@@ -171,6 +175,44 @@ final class OverlayWindowManager {
     func updateScreenCaptureVisibility(hidden: Bool) {
         hidesFromScreenCapture = hidden
         window?.sharingType = hidden ? .none : .readOnly
+    }
+
+    private func startObservingWindowMovements(_ window: NSWindow) {
+        stopObservingWindowMovements()
+        lastKnownWindowFrame = window.frame
+
+        let center = NotificationCenter.default
+        let move = center.addObserver(forName: NSWindow.didMoveNotification, object: window, queue: .main) { [weak self] _ in
+            self?.handleWindowFrameChange(window)
+        }
+        let resize = center.addObserver(forName: NSWindow.didEndLiveResizeNotification, object: window, queue: .main) { [weak self] _ in
+            self?.handleWindowFrameChange(window)
+        }
+
+        windowObservers = [move, resize].compactMap { $0 }
+    }
+
+    private func stopObservingWindowMovements() {
+        for token in windowObservers {
+            NotificationCenter.default.removeObserver(token)
+        }
+        windowObservers.removeAll()
+    }
+
+    private func handleWindowFrameChange(_ window: NSWindow) {
+        let newFrame = window.frame
+
+        guard let lastFrame = lastKnownWindowFrame else {
+            lastKnownWindowFrame = newFrame
+            return
+        }
+
+        lastKnownWindowFrame = newFrame
+        let dx = newFrame.origin.x - lastFrame.origin.x
+        let dy = newFrame.origin.y - lastFrame.origin.y
+
+        guard dx != 0 || dy != 0 else { return }
+        OverlayModel.shared.shiftToolbarAnchors(dx: dx, dy: dy)
     }
 
     // MARK: - Helpers
