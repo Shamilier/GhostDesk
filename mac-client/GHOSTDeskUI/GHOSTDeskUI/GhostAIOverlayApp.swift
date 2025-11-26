@@ -17,8 +17,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model = OverlayModel.shared
     private let authState = AuthState()
     private let uploadManager = UploadManager.shared
+    private let onboardingState = OnboardingState.shared
 
     private var cancellables = Set<AnyCancellable>()  // теперь тип виден
+    private var pendingTutorialWorkItem: DispatchWorkItem?
+    private var didTriggerAutomaticTutorial = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -49,24 +52,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         model.$isTutorialVisible
             .receive(on: RunLoop.main)
-            .sink { visible in
+            .sink { [weak self] visible in
                 if visible {
                     TutorialOverlayManager.shared.presentOverlay(on: NSScreen.main)
                 } else {
                     TutorialOverlayManager.shared.hideOverlay()
+                    self?.handleTutorialCompletionIfNeeded()
+                }
+            }
+            .store(in: &cancellables)
+
+        authState.$profile
+            .combineLatest(authState.$session)
+            .receive(on: RunLoop.main)
+            .map { [weak self] _, _ in self?.authState.isAuthorized ?? false }
+            .removeDuplicates()
+            .sink { [weak self] isAuthorized in
+                guard let self else { return }
+                if isAuthorized {
+                    self.scheduleTutorialAfterAuthorization()
+                } else {
+                    self.cancelPendingTutorial()
                 }
             }
             .store(in: &cancellables)
 
         // показать при старте
         OverlayWindowManager.shared.show(model: model, auth: authState)
-
-        // легковесный запуск обучения после первого показа тулбара
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-            guard let self else { return }
-            self.model.prepareDefaultTutorialSteps()
-            self.model.showTutorial()
-        }
 
         HotKeyManager.shared.activate()
         NSApp.activate(ignoringOtherApps: true)
@@ -93,5 +105,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let state = components.queryItems?.first(where: { $0.name == "state" })?.value else { return false }
         oauthCoordinator.handleCallback(code: code, state: state)
         return true
+    }
+
+    private func scheduleTutorialAfterAuthorization() {
+        guard !onboardingState.hasCompletedOnboarding else { return }
+        guard !model.isTutorialVisible else { return }
+
+        cancelPendingTutorial()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingTutorialWorkItem = nil
+            guard !self.onboardingState.hasCompletedOnboarding else { return }
+            self.model.prepareDefaultTutorialSteps()
+            self.model.showTutorial()
+            self.didTriggerAutomaticTutorial = true
+        }
+
+        pendingTutorialWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: workItem)
+    }
+
+    private func cancelPendingTutorial() {
+        pendingTutorialWorkItem?.cancel()
+        pendingTutorialWorkItem = nil
+        didTriggerAutomaticTutorial = false
+    }
+
+    private func handleTutorialCompletionIfNeeded() {
+        guard didTriggerAutomaticTutorial else { return }
+        guard !onboardingState.hasCompletedOnboarding else { return }
+        onboardingState.markCompleted()
+        didTriggerAutomaticTutorial = false
     }
 }

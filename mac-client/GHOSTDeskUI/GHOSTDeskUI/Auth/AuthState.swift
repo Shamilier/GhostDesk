@@ -206,6 +206,7 @@ final class AuthState: ObservableObject {
         signOut()
         clearKeychainServiceItems()
         OAuthCoordinator.shared.clearPersistentAuthorizationArtifacts()
+        OnboardingState.shared.reset()
     }
 
     var currentKey: String? {
