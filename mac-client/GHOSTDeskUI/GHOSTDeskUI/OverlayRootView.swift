@@ -1939,10 +1939,10 @@ private struct OverlayAutoResize: ViewModifier {
          .onPreferenceChange(OverlaySizeKey.self) { new in
              if abs(new.width - last.width) > 0.5 || abs(new.height - last.height) > 0.5 {
                  last = new
-                 // Если подавление включено — пропускаем тик
-                 if !OverlayWindowManager.shared.isAutoResizeSuppressed {
-                     OverlayWindowManager.shared.scheduleResize(animate: false, coalesce: 0.02)
-                 }
+                 // Пропускаем тики, пока идёт ручной ресайз или suppress включён
+                 let wm = OverlayWindowManager.shared
+                 guard !wm.isResizing, !wm.isAutoResizeSuppressed else { return }
+                 wm.scheduleResize(animate: false, coalesce: 0.02)
              }
          }
     }

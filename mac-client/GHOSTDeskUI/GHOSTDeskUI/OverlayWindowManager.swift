@@ -17,6 +17,7 @@ final class OverlayWindowManager {
     private let snapDistance: CGFloat = 12
     private var windowObservers: [NSObjectProtocol] = []
     private var lastKnownWindowFrame: NSRect?
+    private var isResizingNow = false
     // MARK: - Coalesced resize
     private var resizeWorkItem: DispatchWorkItem?
     private var didApplyInitialPlacement = false
@@ -61,6 +62,7 @@ final class OverlayWindowManager {
     
 
     var isVisible: Bool { window?.isVisible ?? false }
+    var isResizing: Bool { isResizingNow }
 
     func show(model: OverlayModel, auth: AuthState) {
         authState = auth
@@ -261,6 +263,11 @@ private extension OverlayWindowManager {
 extension OverlayWindowManager {
     /// Подгоняет NSPanel под intrinsic-размер SwiftUI-контента (без бесконечных высот).
     func resizeToFitContent(animate: Bool = true) {
+        // Избегаем повторных входов, которые могут триггерить бесконечный цикл constraints
+        guard !isResizingNow else { return }
+        isResizingNow = true
+        defer { isResizingNow = false }
+
         guard let window = window else { return }
 
         // Берём уже существующий NSHostingView<AnyView>
