@@ -307,6 +307,16 @@ final class OverlayModel: ObservableObject {
     // MARK: - Tutorial
 
     func updateToolbarAnchors(_ anchors: [ToolbarAnchor]) {
+        // Обновление приходит из SwiftUI-преференсов, которые иногда триггерятся
+        // вне главного потока. Публикация @Published-свойств в таком случае
+        // падает с "_crashOnException", поэтому мягко перебрасываем работу на main.
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.updateToolbarAnchors(anchors)
+            }
+            return
+        }
+
         var changed = false
         for anchor in anchors {
             if toolbarAnchors[anchor.id] != anchor.frameInScreen {
