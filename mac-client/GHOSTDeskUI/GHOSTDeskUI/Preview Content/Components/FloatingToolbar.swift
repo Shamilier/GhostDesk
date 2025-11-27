@@ -200,6 +200,13 @@ private struct TabSwitcher: View {
                     ns: ns,
                     glassNamespace: glassNamespace) {
                 guard overlay.isControlEnabled(.toolbarListenTab) else { return }
+
+                if overlay.isTutorialVisible,
+                   overlay.activeTutorialStep?.id == overlay.listenTutorialStepID {
+                    overlay.advanceFromListenToControlsAnimated()
+                    return
+                }
+
                 selected = .listen
                 onTabTap()
                 overlay.requestListenPanelAdvance()

@@ -829,9 +829,7 @@ struct OverlayRootView: View {
 
     private func handleListenPanelAdvanceRequest() {
         guard overlay.isTutorialVisible, overlay.activeTutorialStep?.id == overlay.listenTutorialStepID else { return }
-
-        selectedTab = .listen
-        isExpanded = true
+        ensureListenPanelExpandedForTutorial()
     }
 
     private func ensureListenPanelExpandedForTutorial() {
