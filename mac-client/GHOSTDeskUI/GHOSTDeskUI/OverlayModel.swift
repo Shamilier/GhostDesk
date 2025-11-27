@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import Combine
+import SwiftUI
 
 final class OverlayModel: ObservableObject {
     private enum Defaults {
@@ -28,6 +29,7 @@ final class OverlayModel: ObservableObject {
         case listenPanelControls
         case listenStartButton
         case listenMicButton
+        case listenInsights
         case listenRecordingControls
         case ask
         case eye
@@ -191,10 +193,18 @@ final class OverlayModel: ObservableObject {
     // Tutorial
     @Published var isTutorialVisible: Bool = false
     @Published var tutorialSteps: [TutorialStep] = []
-    @Published var activeTutorialStepIndex: Int = 0
+    @Published var activeTutorialStepIndex: Int = 0 {
+        didSet {
+            if oldValue != activeTutorialStepIndex {
+                handleTutorialStepChange(fromIndex: oldValue, toIndex: activeTutorialStepIndex)
+            }
+        }
+    }
     @Published private(set) var toolbarAnchors: [ToolbarAnchorID: CGRect] = [:]
     @Published private(set) var tutorialObstacles = TutorialObstacles()
     @Published private(set) var listenPanelAdvanceToken: Int = 0
+    @Published var tutorialTranscriptScript: [TranscriptMessage] = []
+    @Published var isInsightsCalloutReady: Bool = true
     private var pendingTutorialStepID: String?
 
 
@@ -205,19 +215,25 @@ final class OverlayModel: ObservableObject {
     private let listenPanelAdvanceDelay: TimeInterval = 0.5
     private let listenStepID = "listen"
     private let listenRecordingControlsStepID = "listen_panel_controls"
+    private let listenInsightsIntroStepID = "listen_insights_intro"
     let interactionPolicy = TutorialInteractionPolicy(
         allowedControlsByStepID: [
             "listen_panel_controls": [
                 .listenStartButton,
                 .listenMicButton,
+            ],
+            "listen_insights_intro": [
+                .listenInsightsToggle
             ]
         ]
     )
     private weak var authState: AuthState?
     private var listenPanelAdvanceTask: Task<Void, Never>?
+    private var insightsIntroTask: Task<Void, Never>?
 
     var listenTutorialStepID: String { listenStepID }
     var listenPanelControlsTutorialStepID: String { listenRecordingControlsStepID }
+    var listenInsightsIntroTutorialStepID: String { listenInsightsIntroStepID }
 
     // Вычисляемые
     var alpha: CGFloat { transparencySteps[clamp(transparencyIndex, 0, transparencySteps.count - 1)] }
@@ -244,6 +260,12 @@ final class OverlayModel: ObservableObject {
     var activeTutorialStep: TutorialStep? {
         guard tutorialSteps.indices.contains(activeTutorialStepIndex) else { return nil }
         return tutorialSteps[activeTutorialStepIndex]
+    }
+
+    func isCalloutReady(for stepID: String?) -> Bool {
+        guard let stepID else { return true }
+        if stepID == listenInsightsIntroStepID { return isInsightsCalloutReady }
+        return true
     }
 
     func isControlEnabled(_ control: TutorialControlID) -> Bool {
@@ -477,6 +499,7 @@ final class OverlayModel: ObservableObject {
         isTutorialVisible = false
         cancelListenPanelAdvanceTask()
         pendingTutorialStepID = nil
+        cancelInsightsIntroSequence()
     }
 
     func nextTutorialStep() {
@@ -542,6 +565,11 @@ final class OverlayModel: ObservableObject {
     private func cancelListenPanelAdvanceTask() {
         listenPanelAdvanceTask?.cancel()
         listenPanelAdvanceTask = nil
+    }
+
+    func advanceFromListenControlsToInsightsIntro() {
+        guard isTutorialVisible, activeTutorialStep?.id == listenRecordingControlsStepID else { return }
+        goToTutorialStep(withID: listenInsightsIntroStepID)
     }
 
     private func goToTutorialStep(withID id: String) {
@@ -653,6 +681,7 @@ final class OverlayModel: ObservableObject {
         let shell = toolbarAnchors[.shell] ?? CGRect(x: 300, y: 160, width: 420, height: 60)
         let listen = toolbarAnchors[.listen] ?? shell
         let listenPanelControls = recordingControlsFrame() ?? .zero
+        let listenInsights = toolbarAnchors[.listenInsights] ?? listen
         let ask = toolbarAnchors[.ask] ?? shell
         let eye = toolbarAnchors[.eye] ?? shell
         let menu = toolbarAnchors[.menu] ?? shell
@@ -673,6 +702,14 @@ final class OverlayModel: ObservableObject {
                 targetFrameInScreenSpace: listenPanelControls,
                 calloutPosition: .trailing,
                 anchorID: .listenRecordingControls
+            ),
+            TutorialStep(
+                id: listenInsightsIntroStepID,
+                title: "Инсайты по звуку",
+                description: "Здесь будут появляться готовые инсайты и резюме по системному звуку и микрофону. Нажмите «Инсайты», чтобы переключиться из транскрипта в аналитический режим.",
+                targetFrameInScreenSpace: listenInsights,
+                calloutPosition: .trailing,
+                anchorID: .listenInsights
             ),
             TutorialStep(
                 id: "ask",
@@ -699,5 +736,75 @@ final class OverlayModel: ObservableObject {
                 anchorID: .menu
             )
         ]
+    }
+
+    private func handleTutorialStepChange(fromIndex: Int, toIndex: Int) {
+        let oldID = tutorialStepID(at: fromIndex)
+        let newID = tutorialStepID(at: toIndex)
+
+        if oldID == listenInsightsIntroStepID, newID != listenInsightsIntroStepID {
+            cancelInsightsIntroSequence()
+        }
+
+        if newID == listenInsightsIntroStepID {
+            startInsightsIntroSequence()
+        }
+    }
+
+    private func tutorialStepID(at index: Int) -> String? {
+        guard tutorialSteps.indices.contains(index) else { return nil }
+        return tutorialSteps[index].id
+    }
+
+    private func startInsightsIntroSequence() {
+        cancelInsightsIntroSequence()
+
+        insightsIntroTask = Task { [weak self] in
+            guard let self else { return }
+
+            await MainActor.run {
+                self.isInsightsCalloutReady = false
+                self.tutorialTranscriptScript = []
+            }
+
+            let script: [TranscriptMessage] = [
+                TranscriptMessage(source: .system, text: "Вот так будут выглядеть фрагменты транскрипта системного звука."),
+                TranscriptMessage(source: .microphone, text: "А здесь — фразы, записанные с микрофона пользователя."),
+            ]
+
+            let delays: [UInt64] = [350_000_000, 420_000_000]
+
+            for (index, message) in script.enumerated() {
+                if index < delays.count {
+                    try? await Task.sleep(nanoseconds: delays[index])
+                }
+
+                guard !Task.isCancelled else { return }
+
+                await MainActor.run {
+                    withAnimation(.easeInOut(duration: 0.28)) {
+                        self.tutorialTranscriptScript.append(message)
+                    }
+                }
+            }
+
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                self.isInsightsCalloutReady = true
+            }
+        }
+    }
+
+    private func cancelInsightsIntroSequence() {
+        insightsIntroTask?.cancel()
+        insightsIntroTask = nil
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.tutorialTranscriptScript = []
+            self.isInsightsCalloutReady = true
+        }
     }
 }

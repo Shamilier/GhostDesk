@@ -205,6 +205,7 @@ struct OverlayRootView: View {
                     }
                     .buttonStyle(GlassPill())
                     .disabled(!overlay.isControlEnabled(.listenInsightsToggle))
+                    .background(ToolbarAnchorReporter(id: .listenInsights))
 
                     let phase = transcriptionCoordinator.overallPhase
                     let running  = phase == .running
@@ -213,6 +214,10 @@ struct OverlayRootView: View {
 
                     Button {
                         guard overlay.isControlEnabled(.listenStartButton) else { return }
+                        if overlay.isTutorialVisible, overlay.activeTutorialStep?.id == overlay.listenPanelControlsTutorialStepID {
+                            overlay.advanceFromListenControlsToInsightsIntro()
+                            return
+                        }
                         switch phase {
                         case .idle: transcriptionCoordinator.startRecording()
                         case .starting, .running, .stopping: transcriptionCoordinator.stopAll()
@@ -230,6 +235,10 @@ struct OverlayRootView: View {
 
                     Button {
                         guard overlay.isControlEnabled(.listenMicButton) else { return }
+                        if overlay.isTutorialVisible, overlay.activeTutorialStep?.id == overlay.listenPanelControlsTutorialStepID {
+                            overlay.advanceFromListenControlsToInsightsIntro()
+                            return
+                        }
                         transcriptionCoordinator.setMicrophoneArmed(!transcriptionCoordinator.isMicrophoneArmed)
                     } label: {
                         Label("Микрофон", systemImage: transcriptionCoordinator.isMicrophoneArmed ? "mic.fill" : "mic")
@@ -248,6 +257,7 @@ struct OverlayRootView: View {
                     TranscriptChatView(
                         systemState: systemChannelState,
                         microphoneState: microphoneChannelState,
+                        tutorialScript: (overlay.isTutorialVisible && overlay.activeTutorialStep?.id == overlay.listenInsightsIntroTutorialStepID) ? overlay.tutorialTranscriptScript : nil,
                         autoScroll: $autoScroll
                     )
                     .transition(.opacity.combined(with: .move(edge: .top)))
@@ -294,16 +304,23 @@ struct OverlayRootView: View {
     private struct TranscriptChatView: View {
         let systemState: OverlayModel.TranscriptionChannelState
         let microphoneState: OverlayModel.TranscriptionChannelState
+        let tutorialScript: [OverlayModel.TranscriptMessage]?
         @Binding var autoScroll: Bool
 
         @State private var hasAppeared = false
+
+        private var isTutorialScriptActive: Bool { tutorialScript != nil }
 
         // Автоскроллим только если экран уже появился и авто-скролл включён
         private var shouldAutoScroll: Bool { hasAppeared && autoScroll }
 
         // Объединённая лента
         private var mergedMessages: [OverlayModel.TranscriptMessage] {
-            (systemState.transcriptLog + microphoneState.transcriptLog)
+            if let tutorialScript {
+                return tutorialScript
+            }
+
+            return (systemState.transcriptLog + microphoneState.transcriptLog)
                 .sorted { lhs, rhs in
                     if lhs.timestamp == rhs.timestamp {
                         return lhs.id.uuidString < rhs.id.uuidString
@@ -332,6 +349,7 @@ struct OverlayRootView: View {
         }
 
         private func partialText(for kind: OverlayModel.AudioSourceKind) -> String? {
+            guard !isTutorialScriptActive else { return nil }
             let text: String = (kind == .system) ? systemState.partialText : microphoneState.partialText
             return text.isEmpty ? nil : text
         }
@@ -416,6 +434,9 @@ struct OverlayRootView: View {
                         if shouldAutoScroll { scrollToBottom(proxy) }
                     }
                     .onChange(of: microphoneState.partialText) { _ in
+                        if shouldAutoScroll { scrollToBottom(proxy) }
+                    }
+                    .onChange(of: tutorialScript?.last?.id) { _ in
                         if shouldAutoScroll { scrollToBottom(proxy) }
                     }
                     .onChange(of: autoScroll) { enabled in
