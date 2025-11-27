@@ -106,9 +106,6 @@ struct OverlayRootView: View {
                 }
             )
             .padding(.top, 8)
-            .onPreferenceChange(ToolbarAnchorPreferenceKey.self) { anchors in
-                overlay.updateToolbarAnchors(anchors)
-            }
 
             // ⬇️ ГЛАВНОЕ: если открыт Settings — показываем его вместо остальных панелей
             if isExpanded {
@@ -127,6 +124,9 @@ struct OverlayRootView: View {
         }
         // окно подстраивается по высоте как и для других панелей
         .overlayAutoResize()
+        .onPreferenceChange(ToolbarAnchorPreferenceKey.self) { anchors in
+            overlay.updateToolbarAnchors(anchors)
+        }
         .onPreferenceChange(TutorialObstaclePreferenceKey.self) { frames in
             overlay.updateTutorialPanelFrames(frames.map { $0.asTutorialObstacleFrame })
         }
