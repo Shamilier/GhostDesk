@@ -223,6 +223,7 @@ struct OverlayRootView: View {
                     }
                     .buttonStyle(GlassPill(tint: (running || stopping) ? .red : .accentColor))
                     .disabled(starting)
+                    .background(ToolbarAnchorReporter(id: .listenStartButton))
 
                     Button {
                         transcriptionCoordinator.setMicrophoneArmed(!transcriptionCoordinator.isMicrophoneArmed)
@@ -230,6 +231,7 @@ struct OverlayRootView: View {
                         Label("Микрофон", systemImage: transcriptionCoordinator.isMicrophoneArmed ? "mic.fill" : "mic")
                     }
                     .buttonStyle(GlassPill(tint: transcriptionCoordinator.isMicrophoneArmed ? .pink : .secondary))
+                    .background(ToolbarAnchorReporter(id: .listenMicButton))
                 }
                 .background(ToolbarAnchorReporter(id: .listenPanelControls))
                 .padding(.vertical, 2)
