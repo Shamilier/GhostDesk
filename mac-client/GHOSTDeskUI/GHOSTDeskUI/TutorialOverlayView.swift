@@ -12,10 +12,12 @@ struct TutorialOverlayView: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
-                spotlightLayer(in: proxy)
+                spotlightLayer(for: overlay.activeTutorialStep, in: proxy)
 
                 if let step = overlay.activeTutorialStep, overlay.isCalloutReady(for: step.id) {
-                    connector(for: step, in: proxy)
+                    if step.showsSpotlight, step.anchorID != nil {
+                        connector(for: step, in: proxy)
+                    }
                     callout(for: step, in: proxy)
                 }
             }
@@ -30,9 +32,10 @@ struct TutorialOverlayView: View {
         }
     }
 
-    private func spotlightLayer(in proxy: GeometryProxy) -> some View {
-        let hasReadyCallout = overlay.isCalloutReady(for: overlay.activeTutorialStep?.id)
-        let targetRect = hasReadyCallout ? localRect(for: overlay.activeTutorialStep?.targetFrameInScreenSpace ?? .zero) : .zero
+    private func spotlightLayer(for step: OverlayModel.TutorialStep?, in proxy: GeometryProxy) -> some View {
+        let hasReadyCallout = overlay.isCalloutReady(for: step?.id)
+        let shouldDrawSpotlight = (step?.showsSpotlight ?? true) && step?.anchorID != nil
+        let targetRect = (hasReadyCallout && shouldDrawSpotlight) ? localRect(for: step?.targetFrameInScreenSpace ?? .zero) : .zero
 
         return ZStack {
             Color.black.opacity(dimOpacity)

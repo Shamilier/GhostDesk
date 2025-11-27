@@ -157,6 +157,9 @@ struct OverlayRootView: View {
         .onChange(of: overlay.listenPanelAdvanceToken) { _ in
             handleListenPanelAdvanceRequest()
         }
+        .onChange(of: overlay.tutorialCollapseToken) { _ in
+            collapsePanelsForTutorial()
+        }
 
         .onChange(of: showTranscript) { _ in
             OverlayWindowManager.shared.scheduleResize(animate: false)
@@ -810,6 +813,14 @@ struct OverlayRootView: View {
 
         selectedTab = .listen
         isExpanded = true
+    }
+
+    private func collapsePanelsForTutorial() {
+        OverlayWindowManager.shared.withResizeSuspended(0.86, finalAnimate: true)
+        withAnimation(.spring(response: 0.2, dampingFraction: 0.86)) {
+            isExpanded = false
+            selectedTab = .ask
+        }
     }
 }
 

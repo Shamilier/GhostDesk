@@ -77,6 +77,10 @@ final class OverlayModel: ObservableObject {
         case listenInsightsToggle
         case listenStartButton
         case listenMicButton
+
+        case quickInsightWhatToSayNext
+        case quickInsightWhatIsThisAbout
+        case quickInsightWhatToAsk
     }
 
     struct TutorialInteractionPolicy {
@@ -96,6 +100,7 @@ final class OverlayModel: ObservableObject {
         var targetFrameInScreenSpace: CGRect
         var calloutPosition: CalloutPosition
         var anchorID: ToolbarAnchorID?
+        var showsSpotlight: Bool = true
     }
 
     struct TranscriptMessage: Identifiable, Equatable {
@@ -203,8 +208,10 @@ final class OverlayModel: ObservableObject {
     @Published private(set) var toolbarAnchors: [ToolbarAnchorID: CGRect] = [:]
     @Published private(set) var tutorialObstacles = TutorialObstacles()
     @Published private(set) var listenPanelAdvanceToken: Int = 0
+    @Published private(set) var tutorialCollapseToken: Int = 0
     @Published var tutorialTranscriptScript: [TranscriptMessage] = []
     @Published var isInsightsCalloutReady: Bool = true
+    @Published var tutorialQuickInsightSample: String? = nil
     private var pendingTutorialStepID: String?
 
 
@@ -216,6 +223,8 @@ final class OverlayModel: ObservableObject {
     private let listenStepID = "listen"
     private let listenRecordingControlsStepID = "listen_panel_controls"
     private let listenInsightsIntroStepID = "listen_insights_intro"
+    private let listenQuickInsightsStepID = "listen_quick_insights"
+    private let askStepID = "ask"
     let interactionPolicy = TutorialInteractionPolicy(
         allowedControlsByStepID: [
             "listen_panel_controls": [
@@ -224,6 +233,11 @@ final class OverlayModel: ObservableObject {
             ],
             "listen_insights_intro": [
                 .listenInsightsToggle
+            ],
+            "listen_quick_insights": [
+                .quickInsightWhatToSayNext,
+                .quickInsightWhatIsThisAbout,
+                .quickInsightWhatToAsk
             ]
         ]
     )
@@ -234,6 +248,8 @@ final class OverlayModel: ObservableObject {
     var listenTutorialStepID: String { listenStepID }
     var listenPanelControlsTutorialStepID: String { listenRecordingControlsStepID }
     var listenInsightsIntroTutorialStepID: String { listenInsightsIntroStepID }
+    var listenQuickInsightsTutorialStepID: String { listenQuickInsightsStepID }
+    var askTutorialStepID: String { askStepID }
 
     // Вычисляемые
     var alpha: CGFloat { transparencySteps[clamp(transparencyIndex, 0, transparencySteps.count - 1)] }
@@ -476,6 +492,7 @@ final class OverlayModel: ObservableObject {
         }
 
         if tutorialObstacles != next { tutorialObstacles = next }
+        updateTutorialTargetsForAnchors()
     }
 
     private func sanitizeObstacleFrame(_ frame: CGRect?) -> CGRect? {
@@ -500,13 +517,23 @@ final class OverlayModel: ObservableObject {
         cancelListenPanelAdvanceTask()
         pendingTutorialStepID = nil
         cancelInsightsIntroSequence()
+        tutorialQuickInsightSample = nil
     }
 
     func nextTutorialStep() {
         guard !tutorialSteps.isEmpty else { return }
-        if isTutorialVisible, activeTutorialStep?.id == listenStepID {
-            requestListenPanelAdvance()
-            return
+        if isTutorialVisible, let currentStepID = activeTutorialStep?.id {
+            if currentStepID == listenStepID {
+                requestListenPanelAdvance()
+                return
+            }
+
+            if currentStepID == listenQuickInsightsStepID {
+                tutorialQuickInsightSample = nil
+                tutorialCollapseToken &+= 1
+                goToTutorialStep(withID: askStepID)
+                return
+            }
         }
         cancelListenPanelAdvanceTask()
         if activeTutorialStepIndex < tutorialSteps.count - 1 {
@@ -652,13 +679,18 @@ final class OverlayModel: ObservableObject {
         var didChange = false
 
         for index in updated.indices {
-            guard let anchorID = updated[index].anchorID else { continue }
-
+            let step = updated[index]
             let targetFrame: CGRect?
-            if anchorID == .listenRecordingControls {
+            let anchorID = step.anchorID
+
+            if step.id == listenQuickInsightsStepID {
+                targetFrame = quickInsightsTargetFrame()
+            } else if anchorID == .listenRecordingControls {
                 targetFrame = recordingControlsFrame()
-            } else {
+            } else if let anchorID {
                 targetFrame = toolbarAnchors[anchorID]
+            } else {
+                targetFrame = step.targetFrameInScreenSpace
             }
 
             if let frame = targetFrame, !frame.isEmpty {
@@ -666,7 +698,7 @@ final class OverlayModel: ObservableObject {
                     updated[index].targetFrameInScreenSpace = frame
                     didChange = true
                 }
-            } else if (anchorID == .listenPanelControls || anchorID == .listenRecordingControls), !updated[index].targetFrameInScreenSpace.isEmpty {
+            } else if (anchorID == .listenPanelControls || anchorID == .listenRecordingControls || step.id == listenQuickInsightsStepID), !updated[index].targetFrameInScreenSpace.isEmpty {
                 updated[index].targetFrameInScreenSpace = .zero
                 didChange = true
             }
@@ -677,11 +709,24 @@ final class OverlayModel: ObservableObject {
         }
     }
 
+    private func quickInsightsTargetFrame() -> CGRect? {
+        if let listenPanel = tutorialObstacles.listenPanelFrameInScreen, !listenPanel.isEmpty {
+            return listenPanel
+        }
+
+        if let listenAnchor = toolbarAnchors[.listen], !listenAnchor.isEmpty {
+            return listenAnchor
+        }
+
+        return toolbarAnchors[.listenInsights]
+    }
+
     private func makeDefaultTutorialSteps() -> [TutorialStep] {
         let shell = toolbarAnchors[.shell] ?? CGRect(x: 300, y: 160, width: 420, height: 60)
         let listen = toolbarAnchors[.listen] ?? shell
         let listenPanelControls = recordingControlsFrame() ?? .zero
         let listenInsights = toolbarAnchors[.listenInsights] ?? listen
+        let listenPanel = tutorialObstacles.listenPanelFrameInScreen ?? listen
         let ask = toolbarAnchors[.ask] ?? shell
         let eye = toolbarAnchors[.eye] ?? shell
         let menu = toolbarAnchors[.menu] ?? shell
@@ -712,7 +757,16 @@ final class OverlayModel: ObservableObject {
                 anchorID: .listenInsights
             ),
             TutorialStep(
-                id: "ask",
+                id: listenQuickInsightsStepID,
+                title: "Быстрые инсайты",
+                description: "Выберите один из сценариев, чтобы Ghost AI предложил идею, как продолжить разговор или о чём спросить собеседника.",
+                targetFrameInScreenSpace: listenPanel,
+                calloutPosition: .trailing,
+                anchorID: nil,
+                showsSpotlight: false
+            ),
+            TutorialStep(
+                id: askStepID,
                 title: "Задавайте вопросы",
                 description: "Перейдите на вкладку Ask, чтобы сформулировать запрос к ассистенту или отправить свежий транскрипт одним нажатием.",
                 targetFrameInScreenSpace: ask,
@@ -748,6 +802,14 @@ final class OverlayModel: ObservableObject {
 
         if newID == listenInsightsIntroStepID {
             startInsightsIntroSequence()
+        }
+
+        if oldID == listenQuickInsightsStepID, newID != listenQuickInsightsStepID {
+            tutorialQuickInsightSample = nil
+        }
+
+        if newID == listenQuickInsightsStepID {
+            tutorialQuickInsightSample = nil
         }
     }
 

@@ -6,23 +6,40 @@ struct InsightsPanel: View {
     var onClose: () -> Void
     @ObservedObject private var overlay = OverlayModel.shared
 
+    private var isQuickInsightsStepActive: Bool {
+        overlay.isTutorialVisible && overlay.activeTutorialStep?.id == overlay.listenQuickInsightsTutorialStepID
+    }
+
+    private var tutorialQuickInsightSample: String? {
+        guard isQuickInsightsStepActive else {
+            return nil
+        }
+        return overlay.tutorialQuickInsightSample
+    }
+
     private var selection: HintAgent.Intent? {
         hint.activeIntent ?? hint.lastCompletedIntent
     }
 
     private var cardTitle: String {
-        selection?.displayTitle ?? "Инсайты разговора"
+        if tutorialQuickInsightSample != nil { return "Пример инсайта" }
+        return selection?.displayTitle ?? "Инсайты разговора"
     }
 
     private var cardSubtitle: String {
-        selection?.strapline ?? "Выберите подсказку, чтобы Ghost AI проанализировал беседу."
+        if tutorialQuickInsightSample != nil { return "Так будет выглядеть подсказка от Ghost AI по выбранному сценарию." }
+        return selection?.strapline ?? "Выберите подсказку, чтобы Ghost AI проанализировал беседу."
     }
 
     private var cardIcon: String {
-        selection?.symbolName ?? "sparkles"
+        if tutorialQuickInsightSample != nil { return "sparkles" }
+        return selection?.symbolName ?? "sparkles"
     }
 
     private var placeholder: String {
+        if isQuickInsightsStepActive {
+            return "Нажмите один из быстрых инсайтов, чтобы увидеть пример подсказки."
+        }
         if let active = hint.activeIntent { return active.placeholder }
         if let last = hint.lastCompletedIntent { return last.placeholder }
         return "Ghost AI соберёт контекст и предложит идеи, как только вы нажмёте одну из кнопок."
@@ -41,10 +58,14 @@ struct InsightsPanel: View {
 
                 Spacer(minLength: 12)
 
-                Button(action: onClose) {
+                Button(action: {
+                    guard !isQuickInsightsStepActive else { return }
+                    onClose()
+                }) {
                     Image(systemName: "xmark")
                 }
                 .buttonStyle(MiniIconButton())
+                .disabled(isQuickInsightsStepActive)
                 .accessibilityLabel("Скрыть инсайты")
             }
 
@@ -57,7 +78,20 @@ struct InsightsPanel: View {
             ) {
                 ForEach(HintAgent.insightIntents) { intent in
                     let isSelected = selection == intent
+                    let controlID = controlID(for: intent)
+                    let isEnabled = overlay.isControlEnabled(controlID)
                     Button {
+                        guard overlay.isControlEnabled(controlID) else { return }
+
+                        if overlay.isTutorialVisible,
+                           overlay.activeTutorialStep?.id == overlay.listenQuickInsightsTutorialStepID {
+                            overlay.tutorialQuickInsightSample = """
+Пример инсайта: Ghost AI может подсказать, как продолжить разговор.
+Например: «Предложите обсудить сроки, чтобы убедиться, что вы с собеседником на одной волне».
+"""
+                            return
+                        }
+
                         onRequest(intent)
                     } label: {
                         HStack(spacing: 8) {
@@ -71,7 +105,7 @@ struct InsightsPanel: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(GlassPill(tint: isSelected ? .accentColor : .secondary))
-                    .disabled(hint.isRunning && hint.activeIntent != intent)
+                    .disabled((hint.isRunning && hint.activeIntent != intent) || !isEnabled)
                 }
             }
 
@@ -94,7 +128,9 @@ struct InsightsPanel: View {
                     Spacer()
 
                     VStack(alignment: .trailing, spacing: 6) {
-                        if hint.isRunning {
+                        if isQuickInsightsStepActive {
+                            EmptyView()
+                        } else if hint.isRunning {
                             ProgressView()
                                 .controlSize(.small)
                             if let started = hint.startedAt {
@@ -124,7 +160,20 @@ struct InsightsPanel: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
-                        if let err = hint.error {
+                        if isQuickInsightsStepActive {
+                            if let tutorialSample = tutorialQuickInsightSample {
+                                Text(tutorialSample)
+                                    .font(.system(size: 15, weight: .regular, design: .default))
+                                    .foregroundStyle(.primary)
+                                    .lineSpacing(4)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            } else {
+                                Text(placeholder)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        } else if let err = hint.error {
                             Label(err, systemImage: "exclamationmark.triangle")
                                 .font(.subheadline)
                                 .foregroundStyle(.red)
@@ -189,6 +238,8 @@ struct InsightsPanel: View {
                 }
                 .padding(.horizontal, 18)
                 .padding(.vertical, 14)
+                .allowsHitTesting(!isQuickInsightsStepActive)
+                .opacity(isQuickInsightsStepActive ? 0.5 : 1)
             }
             .background(
                 Group {
@@ -206,6 +257,19 @@ struct InsightsPanel: View {
             .clipShape(shape)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private func controlID(for intent: HintAgent.Intent) -> OverlayModel.TutorialControlID {
+        switch intent {
+        case .nextUtterance:
+            return .quickInsightWhatToSayNext
+        case .topicSummary:
+            return .quickInsightWhatIsThisAbout
+        case .followUpQuestion:
+            return .quickInsightWhatToAsk
+        case .general:
+            return .listenInsightsToggle
+        }
     }
 }
 
