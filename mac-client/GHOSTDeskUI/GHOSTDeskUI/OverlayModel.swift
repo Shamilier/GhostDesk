@@ -258,6 +258,8 @@ final class OverlayModel: ObservableObject {
     private var quickInsightsToAskTask: Task<Void, Never>?
     private var backTransitionTask: Task<Void, Never>?
     private var askToSubmitTransitionTask: Task<Void, Never>?
+    private var isTransitioningFromListenToControls = false
+    private var shouldUnsuppressAfterListenAdvance = false
     private var isTransitioningFromQuickInsights = false
     private var isTransitioningFromAskToSubmit = false
     private var isBackTransitionInProgress = false
@@ -539,6 +541,8 @@ final class OverlayModel: ObservableObject {
         cancelQuickInsightsToAskTransition()
         cancelBackTransitionIfNeeded()
         cancelAskToSubmitTransition()
+        isTransitioningFromListenToControls = false
+        shouldUnsuppressAfterListenAdvance = false
         suppressCalloutForCurrentStep = false
         tutorialQuickInsightSample = nil
     }
@@ -547,7 +551,7 @@ final class OverlayModel: ObservableObject {
         guard !tutorialSteps.isEmpty else { return }
         if isTutorialVisible, let currentStepID = activeTutorialStep?.id {
             if currentStepID == listenStepID {
-                requestListenPanelAdvance()
+                advanceFromListenToControlsAnimated()
                 return
             }
 
@@ -609,10 +613,25 @@ final class OverlayModel: ObservableObject {
         activeTutorialStepIndex = max(0, activeTutorialStepIndex - 1)
     }
 
-    func requestListenPanelAdvance() {
+    func advanceFromListenToControlsAnimated() {
         guard isTutorialVisible, activeTutorialStep?.id == listenStepID else { return }
+        guard !isTransitioningFromListenToControls else { return }
 
-        cancelListenPanelAdvanceTask()
+        isTransitioningFromListenToControls = true
+        shouldUnsuppressAfterListenAdvance = true
+
+        withAnimation(.easeOut(duration: 0.2)) {
+            suppressCalloutForCurrentStep = true
+        }
+
+        tutorialEnsureExpandedToken &+= 1
+        requestListenPanelAdvance()
+    }
+
+    func requestListenPanelAdvance() {
+        guard isTutorialVisible, activeTutorialStep?.id == listenStepID || isTransitioningFromListenToControls else { return }
+
+        cancelListenPanelAdvanceTask(resetTransitionState: false)
         listenPanelAdvanceToken &+= 1
 
         let startedAt = Date()
@@ -642,6 +661,7 @@ final class OverlayModel: ObservableObject {
                     guard self.isTutorialVisible, self.activeTutorialStep?.id == self.listenStepID else { return }
                     guard let frame = self.recordingControlsFrame(), !frame.isEmpty else { return }
                     self.goToTutorialStep(withID: self.listenRecordingControlsStepID)
+                    self.listenPanelAdvanceTask = nil
                 }
 
                 return
@@ -649,9 +669,13 @@ final class OverlayModel: ObservableObject {
         }
     }
 
-    private func cancelListenPanelAdvanceTask() {
+    private func cancelListenPanelAdvanceTask(resetTransitionState: Bool = true) {
         listenPanelAdvanceTask?.cancel()
         listenPanelAdvanceTask = nil
+        if resetTransitionState {
+            isTransitioningFromListenToControls = false
+            shouldUnsuppressAfterListenAdvance = false
+        }
     }
 
     func requestAskPanelExpandedForTutorial() {
@@ -682,6 +706,19 @@ final class OverlayModel: ObservableObject {
 
         pendingTutorialStepID = nil
         activeTutorialStepIndex = index
+        completeListenToControlsTransitionIfNeeded()
+    }
+
+    private func completeListenToControlsTransitionIfNeeded() {
+        guard shouldUnsuppressAfterListenAdvance else { return }
+        guard activeTutorialStep?.id == listenRecordingControlsStepID else { return }
+
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.9)) {
+            suppressCalloutForCurrentStep = false
+        }
+
+        isTransitioningFromListenToControls = false
+        shouldUnsuppressAfterListenAdvance = false
     }
 
     private func tryActivatePendingTutorialStepIfNeeded() {
