@@ -209,8 +209,11 @@ final class OverlayModel: ObservableObject {
     @Published private(set) var tutorialObstacles = TutorialObstacles()
     @Published private(set) var listenPanelAdvanceToken: Int = 0
     @Published private(set) var tutorialCollapseToken: Int = 0
+    @Published private(set) var tutorialEnsureExpandedToken: Int = 0
+    @Published private(set) var tutorialShowInsightsToken: Int = 0
     @Published var tutorialTranscriptScript: [TranscriptMessage] = []
     @Published var isInsightsCalloutReady: Bool = true
+    @Published var suppressCalloutForCurrentStep: Bool = false
     @Published var tutorialQuickInsightSample: String? = nil
     private var pendingTutorialStepID: String?
 
@@ -244,6 +247,8 @@ final class OverlayModel: ObservableObject {
     private weak var authState: AuthState?
     private var listenPanelAdvanceTask: Task<Void, Never>?
     private var insightsIntroTask: Task<Void, Never>?
+    private var quickInsightsToAskTask: Task<Void, Never>?
+    private var isTransitioningFromQuickInsights = false
 
     var listenTutorialStepID: String { listenStepID }
     var listenPanelControlsTutorialStepID: String { listenRecordingControlsStepID }
@@ -280,6 +285,7 @@ final class OverlayModel: ObservableObject {
 
     func isCalloutReady(for stepID: String?) -> Bool {
         guard let stepID else { return true }
+        if suppressCalloutForCurrentStep { return false }
         if stepID == listenInsightsIntroStepID { return isInsightsCalloutReady }
         return true
     }
@@ -517,6 +523,8 @@ final class OverlayModel: ObservableObject {
         cancelListenPanelAdvanceTask()
         pendingTutorialStepID = nil
         cancelInsightsIntroSequence()
+        cancelQuickInsightsToAskTransition()
+        suppressCalloutForCurrentStep = false
         tutorialQuickInsightSample = nil
     }
 
@@ -528,10 +536,13 @@ final class OverlayModel: ObservableObject {
                 return
             }
 
+            if currentStepID == listenInsightsIntroStepID {
+                advanceFromInsightsIntroToQuickInsights()
+                return
+            }
+
             if currentStepID == listenQuickInsightsStepID {
-                tutorialQuickInsightSample = nil
-                tutorialCollapseToken &+= 1
-                goToTutorialStep(withID: askStepID)
+                advanceFromQuickInsightsToAskAnimated()
                 return
             }
         }
@@ -597,6 +608,13 @@ final class OverlayModel: ObservableObject {
     func advanceFromListenControlsToInsightsIntro() {
         guard isTutorialVisible, activeTutorialStep?.id == listenRecordingControlsStepID else { return }
         goToTutorialStep(withID: listenInsightsIntroStepID)
+    }
+
+    func advanceFromInsightsIntroToQuickInsights() {
+        guard isTutorialVisible, activeTutorialStep?.id == listenInsightsIntroStepID else { return }
+        tutorialEnsureExpandedToken &+= 1
+        tutorialShowInsightsToken &+= 1
+        goToTutorialStep(withID: listenQuickInsightsStepID)
     }
 
     private func goToTutorialStep(withID id: String) {
@@ -805,7 +823,9 @@ final class OverlayModel: ObservableObject {
         }
 
         if oldID == listenQuickInsightsStepID, newID != listenQuickInsightsStepID {
+            cancelQuickInsightsToAskTransition()
             tutorialQuickInsightSample = nil
+            suppressCalloutForCurrentStep = false
         }
 
         if newID == listenQuickInsightsStepID {
@@ -870,5 +890,42 @@ final class OverlayModel: ObservableObject {
             self.tutorialTranscriptScript = []
             self.isInsightsCalloutReady = true
         }
+    }
+
+    func advanceFromQuickInsightsToAskAnimated() {
+        guard isTutorialVisible, activeTutorialStep?.id == listenQuickInsightsStepID else { return }
+        guard !isTransitioningFromQuickInsights else { return }
+
+        isTransitioningFromQuickInsights = true
+        tutorialQuickInsightSample = nil
+        withAnimation(.easeOut(duration: 0.2)) {
+            suppressCalloutForCurrentStep = true
+        }
+
+        tutorialCollapseToken &+= 1
+
+        quickInsightsToAskTask?.cancel()
+        quickInsightsToAskTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 520_000_000)
+
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+
+                self.goToTutorialStep(withID: self.askStepID)
+
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.9)) {
+                    self.suppressCalloutForCurrentStep = false
+                }
+
+                self.isTransitioningFromQuickInsights = false
+                self.quickInsightsToAskTask = nil
+            }
+        }
+    }
+
+    private func cancelQuickInsightsToAskTransition() {
+        quickInsightsToAskTask?.cancel()
+        quickInsightsToAskTask = nil
+        isTransitioningFromQuickInsights = false
     }
 }
