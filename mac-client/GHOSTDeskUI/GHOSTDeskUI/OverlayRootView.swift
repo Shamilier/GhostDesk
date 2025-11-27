@@ -163,6 +163,9 @@ struct OverlayRootView: View {
         .onChange(of: overlay.tutorialEnsureExpandedToken) { _ in
             ensureListenPanelExpandedForTutorial()
         }
+        .onChange(of: overlay.tutorialEnsureAskExpandedToken) { _ in
+            ensureAskPanelExpandedForTutorial()
+        }
         .onChange(of: overlay.tutorialShowInsightsToken) { _ in
             showInsightsForTutorial()
         }
@@ -840,6 +843,18 @@ struct OverlayRootView: View {
         }
     }
 
+    private func ensureAskPanelExpandedForTutorial() {
+        guard overlay.isTutorialVisible else { return }
+
+        withAnimation(.spring(response: 0.2, dampingFraction: 0.86)) {
+            selectedTab = .ask
+            isExpanded = true
+        }
+
+        OverlayWindowManager.shared.scheduleResize(animate: false)
+        OverlayWindowManager.shared.kickFinalResize(after: 0.2)
+    }
+
     private func showInsightsForTutorial() {
         guard overlay.isTutorialVisible else { return }
 
@@ -1200,6 +1215,7 @@ private struct AskBar: View {
             .keyboardShortcut(.return, modifiers: [])
             .buttonStyle(GlassPill())
             .disabled(isSubmitting)
+            .background(ToolbarAnchorReporter(id: .askSubmitButton))
         }
         .padding(8)
         .frame(height: 58)

@@ -32,6 +32,7 @@ final class OverlayModel: ObservableObject {
         case listenInsights
         case listenRecordingControls
         case ask
+        case askSubmitButton
         case eye
         case menu
     }
@@ -211,6 +212,7 @@ final class OverlayModel: ObservableObject {
     @Published private(set) var tutorialCollapseToken: Int = 0
     @Published private(set) var tutorialCollapseDestination: CommandTab = .ask
     @Published private(set) var tutorialEnsureExpandedToken: Int = 0
+    @Published private(set) var tutorialEnsureAskExpandedToken: Int = 0
     @Published private(set) var tutorialShowInsightsToken: Int = 0
     @Published private(set) var tutorialShowTranscriptToken: Int = 0
     @Published var tutorialTranscriptScript: [TranscriptMessage] = []
@@ -230,6 +232,7 @@ final class OverlayModel: ObservableObject {
     private let listenInsightsIntroStepID = "listen_insights_intro"
     private let listenQuickInsightsStepID = "listen_quick_insights"
     private let askStepID = "ask"
+    private let askSubmitStepID = "ask_submit"
     let interactionPolicy = TutorialInteractionPolicy(
         allowedControlsByStepID: [
             "listen_panel_controls": [
@@ -243,6 +246,9 @@ final class OverlayModel: ObservableObject {
                 .quickInsightWhatToSayNext,
                 .quickInsightWhatIsThisAbout,
                 .quickInsightWhatToAsk
+            ],
+            "ask": [
+                .toolbarAskTab
             ]
         ]
     )
@@ -251,7 +257,9 @@ final class OverlayModel: ObservableObject {
     private var insightsIntroTask: Task<Void, Never>?
     private var quickInsightsToAskTask: Task<Void, Never>?
     private var backTransitionTask: Task<Void, Never>?
+    private var askToSubmitTransitionTask: Task<Void, Never>?
     private var isTransitioningFromQuickInsights = false
+    private var isTransitioningFromAskToSubmit = false
     private var isBackTransitionInProgress = false
 
     var listenTutorialStepID: String { listenStepID }
@@ -259,6 +267,7 @@ final class OverlayModel: ObservableObject {
     var listenInsightsIntroTutorialStepID: String { listenInsightsIntroStepID }
     var listenQuickInsightsTutorialStepID: String { listenQuickInsightsStepID }
     var askTutorialStepID: String { askStepID }
+    var askSubmitTutorialStepID: String { askSubmitStepID }
 
     // Вычисляемые
     var alpha: CGFloat { transparencySteps[clamp(transparencyIndex, 0, transparencySteps.count - 1)] }
@@ -529,6 +538,7 @@ final class OverlayModel: ObservableObject {
         cancelInsightsIntroSequence()
         cancelQuickInsightsToAskTransition()
         cancelBackTransitionIfNeeded()
+        cancelAskToSubmitTransition()
         suppressCalloutForCurrentStep = false
         tutorialQuickInsightSample = nil
     }
@@ -550,6 +560,11 @@ final class OverlayModel: ObservableObject {
                 advanceFromQuickInsightsToAskAnimated()
                 return
             }
+
+            if currentStepID == askStepID {
+                advanceFromAskTabToAskSubmitStepAnimated()
+                return
+            }
         }
         cancelListenPanelAdvanceTask()
         if activeTutorialStepIndex < tutorialSteps.count - 1 {
@@ -563,6 +578,7 @@ final class OverlayModel: ObservableObject {
         guard !tutorialSteps.isEmpty else { return }
         cancelListenPanelAdvanceTask()
         guard !isTransitioningFromQuickInsights else { return }
+        guard !isTransitioningFromAskToSubmit else { return }
         guard !isBackTransitionInProgress else { return }
 
         guard let step = activeTutorialStep else {
@@ -636,6 +652,10 @@ final class OverlayModel: ObservableObject {
     private func cancelListenPanelAdvanceTask() {
         listenPanelAdvanceTask?.cancel()
         listenPanelAdvanceTask = nil
+    }
+
+    func requestAskPanelExpandedForTutorial() {
+        tutorialEnsureAskExpandedToken &+= 1
     }
 
     func advanceFromListenControlsToInsightsIntro() {
@@ -779,6 +799,7 @@ final class OverlayModel: ObservableObject {
         let listenInsights = toolbarAnchors[.listenInsights] ?? listen
         let listenPanel = tutorialObstacles.listenPanelFrameInScreen ?? listen
         let ask = toolbarAnchors[.ask] ?? shell
+        let askSubmit = toolbarAnchors[.askSubmitButton] ?? ask
         let eye = toolbarAnchors[.eye] ?? shell
         let menu = toolbarAnchors[.menu] ?? shell
 
@@ -823,6 +844,14 @@ final class OverlayModel: ObservableObject {
                 targetFrameInScreenSpace: ask,
                 calloutPosition: .trailing,
                 anchorID: .ask
+            ),
+            TutorialStep(
+                id: askSubmitStepID,
+                title: "Отправка запроса",
+                description: "Когда вы нажимаете кнопку Submit, Ghost AI делает снимок экрана и учитывает ваш разговор. Это помогает понять контекст: что происходит на экране и о чём вы говорите. Нажмите «Submit», чтобы получить подсказку с учётом вашего контекста.",
+                targetFrameInScreenSpace: askSubmit,
+                calloutPosition: .above,
+                anchorID: .askSubmitButton
             ),
             TutorialStep(
                 id: "eye",
@@ -962,10 +991,47 @@ final class OverlayModel: ObservableObject {
         }
     }
 
+    func advanceFromAskTabToAskSubmitStepAnimated() {
+        guard isTutorialVisible, activeTutorialStep?.id == askStepID else { return }
+        guard !isTransitioningFromAskToSubmit else { return }
+
+        isTransitioningFromAskToSubmit = true
+
+        withAnimation(.easeOut(duration: 0.2)) {
+            suppressCalloutForCurrentStep = true
+        }
+
+        requestAskPanelExpandedForTutorial()
+
+        askToSubmitTransitionTask?.cancel()
+        askToSubmitTransitionTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+
+                self.goToTutorialStep(withID: self.askSubmitStepID)
+
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.9)) {
+                    self.suppressCalloutForCurrentStep = false
+                }
+
+                self.isTransitioningFromAskToSubmit = false
+                self.askToSubmitTransitionTask = nil
+            }
+        }
+    }
+
     private func cancelQuickInsightsToAskTransition() {
         quickInsightsToAskTask?.cancel()
         quickInsightsToAskTask = nil
         isTransitioningFromQuickInsights = false
+    }
+
+    private func cancelAskToSubmitTransition() {
+        askToSubmitTransitionTask?.cancel()
+        askToSubmitTransitionTask = nil
+        isTransitioningFromAskToSubmit = false
     }
 
     private func goBackFromAskToQuickInsightsAnimated() {

@@ -213,6 +213,13 @@ private struct TabSwitcher: View {
                     ns: ns,
                     glassNamespace: glassNamespace) {
                 guard overlay.isControlEnabled(.toolbarAskTab) else { return }
+
+                if overlay.isTutorialVisible,
+                   overlay.activeTutorialStep?.id == overlay.askTutorialStepID {
+                    overlay.advanceFromAskTabToAskSubmitStepAnimated()
+                    return
+                }
+
                 selected = .ask
                 onTabTap()
             }
