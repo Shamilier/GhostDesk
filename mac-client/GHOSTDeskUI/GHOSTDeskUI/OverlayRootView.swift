@@ -196,6 +196,7 @@ struct OverlayRootView: View {
                     Spacer(minLength: 8)
 
                     Button(showTranscript ? "Инсайты" : "Транскрипт") {
+                        guard overlay.isControlEnabled(.listenInsightsToggle) else { return }
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
                             showTranscript.toggle()
                         }
@@ -203,6 +204,7 @@ struct OverlayRootView: View {
                         OverlayWindowManager.shared.kickFinalResize(after: 0.30)
                     }
                     .buttonStyle(GlassPill())
+                    .disabled(!overlay.isControlEnabled(.listenInsightsToggle))
 
                     let phase = transcriptionCoordinator.overallPhase
                     let running  = phase == .running
@@ -210,6 +212,7 @@ struct OverlayRootView: View {
                     let stopping = phase == .stopping
 
                     Button {
+                        guard overlay.isControlEnabled(.listenStartButton) else { return }
                         switch phase {
                         case .idle: transcriptionCoordinator.startRecording()
                         case .starting, .running, .stopping: transcriptionCoordinator.stopAll()
@@ -222,15 +225,17 @@ struct OverlayRootView: View {
                         }
                     }
                     .buttonStyle(GlassPill(tint: (running || stopping) ? .red : .accentColor))
-                    .disabled(starting)
+                    .disabled(starting || !overlay.isControlEnabled(.listenStartButton))
                     .background(ToolbarAnchorReporter(id: .listenStartButton))
 
                     Button {
+                        guard overlay.isControlEnabled(.listenMicButton) else { return }
                         transcriptionCoordinator.setMicrophoneArmed(!transcriptionCoordinator.isMicrophoneArmed)
                     } label: {
                         Label("Микрофон", systemImage: transcriptionCoordinator.isMicrophoneArmed ? "mic.fill" : "mic")
                     }
                     .buttonStyle(GlassPill(tint: transcriptionCoordinator.isMicrophoneArmed ? .pink : .secondary))
+                    .disabled(!overlay.isControlEnabled(.listenMicButton))
                     .background(ToolbarAnchorReporter(id: .listenMicButton))
                 }
                 .background(ToolbarAnchorReporter(id: .listenPanelControls))

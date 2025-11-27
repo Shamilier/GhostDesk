@@ -67,13 +67,21 @@ private struct CommandBar: View {
             )
 
 
-            KeyedIconButton(system: "eye", key: "⌘E", glassNamespace: glassNamespace, action: onEyeTap)
+            KeyedIconButton(system: "eye", key: "⌘E", glassNamespace: glassNamespace, action: {
+                guard overlay.isControlEnabled(.toolbarEye) else { return }
+                onEyeTap()
+            })
+            .disabled(!overlay.isControlEnabled(.toolbarEye))
                 .background(ToolbarAnchorReporter(id: .eye))
-            Button(action: onMenuTap) {
+            Button(action: {
+                guard overlay.isControlEnabled(.toolbarMenu) else { return }
+                onMenuTap()
+            }) {
                 Image(systemName: "ellipsis")
                     .rotationEffect(.degrees(90))
             }
             .buttonStyle(MiniIconButton())
+            .disabled(!overlay.isControlEnabled(.toolbarMenu))
             .background(ToolbarAnchorReporter(id: .menu))
 
         }
@@ -191,22 +199,26 @@ private struct TabSwitcher: View {
                     isActive: selected == .listen,
                     ns: ns,
                     glassNamespace: glassNamespace) {
+                guard overlay.isControlEnabled(.toolbarListenTab) else { return }
                 selected = .listen
                 onTabTap()
                 overlay.requestListenPanelAdvance()
             }
             .frame(width: tabWidth, height: tabHeight)
             .background(ToolbarAnchorReporter(id: .listen))
+            .disabled(!overlay.isControlEnabled(.toolbarListenTab))
 
             TabChip(title: "Ask", icon: "bubble.right",
                     isActive: selected == .ask,
                     ns: ns,
                     glassNamespace: glassNamespace) {
+                guard overlay.isControlEnabled(.toolbarAskTab) else { return }
                 selected = .ask
                 onTabTap()
             }
             .frame(width: tabWidth, height: tabHeight)
             .background(ToolbarAnchorReporter(id: .ask))
+            .disabled(!overlay.isControlEnabled(.toolbarAskTab))
         }
     }
 }
