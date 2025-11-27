@@ -66,6 +66,27 @@ final class OverlayModel: ObservableObject {
         let frameInScreen: CGRect?
     }
 
+    enum TutorialControlID {
+        case toolbarListenTab
+        case toolbarAskTab
+        case toolbarEye
+        case toolbarMenu
+
+        case listenInsightsToggle
+        case listenStartButton
+        case listenMicButton
+    }
+
+    struct TutorialInteractionPolicy {
+        let allowedControlsByStepID: [String: Set<TutorialControlID>]
+
+        func isControlEnabled(_ control: TutorialControlID, for stepID: String?) -> Bool {
+            guard let stepID else { return true }
+            guard let allowedControls = allowedControlsByStepID[stepID] else { return true }
+            return allowedControls.contains(control)
+        }
+    }
+
     struct TutorialStep: Identifiable, Equatable {
         let id: String
         var title: String
@@ -184,6 +205,14 @@ final class OverlayModel: ObservableObject {
     private let listenPanelAdvanceDelay: TimeInterval = 0.5
     private let listenStepID = "listen"
     private let listenRecordingControlsStepID = "listen_panel_controls"
+    let interactionPolicy = TutorialInteractionPolicy(
+        allowedControlsByStepID: [
+            "listen_panel_controls": [
+                .listenStartButton,
+                .listenMicButton,
+            ]
+        ]
+    )
     private weak var authState: AuthState?
     private var listenPanelAdvanceTask: Task<Void, Never>?
 
@@ -215,6 +244,11 @@ final class OverlayModel: ObservableObject {
     var activeTutorialStep: TutorialStep? {
         guard tutorialSteps.indices.contains(activeTutorialStepIndex) else { return nil }
         return tutorialSteps[activeTutorialStepIndex]
+    }
+
+    func isControlEnabled(_ control: TutorialControlID) -> Bool {
+        guard isTutorialVisible else { return true }
+        return interactionPolicy.isControlEnabled(control, for: activeTutorialStep?.id)
     }
 
     private init() {
