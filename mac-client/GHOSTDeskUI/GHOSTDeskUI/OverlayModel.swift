@@ -473,7 +473,7 @@ final class OverlayModel: ObservableObject {
             guard let self else { return }
 
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 50_000_000)
+                try? await Task.sleep(nanoseconds: 20_000_000)
 
                 let hasAnchor = await MainActor.run { () -> Bool in
                     guard self.isTutorialVisible, self.activeTutorialStep?.id == self.listenStepID else { return false }

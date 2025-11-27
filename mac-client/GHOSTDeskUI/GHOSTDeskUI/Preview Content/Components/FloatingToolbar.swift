@@ -16,7 +16,6 @@ public struct FloatingToolbar: View {
     public var onEyeTap: () -> Void
     public var onMenuTap: () -> Void
     @Namespace private var toolbarGlassNamespace
-    @ObservedObject private var overlay = OverlayModel.shared
 
     public init(
         isRecording: Bool,
@@ -42,9 +41,7 @@ public struct FloatingToolbar: View {
             onMenuTap: onMenuTap
         )
         .frame(maxWidth: 560)
-        .onPreferenceChange(ToolbarAnchorPreferenceKey.self) { anchors in
-            overlay.updateToolbarAnchors(anchors)
-        }
+
     }
 }
 

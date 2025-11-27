@@ -7,7 +7,7 @@ struct TutorialOverlayView: View {
     @State private var isVisible = false
     private let calloutSize = CGSize(width: 320, height: 170)
     // Измените значение ниже, чтобы регулировать степень затемнения фона обучения (1.0 = полностью чёрный).
-    private let dimOpacity: Double = 0.7
+    private let dimOpacity: Double = 0.75
 
     var body: some View {
         GeometryReader { proxy in
@@ -47,7 +47,7 @@ struct TutorialOverlayView: View {
 
     private func highlightView(rect: CGRect) -> some View {
         let accent = Color.accentColor
-        let glowColor = accent.opacity(0.75)
+        let glowColor = accent.opacity(0.9)
         let cornerRadius: CGFloat = 12
 
         return RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -58,7 +58,7 @@ struct TutorialOverlayView: View {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(
                         RadialGradient(
-                            gradient: Gradient(colors: [accent.opacity(0.28), accent.opacity(0)]),
+                            gradient: Gradient(colors: [accent.opacity(0.9), accent.opacity(0.5)]),
                             center: .center,
                             startRadius: 4,
                             endRadius: max(rect.width, rect.height) * 0.75
