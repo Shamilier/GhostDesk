@@ -166,6 +166,9 @@ struct OverlayRootView: View {
         .onChange(of: overlay.tutorialShowInsightsToken) { _ in
             showInsightsForTutorial()
         }
+        .onChange(of: overlay.tutorialShowTranscriptToken) { _ in
+            showTranscriptForTutorial()
+        }
 
         .onChange(of: showTranscript) { _ in
             OverlayWindowManager.shared.scheduleResize(animate: false)
@@ -850,11 +853,24 @@ struct OverlayRootView: View {
         OverlayWindowManager.shared.kickFinalResize(after: 0.30)
     }
 
+    private func showTranscriptForTutorial() {
+        guard overlay.isTutorialVisible else { return }
+
+        ensureListenPanelExpandedForTutorial()
+
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+            showTranscript = true
+        }
+
+        OverlayWindowManager.shared.scheduleResize(animate: false)
+        OverlayWindowManager.shared.kickFinalResize(after: 0.30)
+    }
+
     private func collapsePanelsForTutorial() {
         OverlayWindowManager.shared.withResizeSuspended(0.86, finalAnimate: true)
         withAnimation(.spring(response: 0.2, dampingFraction: 0.86)) {
             isExpanded = false
-            selectedTab = .ask
+            selectedTab = overlay.tutorialCollapseDestination
         }
     }
 }

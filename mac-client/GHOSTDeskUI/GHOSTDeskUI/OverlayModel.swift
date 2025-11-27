@@ -209,8 +209,10 @@ final class OverlayModel: ObservableObject {
     @Published private(set) var tutorialObstacles = TutorialObstacles()
     @Published private(set) var listenPanelAdvanceToken: Int = 0
     @Published private(set) var tutorialCollapseToken: Int = 0
+    @Published private(set) var tutorialCollapseDestination: CommandTab = .ask
     @Published private(set) var tutorialEnsureExpandedToken: Int = 0
     @Published private(set) var tutorialShowInsightsToken: Int = 0
+    @Published private(set) var tutorialShowTranscriptToken: Int = 0
     @Published var tutorialTranscriptScript: [TranscriptMessage] = []
     @Published var isInsightsCalloutReady: Bool = true
     @Published var suppressCalloutForCurrentStep: Bool = false
@@ -248,7 +250,9 @@ final class OverlayModel: ObservableObject {
     private var listenPanelAdvanceTask: Task<Void, Never>?
     private var insightsIntroTask: Task<Void, Never>?
     private var quickInsightsToAskTask: Task<Void, Never>?
+    private var backTransitionTask: Task<Void, Never>?
     private var isTransitioningFromQuickInsights = false
+    private var isBackTransitionInProgress = false
 
     var listenTutorialStepID: String { listenStepID }
     var listenPanelControlsTutorialStepID: String { listenRecordingControlsStepID }
@@ -524,6 +528,7 @@ final class OverlayModel: ObservableObject {
         pendingTutorialStepID = nil
         cancelInsightsIntroSequence()
         cancelQuickInsightsToAskTransition()
+        cancelBackTransitionIfNeeded()
         suppressCalloutForCurrentStep = false
         tutorialQuickInsightSample = nil
     }
@@ -557,6 +562,34 @@ final class OverlayModel: ObservableObject {
     func previousTutorialStep() {
         guard !tutorialSteps.isEmpty else { return }
         cancelListenPanelAdvanceTask()
+        guard !isTransitioningFromQuickInsights else { return }
+        guard !isBackTransitionInProgress else { return }
+
+        guard let step = activeTutorialStep else {
+            activeTutorialStepIndex = max(0, activeTutorialStepIndex - 1)
+            return
+        }
+
+        if step.id == askStepID {
+            goBackFromAskToQuickInsightsAnimated()
+            return
+        }
+
+        if step.id == listenQuickInsightsStepID {
+            goBackFromQuickInsightsToInsightsIntroAnimated()
+            return
+        }
+
+        if step.id == listenInsightsIntroStepID {
+            goBackFromInsightsIntroToListenControlsAnimated()
+            return
+        }
+
+        if step.id == listenRecordingControlsStepID {
+            goBackFromListenControlsToListenStepAnimated()
+            return
+        }
+
         activeTutorialStepIndex = max(0, activeTutorialStepIndex - 1)
     }
 
@@ -814,6 +847,11 @@ final class OverlayModel: ObservableObject {
         let oldID = tutorialStepID(at: fromIndex)
         let newID = tutorialStepID(at: toIndex)
 
+        if abs(fromIndex - toIndex) > 1 {
+            cancelBackTransitionIfNeeded()
+            suppressCalloutForCurrentStep = false
+        }
+
         if oldID == listenInsightsIntroStepID, newID != listenInsightsIntroStepID {
             cancelInsightsIntroSequence()
         }
@@ -896,6 +934,7 @@ final class OverlayModel: ObservableObject {
         guard isTutorialVisible, activeTutorialStep?.id == listenQuickInsightsStepID else { return }
         guard !isTransitioningFromQuickInsights else { return }
 
+        tutorialCollapseDestination = .ask
         isTransitioningFromQuickInsights = true
         tutorialQuickInsightSample = nil
         withAnimation(.easeOut(duration: 0.2)) {
@@ -927,5 +966,135 @@ final class OverlayModel: ObservableObject {
         quickInsightsToAskTask?.cancel()
         quickInsightsToAskTask = nil
         isTransitioningFromQuickInsights = false
+    }
+
+    private func goBackFromAskToQuickInsightsAnimated() {
+        guard isTutorialVisible, activeTutorialStep?.id == askStepID else { return }
+        guard !isBackTransitionInProgress else { return }
+
+        isBackTransitionInProgress = true
+
+        withAnimation(.easeOut(duration: 0.2)) {
+            suppressCalloutForCurrentStep = true
+        }
+
+        tutorialEnsureExpandedToken &+= 1
+        tutorialShowInsightsToken &+= 1
+
+        backTransitionTask?.cancel()
+        backTransitionTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 520_000_000)
+
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+
+                self.goToTutorialStep(withID: self.listenQuickInsightsStepID)
+
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.9)) {
+                    self.suppressCalloutForCurrentStep = false
+                }
+
+                self.isBackTransitionInProgress = false
+                self.backTransitionTask = nil
+            }
+        }
+    }
+
+    private func goBackFromQuickInsightsToInsightsIntroAnimated() {
+        guard isTutorialVisible, activeTutorialStep?.id == listenQuickInsightsStepID else { return }
+        guard !isBackTransitionInProgress else { return }
+
+        isBackTransitionInProgress = true
+
+        withAnimation(.easeOut(duration: 0.2)) {
+            suppressCalloutForCurrentStep = true
+        }
+
+        tutorialShowTranscriptToken &+= 1
+
+        backTransitionTask?.cancel()
+        backTransitionTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+
+                self.goToTutorialStep(withID: self.listenInsightsIntroStepID)
+
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.9)) {
+                    self.suppressCalloutForCurrentStep = false
+                }
+
+                self.isBackTransitionInProgress = false
+                self.backTransitionTask = nil
+            }
+        }
+    }
+
+    private func goBackFromInsightsIntroToListenControlsAnimated() {
+        guard isTutorialVisible, activeTutorialStep?.id == listenInsightsIntroStepID else { return }
+        guard !isBackTransitionInProgress else { return }
+
+        isBackTransitionInProgress = true
+
+        withAnimation(.easeOut(duration: 0.2)) {
+            suppressCalloutForCurrentStep = true
+        }
+
+        backTransitionTask?.cancel()
+        backTransitionTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+
+                self.goToTutorialStep(withID: self.listenRecordingControlsStepID)
+
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.9)) {
+                    self.suppressCalloutForCurrentStep = false
+                }
+
+                self.isBackTransitionInProgress = false
+                self.backTransitionTask = nil
+            }
+        }
+    }
+
+    private func goBackFromListenControlsToListenStepAnimated() {
+        guard isTutorialVisible, activeTutorialStep?.id == listenRecordingControlsStepID else { return }
+        guard !isBackTransitionInProgress else { return }
+
+        isBackTransitionInProgress = true
+
+        withAnimation(.easeOut(duration: 0.2)) {
+            suppressCalloutForCurrentStep = true
+        }
+
+        tutorialCollapseDestination = .listen
+        tutorialCollapseToken &+= 1
+
+        backTransitionTask?.cancel()
+        backTransitionTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+
+                self.goToTutorialStep(withID: self.listenStepID)
+
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.9)) {
+                    self.suppressCalloutForCurrentStep = false
+                }
+
+                self.isBackTransitionInProgress = false
+                self.backTransitionTask = nil
+            }
+        }
+    }
+
+    private func cancelBackTransitionIfNeeded() {
+        backTransitionTask?.cancel()
+        backTransitionTask = nil
+        isBackTransitionInProgress = false
     }
 }
