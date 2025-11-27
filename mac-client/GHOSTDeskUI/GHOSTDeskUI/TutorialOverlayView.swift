@@ -124,7 +124,11 @@ struct TutorialOverlayView: View {
             }
         }
         .padding(16)
-        .frame(width: calloutSize.width, minHeight: calloutSize.height, alignment: .topLeading)
+        .frame(
+            width: calloutSize.width,
+            height: calloutSize.height,
+            alignment: .topLeading
+        )
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(.ultraThinMaterial)
