@@ -5,7 +5,7 @@ struct TutorialOverlayView: View {
     let screenFrame: CGRect
 
     @State private var isVisible = false
-    private let calloutSize = CGSize(width: 320, height: 170)
+    private let calloutSize = CGSize(width: 340, height: 210)
     // Измените значение ниже, чтобы регулировать степень затемнения фона обучения (1.0 = полностью чёрный).
     private let dimOpacity: Double = 0.75
 
@@ -80,13 +80,18 @@ struct TutorialOverlayView: View {
         let start = connectorStart(for: layout.rect, position: layout.position)
         let end = connectorEnd(from: start, to: layout.highlight)
 
+        let connectorColor = Color.white.opacity(0.92)
+
         return ConnectorShape(start: start, end: end)
-            .stroke(Color.white.opacity(0.85), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            .stroke(connectorColor, style: StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
+            .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 2)
             .overlay(
                 ArrowHead(end: end, start: start)
-                    .fill(Color.white.opacity(0.9))
+                    .fill(connectorColor)
+                    .shadow(color: .black.opacity(0.4), radius: 4, x: 0, y: 2)
             )
             .animation(.spring(response: 0.4, dampingFraction: 0.85), value: overlay.activeTutorialStepIndex)
+            .zIndex(1)
     }
 
     private func callout(for step: OverlayModel.TutorialStep, in proxy: GeometryProxy) -> some View {
@@ -106,7 +111,7 @@ struct TutorialOverlayView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Spacer()
+            Spacer(minLength: 4)
 
             HStack {
                 Button("Назад") { overlay.previousTutorialStep() }
@@ -119,7 +124,7 @@ struct TutorialOverlayView: View {
             }
         }
         .padding(16)
-        .frame(width: calloutSize.width, height: calloutSize.height, alignment: .topLeading)
+        .frame(width: calloutSize.width, minHeight: calloutSize.height, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -130,7 +135,15 @@ struct TutorialOverlayView: View {
                 .stroke(Color.white.opacity(0.18), lineWidth: 1)
         )
         .position(x: layout.rect.midX, y: layout.rect.midY)
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: overlay.activeTutorialStepIndex)
+        .id(step.id)
+        .transition(
+            .asymmetric(
+                insertion: .scale(scale: 0.96).combined(with: .opacity),
+                removal: .opacity
+            )
+        )
+        .animation(.spring(response: 0.34, dampingFraction: 0.85), value: overlay.activeTutorialStepIndex)
+        .zIndex(2)
     }
 
     private func localRect(for rect: CGRect) -> CGRect {
