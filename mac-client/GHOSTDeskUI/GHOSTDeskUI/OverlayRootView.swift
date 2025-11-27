@@ -160,6 +160,12 @@ struct OverlayRootView: View {
         .onChange(of: overlay.tutorialCollapseToken) { _ in
             collapsePanelsForTutorial()
         }
+        .onChange(of: overlay.tutorialEnsureExpandedToken) { _ in
+            ensureListenPanelExpandedForTutorial()
+        }
+        .onChange(of: overlay.tutorialShowInsightsToken) { _ in
+            showInsightsForTutorial()
+        }
 
         .onChange(of: showTranscript) { _ in
             OverlayWindowManager.shared.scheduleResize(animate: false)
@@ -200,6 +206,13 @@ struct OverlayRootView: View {
 
                     Button(showTranscript ? "Инсайты" : "Транскрипт") {
                         guard overlay.isControlEnabled(.listenInsightsToggle) else { return }
+
+                        if overlay.isTutorialVisible,
+                           overlay.activeTutorialStep?.id == overlay.listenInsightsIntroTutorialStepID {
+                            overlay.advanceFromInsightsIntroToQuickInsights()
+                            return
+                        }
+
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
                             showTranscript.toggle()
                         }
@@ -813,6 +826,28 @@ struct OverlayRootView: View {
 
         selectedTab = .listen
         isExpanded = true
+    }
+
+    private func ensureListenPanelExpandedForTutorial() {
+        guard overlay.isTutorialVisible else { return }
+
+        withAnimation(.spring(response: 0.2, dampingFraction: 0.86)) {
+            selectedTab = .listen
+            isExpanded = true
+        }
+    }
+
+    private func showInsightsForTutorial() {
+        guard overlay.isTutorialVisible else { return }
+
+        ensureListenPanelExpandedForTutorial()
+
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+            showTranscript = false
+        }
+
+        OverlayWindowManager.shared.scheduleResize(animate: false)
+        OverlayWindowManager.shared.kickFinalResize(after: 0.30)
     }
 
     private func collapsePanelsForTutorial() {
