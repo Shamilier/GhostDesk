@@ -772,7 +772,7 @@ final class OverlayModel: ObservableObject {
                 TranscriptMessage(source: .microphone, text: "А здесь — фразы, записанные с микрофона пользователя."),
             ]
 
-            let delays: [UInt64] = [350_000_000, 420_000_000]
+            let delays: [UInt64] = [420_000_000, 520_000_000]
 
             for (index, message) in script.enumerated() {
                 if index < delays.count {
@@ -782,7 +782,7 @@ final class OverlayModel: ObservableObject {
                 guard !Task.isCancelled else { return }
 
                 await MainActor.run {
-                    withAnimation(.easeInOut(duration: 0.28)) {
+                    withAnimation(.spring(response: 0.48, dampingFraction: 0.86)) {
                         self.tutorialTranscriptScript.append(message)
                     }
                 }
@@ -792,7 +792,9 @@ final class OverlayModel: ObservableObject {
             guard !Task.isCancelled else { return }
 
             await MainActor.run {
-                self.isInsightsCalloutReady = true
+                withAnimation(.easeInOut(duration: 0.28)) {
+                    self.isInsightsCalloutReady = true
+                }
             }
         }
     }
