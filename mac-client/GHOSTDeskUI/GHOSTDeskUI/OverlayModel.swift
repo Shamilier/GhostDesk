@@ -182,7 +182,7 @@ final class OverlayModel: ObservableObject {
     private let listenStepID = "listen"
     private let listenPanelControlsStepID = "listen_panel_controls"
     private weak var authState: AuthState?
-    private var listenPanelAdvanceWorkItem: DispatchWorkItem?
+    private var listenPanelAdvanceTask: Task<Void, Never>?
 
     var listenTutorialStepID: String { listenStepID }
     var listenPanelControlsTutorialStepID: String { listenPanelControlsStepID }
@@ -438,7 +438,7 @@ final class OverlayModel: ObservableObject {
 
     func hideTutorial() {
         isTutorialVisible = false
-        listenPanelAdvanceWorkItem?.cancel()
+        cancelListenPanelAdvanceTask()
         pendingTutorialStepID = nil
     }
 
@@ -448,7 +448,7 @@ final class OverlayModel: ObservableObject {
             requestListenPanelAdvance()
             return
         }
-        listenPanelAdvanceWorkItem?.cancel()
+        cancelListenPanelAdvanceTask()
         if activeTutorialStepIndex < tutorialSteps.count - 1 {
             activeTutorialStepIndex += 1
         } else {
@@ -458,24 +458,53 @@ final class OverlayModel: ObservableObject {
 
     func previousTutorialStep() {
         guard !tutorialSteps.isEmpty else { return }
-        listenPanelAdvanceWorkItem?.cancel()
+        cancelListenPanelAdvanceTask()
         activeTutorialStepIndex = max(0, activeTutorialStepIndex - 1)
     }
 
     func requestListenPanelAdvance() {
         guard isTutorialVisible, activeTutorialStep?.id == listenStepID else { return }
 
-        listenPanelAdvanceWorkItem?.cancel()
+        cancelListenPanelAdvanceTask()
         listenPanelAdvanceToken &+= 1
 
-        let workItem = DispatchWorkItem { [weak self] in
+        let startedAt = Date()
+        listenPanelAdvanceTask = Task { [weak self] in
             guard let self else { return }
-            guard self.isTutorialVisible, self.activeTutorialStep?.id == self.listenStepID else { return }
-            self.goToTutorialStep(withID: self.listenPanelControlsStepID)
-        }
 
-        listenPanelAdvanceWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + listenPanelAdvanceDelay, execute: workItem)
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+
+                let hasAnchor = await MainActor.run { () -> Bool in
+                    guard self.isTutorialVisible, self.activeTutorialStep?.id == self.listenStepID else { return false }
+                    guard let anchor = self.toolbarAnchors[.listenPanelControls], !anchor.isEmpty else { return false }
+                    return true
+                }
+
+                guard hasAnchor else { continue }
+
+                let elapsed = Date().timeIntervalSince(startedAt)
+                let remaining = max(0, listenPanelAdvanceDelay - elapsed)
+
+                if remaining > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                }
+
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    guard self.isTutorialVisible, self.activeTutorialStep?.id == self.listenStepID else { return }
+                    guard let anchor = self.toolbarAnchors[.listenPanelControls], !anchor.isEmpty else { return }
+                    self.goToTutorialStep(withID: self.listenPanelControlsStepID)
+                }
+
+                return
+            }
+        }
+    }
+
+    private func cancelListenPanelAdvanceTask() {
+        listenPanelAdvanceTask?.cancel()
+        listenPanelAdvanceTask = nil
     }
 
     private func goToTutorialStep(withID id: String) {
