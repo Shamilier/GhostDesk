@@ -106,6 +106,9 @@ struct OverlayRootView: View {
                 }
             )
             .padding(.top, 8)
+            .onPreferenceChange(ToolbarAnchorPreferenceKey.self) { anchors in
+                overlay.updateToolbarAnchors(anchors)
+            }
 
             // ⬇️ ГЛАВНОЕ: если открыт Settings — показываем его вместо остальных панелей
             if isExpanded {
@@ -150,6 +153,9 @@ struct OverlayRootView: View {
             if isExpanded && tab == .ask { askFocused = true }
             OverlayWindowManager.shared.scheduleResize(animate: false)
             OverlayWindowManager.shared.kickFinalResize(after: 0.2)
+        }
+        .onChange(of: overlay.listenPanelAdvanceToken) { _ in
+            handleListenPanelAdvanceRequest()
         }
 
         .onChange(of: showTranscript) { _ in
@@ -225,6 +231,7 @@ struct OverlayRootView: View {
                     }
                     .buttonStyle(GlassPill(tint: transcriptionCoordinator.isMicrophoneArmed ? .pink : .secondary))
                 }
+                .background(ToolbarAnchorReporter(id: .listenPanelControls))
                 .padding(.vertical, 2)
 
                 // --------- ВАЖНО: дальше — тело панели ---------
@@ -768,6 +775,13 @@ struct OverlayRootView: View {
             return bufferTail
         }
         return transcriptionCoordinator.transcriptTail(for: .system, maxChars: maxChars)
+    }
+
+    private func handleListenPanelAdvanceRequest() {
+        guard overlay.isTutorialVisible, overlay.activeTutorialStep?.id == overlay.listenTutorialStepID else { return }
+
+        selectedTab = .listen
+        isExpanded = true
     }
 }
 

@@ -25,6 +25,7 @@ final class OverlayModel: ObservableObject {
     enum ToolbarAnchorID: String, CaseIterable {
         case shell
         case listen
+        case listenPanelControls
         case ask
         case eye
         case menu
@@ -169,13 +170,21 @@ final class OverlayModel: ObservableObject {
     @Published var activeTutorialStepIndex: Int = 0
     @Published private(set) var toolbarAnchors: [ToolbarAnchorID: CGRect] = [:]
     @Published private(set) var tutorialObstacles = TutorialObstacles()
+    @Published private(set) var listenPanelAdvanceToken: Int = 0
 
 
     // Константы
     let transparencySteps: [CGFloat] = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5]
     let fontScaleSteps: [CGFloat]     = [0.9, 1.0, 1.15, 1.3, 1.5, 1.7]
     let moveStep: CGFloat = 70.0
+    private let listenPanelAdvanceDelay: TimeInterval = 0.5
+    private let listenStepID = "listen"
+    private let listenPanelControlsStepID = "listen_panel_controls"
     private weak var authState: AuthState?
+    private var listenPanelAdvanceWorkItem: DispatchWorkItem?
+
+    var listenTutorialStepID: String { listenStepID }
+    var listenPanelControlsTutorialStepID: String { listenPanelControlsStepID }
 
     // Вычисляемые
     var alpha: CGFloat { transparencySteps[clamp(transparencyIndex, 0, transparencySteps.count - 1)] }
@@ -414,10 +423,16 @@ final class OverlayModel: ObservableObject {
 
     func hideTutorial() {
         isTutorialVisible = false
+        listenPanelAdvanceWorkItem?.cancel()
     }
 
     func nextTutorialStep() {
         guard !tutorialSteps.isEmpty else { return }
+        if isTutorialVisible, activeTutorialStep?.id == listenStepID {
+            requestListenPanelAdvance()
+            return
+        }
+        listenPanelAdvanceWorkItem?.cancel()
         if activeTutorialStepIndex < tutorialSteps.count - 1 {
             activeTutorialStepIndex += 1
         } else {
@@ -427,7 +442,29 @@ final class OverlayModel: ObservableObject {
 
     func previousTutorialStep() {
         guard !tutorialSteps.isEmpty else { return }
+        listenPanelAdvanceWorkItem?.cancel()
         activeTutorialStepIndex = max(0, activeTutorialStepIndex - 1)
+    }
+
+    func requestListenPanelAdvance() {
+        guard isTutorialVisible, activeTutorialStep?.id == listenStepID else { return }
+
+        listenPanelAdvanceWorkItem?.cancel()
+        listenPanelAdvanceToken &+= 1
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard self.isTutorialVisible, self.activeTutorialStep?.id == self.listenStepID else { return }
+            self.goToTutorialStep(withID: self.listenPanelControlsStepID)
+        }
+
+        listenPanelAdvanceWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + listenPanelAdvanceDelay, execute: workItem)
+    }
+
+    private func goToTutorialStep(withID id: String) {
+        guard let index = tutorialSteps.firstIndex(where: { $0.id == id }) else { return }
+        activeTutorialStepIndex = index
     }
 
     func shiftToolbarAnchors(dx: CGFloat, dy: CGFloat) {
@@ -482,18 +519,27 @@ final class OverlayModel: ObservableObject {
     private func makeDefaultTutorialSteps() -> [TutorialStep] {
         let shell = toolbarAnchors[.shell] ?? CGRect(x: 300, y: 160, width: 420, height: 60)
         let listen = toolbarAnchors[.listen] ?? shell
+        let listenPanelControls = toolbarAnchors[.listenPanelControls] ?? listen
         let ask = toolbarAnchors[.ask] ?? shell
         let eye = toolbarAnchors[.eye] ?? shell
         let menu = toolbarAnchors[.menu] ?? shell
 
         return [
             TutorialStep(
-                id: "listen",
+                id: listenStepID,
                 title: "Слушайте происходящее",
                 description: "Эта зона включает транскрибирование системного звука. Данные появляются мгновенно и не мешают работе других панелей.",
                 targetFrameInScreenSpace: listen,
                 calloutPosition: .above,
                 anchorID: .listen
+            ),
+            TutorialStep(
+                id: listenPanelControlsStepID,
+                title: "Запускайте запись и микрофон",
+                description: "Используйте кнопки Старт/Стоп и «Микрофон», чтобы включать нужные каналы перед отправкой запроса в Ask.",
+                targetFrameInScreenSpace: listenPanelControls,
+                calloutPosition: .below,
+                anchorID: .listenPanelControls
             ),
             TutorialStep(
                 id: "ask",

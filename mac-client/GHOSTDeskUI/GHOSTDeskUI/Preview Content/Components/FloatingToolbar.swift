@@ -181,6 +181,7 @@ private struct TabSwitcher: View {
     var isRecording: Bool
     var onTabTap: () -> Void
     var glassNamespace: Namespace.ID
+    @ObservedObject private var overlay = OverlayModel.shared
 
     private let tabWidth:  CGFloat = 82
     private let tabHeight: CGFloat = 28
@@ -195,6 +196,7 @@ private struct TabSwitcher: View {
                     glassNamespace: glassNamespace) {
                 selected = .listen
                 onTabTap()
+                overlay.requestListenPanelAdvance()
             }
             .frame(width: tabWidth, height: tabHeight)
             .background(ToolbarAnchorReporter(id: .listen))
@@ -214,7 +216,7 @@ private struct TabSwitcher: View {
 
 // MARK: - Anchors for tutorial overlay
 
-private struct ToolbarAnchorPreferenceKey: PreferenceKey {
+struct ToolbarAnchorPreferenceKey: PreferenceKey {
     static var defaultValue: [OverlayModel.ToolbarAnchor] = []
 
     static func reduce(value: inout [OverlayModel.ToolbarAnchor], nextValue: () -> [OverlayModel.ToolbarAnchor]) {
@@ -222,7 +224,7 @@ private struct ToolbarAnchorPreferenceKey: PreferenceKey {
     }
 }
 
-private struct ToolbarAnchorReporter: View {
+struct ToolbarAnchorReporter: View {
     let id: OverlayModel.ToolbarAnchorID
 
     var body: some View {
