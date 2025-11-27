@@ -171,6 +171,7 @@ final class OverlayModel: ObservableObject {
     @Published private(set) var toolbarAnchors: [ToolbarAnchorID: CGRect] = [:]
     @Published private(set) var tutorialObstacles = TutorialObstacles()
     @Published private(set) var listenPanelAdvanceToken: Int = 0
+    private var pendingTutorialStepID: String?
 
 
     // Константы
@@ -354,15 +355,29 @@ final class OverlayModel: ObservableObject {
             return
         }
 
+        let incomingIDs = Set(anchors.map(\.id))
+
+        var next = toolbarAnchors
         var changed = false
+
         for anchor in anchors {
-            if toolbarAnchors[anchor.id] != anchor.frameInScreen {
-                toolbarAnchors[anchor.id] = anchor.frameInScreen
+            if next[anchor.id] != anchor.frameInScreen {
+                next[anchor.id] = anchor.frameInScreen
                 changed = true
             }
         }
+
+        let removed = Set(next.keys).subtracting(incomingIDs)
+        if !removed.isEmpty {
+            next = next.filter { !removed.contains($0.key) }
+            changed = true
+        }
+
         guard changed else { return }
+
+        toolbarAnchors = next
         updateTutorialTargetsForAnchors()
+        tryActivatePendingTutorialStepIfNeeded()
     }
 
     func updateToolbarFrameInScreen(_ frame: CGRect?) {
@@ -424,6 +439,7 @@ final class OverlayModel: ObservableObject {
     func hideTutorial() {
         isTutorialVisible = false
         listenPanelAdvanceWorkItem?.cancel()
+        pendingTutorialStepID = nil
     }
 
     func nextTutorialStep() {
@@ -464,7 +480,25 @@ final class OverlayModel: ObservableObject {
 
     private func goToTutorialStep(withID id: String) {
         guard let index = tutorialSteps.firstIndex(where: { $0.id == id }) else { return }
+
+        if id == listenPanelControlsStepID {
+            guard let anchor = toolbarAnchors[.listenPanelControls], !anchor.isEmpty else {
+                pendingTutorialStepID = id
+                return
+            }
+        }
+
+        pendingTutorialStepID = nil
         activeTutorialStepIndex = index
+    }
+
+    private func tryActivatePendingTutorialStepIfNeeded() {
+        guard let pending = pendingTutorialStepID else { return }
+        guard pending == listenPanelControlsStepID else { return }
+        guard let anchor = toolbarAnchors[.listenPanelControls], !anchor.isEmpty else { return }
+
+        pendingTutorialStepID = nil
+        goToTutorialStep(withID: pending)
     }
 
     func shiftToolbarAnchors(dx: CGFloat, dy: CGFloat) {
@@ -501,12 +535,15 @@ final class OverlayModel: ObservableObject {
         var didChange = false
 
         for index in updated.indices {
-            guard let anchor = updated[index].anchorID,
-                  let frame = toolbarAnchors[anchor],
-                  !frame.isEmpty else { continue }
+            guard let anchorID = updated[index].anchorID else { continue }
 
-            if updated[index].targetFrameInScreenSpace != frame {
-                updated[index].targetFrameInScreenSpace = frame
+            if let frame = toolbarAnchors[anchorID], !frame.isEmpty {
+                if updated[index].targetFrameInScreenSpace != frame {
+                    updated[index].targetFrameInScreenSpace = frame
+                    didChange = true
+                }
+            } else if anchorID == .listenPanelControls, !updated[index].targetFrameInScreenSpace.isEmpty {
+                updated[index].targetFrameInScreenSpace = .zero
                 didChange = true
             }
         }
@@ -519,7 +556,7 @@ final class OverlayModel: ObservableObject {
     private func makeDefaultTutorialSteps() -> [TutorialStep] {
         let shell = toolbarAnchors[.shell] ?? CGRect(x: 300, y: 160, width: 420, height: 60)
         let listen = toolbarAnchors[.listen] ?? shell
-        let listenPanelControls = toolbarAnchors[.listenPanelControls] ?? listen
+        let listenPanelControls = toolbarAnchors[.listenPanelControls] ?? .zero
         let ask = toolbarAnchors[.ask] ?? shell
         let eye = toolbarAnchors[.eye] ?? shell
         let menu = toolbarAnchors[.menu] ?? shell
