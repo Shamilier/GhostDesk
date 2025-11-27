@@ -26,6 +26,9 @@ final class OverlayModel: ObservableObject {
         case shell
         case listen
         case listenPanelControls
+        case listenStartButton
+        case listenMicButton
+        case listenRecordingControls
         case ask
         case eye
         case menu
@@ -180,12 +183,12 @@ final class OverlayModel: ObservableObject {
     let moveStep: CGFloat = 70.0
     private let listenPanelAdvanceDelay: TimeInterval = 0.5
     private let listenStepID = "listen"
-    private let listenPanelControlsStepID = "listen_panel_controls"
+    private let listenRecordingControlsStepID = "listen_panel_controls"
     private weak var authState: AuthState?
     private var listenPanelAdvanceTask: Task<Void, Never>?
 
     var listenTutorialStepID: String { listenStepID }
-    var listenPanelControlsTutorialStepID: String { listenPanelControlsStepID }
+    var listenPanelControlsTutorialStepID: String { listenRecordingControlsStepID }
 
     // Вычисляемые
     var alpha: CGFloat { transparencySteps[clamp(transparencyIndex, 0, transparencySteps.count - 1)] }
@@ -477,7 +480,7 @@ final class OverlayModel: ObservableObject {
 
                 let hasAnchor = await MainActor.run { () -> Bool in
                     guard self.isTutorialVisible, self.activeTutorialStep?.id == self.listenStepID else { return false }
-                    guard let anchor = self.toolbarAnchors[.listenPanelControls], !anchor.isEmpty else { return false }
+                    guard let frame = self.recordingControlsFrame(), !frame.isEmpty else { return false }
                     return true
                 }
 
@@ -493,8 +496,8 @@ final class OverlayModel: ObservableObject {
                 await MainActor.run { [weak self] in
                     guard let self else { return }
                     guard self.isTutorialVisible, self.activeTutorialStep?.id == self.listenStepID else { return }
-                    guard let anchor = self.toolbarAnchors[.listenPanelControls], !anchor.isEmpty else { return }
-                    self.goToTutorialStep(withID: self.listenPanelControlsStepID)
+                    guard let frame = self.recordingControlsFrame(), !frame.isEmpty else { return }
+                    self.goToTutorialStep(withID: self.listenRecordingControlsStepID)
                 }
 
                 return
@@ -510,8 +513,8 @@ final class OverlayModel: ObservableObject {
     private func goToTutorialStep(withID id: String) {
         guard let index = tutorialSteps.firstIndex(where: { $0.id == id }) else { return }
 
-        if id == listenPanelControlsStepID {
-            guard let anchor = toolbarAnchors[.listenPanelControls], !anchor.isEmpty else {
+        if id == listenRecordingControlsStepID {
+            guard recordingControlsFrame().map({ !$0.isEmpty }) == true else {
                 pendingTutorialStepID = id
                 return
             }
@@ -523,8 +526,8 @@ final class OverlayModel: ObservableObject {
 
     private func tryActivatePendingTutorialStepIfNeeded() {
         guard let pending = pendingTutorialStepID else { return }
-        guard pending == listenPanelControlsStepID else { return }
-        guard let anchor = toolbarAnchors[.listenPanelControls], !anchor.isEmpty else { return }
+        guard pending == listenRecordingControlsStepID else { return }
+        guard recordingControlsFrame().map({ !$0.isEmpty }) == true else { return }
 
         pendingTutorialStepID = nil
         goToTutorialStep(withID: pending)
@@ -558,6 +561,29 @@ final class OverlayModel: ObservableObject {
         updateTutorialTargetsForAnchors()
     }
 
+    private func recordingControlsFrame() -> CGRect? {
+        let start = toolbarAnchors[.listenStartButton]
+        let mic = toolbarAnchors[.listenMicButton]
+
+        if let start, let mic, !start.isEmpty, !mic.isEmpty {
+            return start.union(mic)
+        }
+
+        if let start, !start.isEmpty {
+            return start
+        }
+
+        if let mic, !mic.isEmpty {
+            return mic
+        }
+
+        if let fallback = toolbarAnchors[.listenPanelControls], !fallback.isEmpty {
+            return fallback
+        }
+
+        return nil
+    }
+
     private func updateTutorialTargetsForAnchors() {
         guard !tutorialSteps.isEmpty else { return }
         var updated = tutorialSteps
@@ -566,12 +592,19 @@ final class OverlayModel: ObservableObject {
         for index in updated.indices {
             guard let anchorID = updated[index].anchorID else { continue }
 
-            if let frame = toolbarAnchors[anchorID], !frame.isEmpty {
+            let targetFrame: CGRect?
+            if anchorID == .listenRecordingControls {
+                targetFrame = recordingControlsFrame()
+            } else {
+                targetFrame = toolbarAnchors[anchorID]
+            }
+
+            if let frame = targetFrame, !frame.isEmpty {
                 if updated[index].targetFrameInScreenSpace != frame {
                     updated[index].targetFrameInScreenSpace = frame
                     didChange = true
                 }
-            } else if anchorID == .listenPanelControls, !updated[index].targetFrameInScreenSpace.isEmpty {
+            } else if (anchorID == .listenPanelControls || anchorID == .listenRecordingControls), !updated[index].targetFrameInScreenSpace.isEmpty {
                 updated[index].targetFrameInScreenSpace = .zero
                 didChange = true
             }
@@ -585,7 +618,7 @@ final class OverlayModel: ObservableObject {
     private func makeDefaultTutorialSteps() -> [TutorialStep] {
         let shell = toolbarAnchors[.shell] ?? CGRect(x: 300, y: 160, width: 420, height: 60)
         let listen = toolbarAnchors[.listen] ?? shell
-        let listenPanelControls = toolbarAnchors[.listenPanelControls] ?? .zero
+        let listenPanelControls = recordingControlsFrame() ?? .zero
         let ask = toolbarAnchors[.ask] ?? shell
         let eye = toolbarAnchors[.eye] ?? shell
         let menu = toolbarAnchors[.menu] ?? shell
@@ -600,12 +633,12 @@ final class OverlayModel: ObservableObject {
                 anchorID: .listen
             ),
             TutorialStep(
-                id: listenPanelControlsStepID,
+                id: listenRecordingControlsStepID,
                 title: "Запускайте запись и микрофон",
                 description: "Используйте кнопки Старт/Стоп и «Микрофон», чтобы включать нужные каналы перед отправкой запроса в Ask.",
                 targetFrameInScreenSpace: listenPanelControls,
-                calloutPosition: .below,
-                anchorID: .listenPanelControls
+                calloutPosition: .trailing,
+                anchorID: .listenRecordingControls
             ),
             TutorialStep(
                 id: "ask",

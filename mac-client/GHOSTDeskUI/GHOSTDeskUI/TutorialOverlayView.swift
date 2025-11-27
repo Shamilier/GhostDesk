@@ -168,8 +168,17 @@ struct TutorialOverlayView: View {
         size: CGSize,
         obstacles: [CGRect]
     ) -> (rect: CGRect, position: OverlayModel.CalloutPosition) {
-        let baseOrder: [OverlayModel.CalloutPosition] = [.above, .below, .leading, .trailing]
-        var candidates: [OverlayModel.CalloutPosition] = [step.calloutPosition]
+        let baseOrder: [OverlayModel.CalloutPosition]
+        if step.anchorID == .listenRecordingControls {
+            baseOrder = [.trailing, .leading]
+        } else {
+            baseOrder = [.above, .below, .leading, .trailing]
+        }
+
+        var candidates: [OverlayModel.CalloutPosition] = []
+        if baseOrder.contains(step.calloutPosition) {
+            candidates.append(step.calloutPosition)
+        }
         candidates.append(contentsOf: baseOrder.filter { !candidates.contains($0) })
 
         var best: (rect: CGRect, position: OverlayModel.CalloutPosition, overlap: CGFloat)?
@@ -193,9 +202,16 @@ struct TutorialOverlayView: View {
 
         if let best { return (best.rect, best.position) }
 
-        let fallback = clampedCalloutRect(calloutRect(for: step.calloutPosition, highlight: highlight, size: size), canvas: canvas)
+        let fallbackPosition: OverlayModel.CalloutPosition
+        if let firstAllowed = baseOrder.first {
+            fallbackPosition = firstAllowed
+        } else {
+            fallbackPosition = step.calloutPosition
+        }
+
+        let fallback = clampedCalloutRect(calloutRect(for: fallbackPosition, highlight: highlight, size: size), canvas: canvas)
         let adjustedFallback = offsetRect(fallback, avoiding: obstacles, canvas: canvas)
-        return (adjustedFallback, step.calloutPosition)
+        return (adjustedFallback, fallbackPosition)
     }
 
     private func calloutRect(for position: OverlayModel.CalloutPosition, highlight: CGRect, size: CGSize) -> CGRect {
