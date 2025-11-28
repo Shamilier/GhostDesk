@@ -75,6 +75,8 @@ final class OverlayModel: ObservableObject {
         case toolbarEye
         case toolbarMenu
 
+        case askSubmitButton
+
         case listenInsightsToggle
         case listenStartButton
         case listenMicButton
@@ -219,6 +221,7 @@ final class OverlayModel: ObservableObject {
     @Published var isInsightsCalloutReady: Bool = true
     @Published var suppressCalloutForCurrentStep: Bool = false
     @Published var tutorialQuickInsightSample: String? = nil
+    @Published var tutorialAskSampleResponse: String? = nil
     private var pendingTutorialStepID: String?
 
 
@@ -233,6 +236,7 @@ final class OverlayModel: ObservableObject {
     private let listenQuickInsightsStepID = "listen_quick_insights"
     private let askStepID = "ask"
     private let askSubmitStepID = "ask_submit"
+    private let eyeStepID = "eye"
     let interactionPolicy = TutorialInteractionPolicy(
         allowedControlsByStepID: [
             "listen_panel_controls": [
@@ -258,10 +262,12 @@ final class OverlayModel: ObservableObject {
     private var quickInsightsToAskTask: Task<Void, Never>?
     private var backTransitionTask: Task<Void, Never>?
     private var askToSubmitTransitionTask: Task<Void, Never>?
+    private var askSubmitToEyeTransitionTask: Task<Void, Never>?
     private var isTransitioningFromListenToControls = false
     private var shouldUnsuppressAfterListenAdvance = false
     private var isTransitioningFromQuickInsights = false
     private var isTransitioningFromAskToSubmit = false
+    private var isAskSubmitToEyeTransitionInProgress = false
     private var isBackTransitionInProgress = false
 
     var listenTutorialStepID: String { listenStepID }
@@ -270,6 +276,7 @@ final class OverlayModel: ObservableObject {
     var listenQuickInsightsTutorialStepID: String { listenQuickInsightsStepID }
     var askTutorialStepID: String { askStepID }
     var askSubmitTutorialStepID: String { askSubmitStepID }
+    var eyeTutorialStepID: String { eyeStepID }
 
     // Вычисляемые
     var alpha: CGFloat { transparencySteps[clamp(transparencyIndex, 0, transparencySteps.count - 1)] }
@@ -541,10 +548,12 @@ final class OverlayModel: ObservableObject {
         cancelQuickInsightsToAskTransition()
         cancelBackTransitionIfNeeded()
         cancelAskToSubmitTransition()
+        cancelAskSubmitToEyeTransition()
         isTransitioningFromListenToControls = false
         shouldUnsuppressAfterListenAdvance = false
         suppressCalloutForCurrentStep = false
         tutorialQuickInsightSample = nil
+        tutorialAskSampleResponse = nil
     }
 
     func nextTutorialStep() {
@@ -569,6 +578,11 @@ final class OverlayModel: ObservableObject {
                 advanceFromAskTabToAskSubmitStepAnimated()
                 return
             }
+
+            if currentStepID == askSubmitStepID {
+                advanceFromAskSubmitToEyeAnimated()
+                return
+            }
         }
         cancelListenPanelAdvanceTask()
         if activeTutorialStepIndex < tutorialSteps.count - 1 {
@@ -581,6 +595,9 @@ final class OverlayModel: ObservableObject {
     func previousTutorialStep() {
         guard !tutorialSteps.isEmpty else { return }
         cancelListenPanelAdvanceTask()
+        if isAskSubmitToEyeTransitionInProgress {
+            cancelAskSubmitToEyeTransition()
+        }
         guard !isTransitioningFromQuickInsights else { return }
         guard !isTransitioningFromAskToSubmit else { return }
         guard !isBackTransitionInProgress else { return }
@@ -891,7 +908,7 @@ final class OverlayModel: ObservableObject {
                 anchorID: .askSubmitButton
             ),
             TutorialStep(
-                id: "eye",
+                id: eyeStepID,
                 title: "Прячьте и показывайте",
                 description: "Кнопка с глазом мгновенно скрывает панель без остановки фоновой работы. Используйте её, если интерфейс мешает содержимому экрана.",
                 targetFrameInScreenSpace: eye,
@@ -934,6 +951,15 @@ final class OverlayModel: ObservableObject {
 
         if newID == listenQuickInsightsStepID {
             tutorialQuickInsightSample = nil
+        }
+
+        if oldID == askSubmitStepID, newID != askSubmitStepID, newID != eyeStepID {
+            cancelAskSubmitToEyeTransition()
+        }
+
+        if newID == askSubmitStepID {
+            cancelAskSubmitToEyeTransition()
+            tutorialAskSampleResponse = nil
         }
     }
 
@@ -1059,6 +1085,43 @@ final class OverlayModel: ObservableObject {
         }
     }
 
+    func advanceFromAskSubmitToEyeAnimated() {
+        guard isTutorialVisible, activeTutorialStep?.id == askSubmitStepID else { return }
+        guard !isAskSubmitToEyeTransitionInProgress else { return }
+
+        isAskSubmitToEyeTransitionInProgress = true
+
+        withAnimation(.easeOut(duration: 0.2)) {
+            suppressCalloutForCurrentStep = true
+        }
+
+        askSubmitToEyeTransitionTask?.cancel()
+        let sample = """Здесь будут появляться ответы Ghost AI.
+Мы учитываем ваш скриншот и контекст разговора, чтобы дать максимально уместный совет."""
+
+        askSubmitToEyeTransitionTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                withAnimation(.easeInOut(duration: 0.24)) {
+                    self.tutorialAskSampleResponse = sample
+                }
+            }
+
+            try? await Task.sleep(nanoseconds: 320_000_000)
+
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+
+                self.goToTutorialStep(withID: self.eyeStepID)
+                self.suppressCalloutForCurrentStep = false
+                self.isAskSubmitToEyeTransitionInProgress = false
+                self.askSubmitToEyeTransitionTask = nil
+            }
+        }
+    }
+
     private func cancelQuickInsightsToAskTransition() {
         quickInsightsToAskTask?.cancel()
         quickInsightsToAskTask = nil
@@ -1069,6 +1132,16 @@ final class OverlayModel: ObservableObject {
         askToSubmitTransitionTask?.cancel()
         askToSubmitTransitionTask = nil
         isTransitioningFromAskToSubmit = false
+    }
+
+    private func cancelAskSubmitToEyeTransition(resetSample: Bool = true) {
+        askSubmitToEyeTransitionTask?.cancel()
+        askSubmitToEyeTransitionTask = nil
+        isAskSubmitToEyeTransitionInProgress = false
+        if resetSample {
+            tutorialAskSampleResponse = nil
+        }
+        suppressCalloutForCurrentStep = false
     }
 
     private func goBackFromAskToQuickInsightsAnimated() {
