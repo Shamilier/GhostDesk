@@ -69,6 +69,12 @@ private struct CommandBar: View {
 
             KeyedIconButton(system: "eye", key: "⌘E", glassNamespace: glassNamespace, action: {
                 guard overlay.isControlEnabled(.toolbarEye) else { return }
+                if overlay.isTutorialVisible,
+                   overlay.activeTutorialStep?.id == overlay.eyeTutorialStepID {
+                    overlay.advanceFromEyeToMenuAnimated()
+                    return
+                }
+
                 onEyeTap()
             })
             .disabled(!overlay.isControlEnabled(.toolbarEye))

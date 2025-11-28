@@ -237,6 +237,7 @@ final class OverlayModel: ObservableObject {
     private let askStepID = "ask"
     private let askSubmitStepID = "ask_submit"
     private let eyeStepID = "eye"
+    private let menuStepID = "menu"
     let interactionPolicy = TutorialInteractionPolicy(
         allowedControlsByStepID: [
             "listen_panel_controls": [
@@ -253,6 +254,9 @@ final class OverlayModel: ObservableObject {
             ],
             "ask": [
                 .toolbarAskTab
+            ],
+            "eye": [
+                .toolbarEye
             ]
         ]
     )
@@ -263,11 +267,13 @@ final class OverlayModel: ObservableObject {
     private var backTransitionTask: Task<Void, Never>?
     private var askToSubmitTransitionTask: Task<Void, Never>?
     private var askSubmitToEyeTransitionTask: Task<Void, Never>?
+    private var eyeToMenuTransitionTask: Task<Void, Never>?
     private var isTransitioningFromListenToControls = false
     private var shouldUnsuppressAfterListenAdvance = false
     private var isTransitioningFromQuickInsights = false
     private var isTransitioningFromAskToSubmit = false
     private var isAskSubmitToEyeTransitionInProgress = false
+    private var isEyeToMenuTransitionInProgress = false
     private var isBackTransitionInProgress = false
 
     var listenTutorialStepID: String { listenStepID }
@@ -549,6 +555,7 @@ final class OverlayModel: ObservableObject {
         cancelBackTransitionIfNeeded()
         cancelAskToSubmitTransition()
         cancelAskSubmitToEyeTransition()
+        cancelEyeToMenuTransition()
         isTransitioningFromListenToControls = false
         shouldUnsuppressAfterListenAdvance = false
         suppressCalloutForCurrentStep = false
@@ -581,6 +588,11 @@ final class OverlayModel: ObservableObject {
 
             if currentStepID == askSubmitStepID {
                 advanceFromAskSubmitToEyeAnimated()
+                return
+            }
+
+            if currentStepID == eyeStepID {
+                advanceFromEyeToMenuAnimated()
                 return
             }
         }
@@ -916,7 +928,7 @@ final class OverlayModel: ObservableObject {
                 anchorID: .eye
             ),
             TutorialStep(
-                id: "menu",
+                id: menuStepID,
                 title: "Откройте меню",
                 description: "Встроенное меню ведёт к настройкам и дополнительным действиям. Позиция панели остаётся неизменной на протяжении обучения.",
                 targetFrameInScreenSpace: menu,
@@ -1144,6 +1156,43 @@ final class OverlayModel: ObservableObject {
         suppressCalloutForCurrentStep = false
     }
 
+    func advanceFromEyeToMenuAnimated() {
+        guard isTutorialVisible, activeTutorialStep?.id == eyeStepID else { return }
+        guard !isEyeToMenuTransitionInProgress else { return }
+
+        isEyeToMenuTransitionInProgress = true
+
+        withAnimation(.easeOut(duration: 0.2)) {
+            suppressCalloutForCurrentStep = true
+        }
+
+        tutorialCollapseDestination = .ask
+        tutorialCollapseToken &+= 1
+
+        eyeToMenuTransitionTask?.cancel()
+        eyeToMenuTransitionTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                guard self.isTutorialVisible else {
+                    self.isEyeToMenuTransitionInProgress = false
+                    self.eyeToMenuTransitionTask = nil
+                    return
+                }
+
+                self.goToTutorialStep(withID: self.menuStepID)
+
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.9)) {
+                    self.suppressCalloutForCurrentStep = false
+                }
+
+                self.isEyeToMenuTransitionInProgress = false
+                self.eyeToMenuTransitionTask = nil
+            }
+        }
+    }
+
     private func goBackFromAskToQuickInsightsAnimated() {
         guard isTutorialVisible, activeTutorialStep?.id == askStepID else { return }
         guard !isBackTransitionInProgress else { return }
@@ -1272,5 +1321,12 @@ final class OverlayModel: ObservableObject {
         backTransitionTask?.cancel()
         backTransitionTask = nil
         isBackTransitionInProgress = false
+    }
+
+    private func cancelEyeToMenuTransition() {
+        eyeToMenuTransitionTask?.cancel()
+        eyeToMenuTransitionTask = nil
+        isEyeToMenuTransitionInProgress = false
+        suppressCalloutForCurrentStep = false
     }
 }
