@@ -660,8 +660,31 @@ struct OverlayRootView: View {
             )
             .frame(maxWidth: 600)
 
-            if showResponse {
-                if let error = askVM.answerError {
+            let tutorialSample = overlay.isTutorialVisible ? overlay.tutorialAskSampleResponse : nil
+
+            if showResponse || tutorialSample != nil {
+                if let sample = tutorialSample {
+                    AIResponseCard(
+                        title: "AI Response",
+                        query: question,
+                        markdown: sample,
+                        isStreaming: false,
+                        canStop: false,
+                        onCopy: {
+                            #if os(macOS)
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(sample, forType: .string)
+                            #endif
+                        },
+                        onClose: {
+                            overlay.tutorialAskSampleResponse = nil
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) { showResponse = false }
+                        },
+                        onStop: {}
+                    )
+                    .frame(maxWidth: 600, minHeight: 220)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                } else if let error = askVM.answerError {
                     AskErrorCard(
                         message: error,
                         onClose: {
@@ -707,6 +730,17 @@ struct OverlayRootView: View {
         }
         .onChange(of: askVM.answerError) { err in
             if err != nil { withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) { showResponse = true } }
+        }
+        .onChange(of: overlay.tutorialAskSampleResponse) { sample in
+            if sample != nil {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                    showResponse = true
+                }
+            } else if askVM.answerDraft.isEmpty && askVM.answerError == nil {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                    showResponse = false
+                }
+            }
         }
         .frame(maxWidth: 600)  // Фиксируем максимальную ширину всей панели
 
@@ -801,6 +835,20 @@ struct OverlayRootView: View {
 
     // NEW: Submit ВСЕГДА шлёт ВОПРОС + ХВОСТ ТРАНСКРИПТА + СКРИНШОТ
     private func submitQuestion() async {
+        guard overlay.isControlEnabled(.askSubmitButton) else { return }
+
+        if overlay.isTutorialVisible,
+           overlay.activeTutorialStep?.id == overlay.askSubmitTutorialStepID {
+            await MainActor.run {
+                overlay.advanceFromAskSubmitToEyeAnimated()
+            }
+            return
+        }
+
+        await MainActor.run {
+            overlay.tutorialAskSampleResponse = nil
+        }
+
         let tr = makeTranscriptTail(seconds: 40, maxChars: 900)
 
         await askVM.submit(
@@ -1212,7 +1260,7 @@ private struct AskBar: View {
             }
             .keyboardShortcut(.return, modifiers: [])
             .buttonStyle(GlassPill())
-            .disabled(isSubmitting)
+            .disabled(isSubmitting || !overlay.isControlEnabled(.askSubmitButton))
             .background(ToolbarAnchorReporter(id: .askSubmitButton))
         }
         .padding(8)
