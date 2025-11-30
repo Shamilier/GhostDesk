@@ -1108,8 +1108,10 @@ final class OverlayModel: ObservableObject {
         }
 
         askSubmitToEyeTransitionTask?.cancel()
-        let sample = """Здесь будут появляться ответы Ghost AI.
-Мы учитываем ваш скриншот и контекст разговора, чтобы дать максимально уместный совет."""
+        let sample = """
+Здесь будут появляться ответы Ghost AI.
+Мы учитываем ваш скриншот и контекст разговора, чтобы дать максимально уместный совет.
+"""
 
         askSubmitToEyeTransitionTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 200_000_000)
