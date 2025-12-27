@@ -83,6 +83,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotKeyManager.shared.activate()
         NSApp.activate(ignoringOtherApps: true)
     }
+    func application(_ application: NSApplication, shouldSaveApplicationState coder: NSCoder) -> Bool {
+        false
+    }
+
+    func application(_ application: NSApplication, shouldRestoreApplicationState coder: NSCoder) -> Bool {
+        false
+    }
+
 
     func applicationWillTerminate(_ notification: Notification) {
         HotKeyManager.shared.unregisterAll()
