@@ -536,14 +536,7 @@ private struct AIResponseCard: View {
                 Divider().overlay(Color.white.opacity(0.10))
 
                 // Body (Markdown)
-                ScrollView {
-                    let attr = (try? AttributedString(markdown: markdown)) ?? AttributedString(markdown)
-                    Text(attr)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
-                }
-                .frame(minHeight: 180)
+                MarkdownBodyView(markdown: markdown)
             }
             .padding(12)
         }
@@ -706,14 +699,7 @@ private struct ResponseCard: View {
             Divider().overlay(Color.white.opacity(0.08))
 
             // body
-            ScrollView {
-                Text(bodyText)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .font(.system(size: 15))
-                    .padding(.vertical, 4)
-            }
-            .frame(minHeight: 160, maxHeight: 420)
+            MarkdownBodyView(markdown: bodyText, minHeight: 160, maxHeight: 420)
         }
         .padding(6)
     }
@@ -1246,6 +1232,5 @@ final class TranscriptBuffer {
         }
     }
 }
-
 
 
