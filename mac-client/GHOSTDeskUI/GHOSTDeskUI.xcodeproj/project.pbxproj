@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		276FB30C2E8D1AE000F148B3 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 276FB30B2E8D1AE000F148B3 /* WhisperKit */; };
 		276FB30E2E8D1AE000F148B3 /* whisperkit-cli in Frameworks */ = {isa = PBXBuildFile; productRef = 276FB30D2E8D1AE000F148B3 /* whisperkit-cli */; };
+		55E687E62F0A342C00EF5C37 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 55E687E52F0A342C00EF5C37 /* MarkdownUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,6 +42,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				55E687E62F0A342C00EF5C37 /* MarkdownUI in Frameworks */,
 				276FB30C2E8D1AE000F148B3 /* WhisperKit in Frameworks */,
 				276FB30E2E8D1AE000F148B3 /* whisperkit-cli in Frameworks */,
 			);
@@ -77,6 +79,7 @@
 			);
 			name = GHOSTDeskUI;
 			packageProductDependencies = (
+				55E687E52F0A342C00EF5C37 /* MarkdownUI */,
 				276FB30B2E8D1AE000F148B3 /* WhisperKit */,
 				276FB30D2E8D1AE000F148B3 /* whisperkit-cli */,
 			);
@@ -109,6 +112,7 @@
 			mainGroup = 557EDE062E7ED168002ABA48;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				55E687E42F0A342C00EF5C37 /* XCRemoteSwiftPackageReference "MarkdownUI" */,
 				276FB30A2E8D1AE000F148B3 /* XCRemoteSwiftPackageReference "WhisperKit" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -370,6 +374,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		55E687E42F0A342C00EF5C37 /* XCRemoteSwiftPackageReference "MarkdownUI" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/MarkdownUI.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.4.1;
+			};
+		};
 		276FB30A2E8D1AE000F148B3 /* XCRemoteSwiftPackageReference "WhisperKit" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/argmaxinc/WhisperKit.git";
@@ -381,6 +393,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		55E687E52F0A342C00EF5C37 /* MarkdownUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 55E687E42F0A342C00EF5C37 /* XCRemoteSwiftPackageReference "MarkdownUI" */;
+			productName = MarkdownUI;
+		};
 		276FB30B2E8D1AE000F148B3 /* WhisperKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 276FB30A2E8D1AE000F148B3 /* XCRemoteSwiftPackageReference "WhisperKit" */;
